@@ -1456,6 +1456,406 @@ body {
   color: var(--brown);
 }
 
+/* ============ ORDER VIEW OVERLAY (FOR RITA) ============ */
+.order-view {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--cream-light);
+  overflow: hidden;
+  flex-direction: column;
+}
+
+.order-view.open {
+  display: flex;
+}
+
+.order-view-bar {
+  background: var(--brown);
+  color: var(--cream-light);
+  padding: 1rem 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-md);
+}
+
+.order-view-bar-title {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.order-view-badge {
+  background: var(--whatsapp);
+  color: white;
+  padding: 0.35rem 0.8rem;
+  border-radius: 100px;
+  font-size: 0.72rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.order-view-bar-id {
+  font-family: 'Fraunces', serif;
+  font-size: 0.95rem;
+  font-style: italic;
+  color: var(--cream);
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-view-bar-actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.order-view-print-btn {
+  background: var(--gold);
+  color: var(--brown);
+  border: none;
+  padding: 0.7rem 1.3rem;
+  border-radius: 100px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.order-view-print-btn:hover {
+  background: var(--cream-light);
+  transform: translateY(-1px);
+}
+
+.order-view-close-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--cream-light);
+  border: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.order-view-close-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: rotate(90deg);
+}
+
+.order-view-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2rem 1.5rem;
+  background: var(--cream-light);
+}
+
+/* ============ PRINTABLE RECEIPT (Visible inside order-view + when printing) ============ */
+.printable-receipt {
+  max-width: 720px;
+  margin: 0 auto;
+  background: white;
+  padding: 2.5rem 2.2rem;
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  color: var(--brown);
+  font-family: 'Manrope', sans-serif;
+}
+
+.receipt-header {
+  text-align: center;
+  padding-bottom: 1.2rem;
+  border-bottom: 2px solid var(--brown);
+  margin-bottom: 1.5rem;
+}
+
+.receipt-logo {
+  margin-bottom: 0.8rem;
+}
+
+.receipt-logo img {
+  height: 100px;
+  width: auto;
+  display: inline-block;
+}
+
+.receipt-brand {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-weight: 600;
+  font-size: 2rem;
+  color: var(--teal-deep);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.receipt-tagline {
+  font-size: 0.72rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--brown-soft);
+  margin: 0.4rem 0 0;
+  font-weight: 500;
+}
+
+.receipt-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem 1.4rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.2rem;
+  background: #f7f1e3;
+  border-radius: 8px;
+}
+
+.receipt-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.9rem;
+  border-bottom: 1px dotted #c8b89a;
+  padding: 0.3rem 0;
+  gap: 0.5rem;
+}
+
+.receipt-meta-row:last-child {
+  grid-column: 1 / -1;
+}
+
+.receipt-meta-row span {
+  color: var(--brown-soft);
+  font-weight: 500;
+  letter-spacing: 0.05em;
+}
+
+.receipt-meta-row strong {
+  color: var(--brown);
+  font-weight: 600;
+  text-align: right;
+}
+
+.receipt-section-title {
+  font-family: 'Fraunces', serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--brown);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  border-bottom: 1px solid var(--brown);
+  padding-bottom: 0.5rem;
+  margin: 0 0 1rem 0;
+}
+
+.receipt-item {
+  padding: 0.85rem 0;
+  border-bottom: 1px dashed #c8b89a;
+}
+
+.receipt-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.3rem;
+  font-size: 1rem;
+  gap: 1rem;
+}
+
+.receipt-item-header .item-name {
+  font-weight: 600;
+  color: var(--brown);
+  flex: 1;
+}
+
+.receipt-item-header .item-total {
+  font-family: 'Fraunces', serif;
+  font-weight: 700;
+  color: var(--teal-deep);
+  white-space: nowrap;
+  font-size: 1.05rem;
+}
+
+.receipt-item-detail {
+  font-size: 0.85rem;
+  color: var(--brown-soft);
+  margin: 0.15rem 0 0 1.2rem;
+  line-height: 1.5;
+}
+
+.receipt-item-detail strong {
+  color: var(--brown);
+  font-weight: 600;
+}
+
+.receipt-totals {
+  margin-top: 1.4rem;
+  padding-top: 1rem;
+  border-top: 2px solid var(--brown);
+}
+
+.receipt-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.35rem 0;
+  font-size: 0.95rem;
+  color: var(--brown);
+}
+
+.receipt-total-row.final {
+  font-family: 'Fraunces', serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--teal-deep);
+  border-top: 1px solid #c8b89a;
+  margin-top: 0.5rem;
+  padding-top: 0.7rem;
+}
+
+.receipt-total-row.deposit {
+  background: #fffaeb;
+  padding: 0.7rem 1rem;
+  border-radius: 6px;
+  margin-top: 0.6rem;
+  color: #7a5a14;
+}
+
+.receipt-total-row.deposit strong {
+  color: var(--gold);
+  font-family: 'Fraunces', serif;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.receipt-warning {
+  margin-top: 1.6rem;
+  padding: 1rem 1.2rem;
+  border: 2px dashed var(--brown);
+  border-radius: 8px;
+  background: #fffaeb;
+}
+
+.receipt-warning strong {
+  display: block;
+  font-size: 0.85rem;
+  letter-spacing: 0.25em;
+  color: var(--brown);
+  margin-bottom: 0.4rem;
+  font-weight: 700;
+}
+
+.receipt-warning p {
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--brown);
+  margin: 0;
+}
+
+.receipt-footer {
+  margin-top: 1.8rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid #c8b89a;
+  text-align: center;
+}
+
+.receipt-contact {
+  font-weight: 700;
+  color: var(--brown);
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem 0;
+  letter-spacing: 0.05em;
+}
+
+.receipt-thanks {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  color: var(--teal-deep);
+  font-size: 1rem;
+  margin: 0;
+}
+
+@media (max-width: 600px) {
+  .printable-receipt {
+    padding: 1.5rem 1.2rem;
+  }
+  .receipt-meta {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .receipt-brand { font-size: 1.5rem; }
+  .receipt-logo img { height: 75px; }
+  .order-view-print-btn { padding: 0.55rem 1rem; font-size: 0.7rem; }
+  .order-view-bar-id { font-size: 0.8rem; }
+  .order-view-bar { padding: 0.7rem 1rem; }
+  .order-view-scroll { padding: 1.2rem 0.8rem; }
+}
+
+/* ============ PRINT STYLES ============ */
+@media print {
+  @page {
+    size: A4;
+    margin: 1.4cm;
+  }
+
+  body > *:not(.order-view) {
+    display: none !important;
+  }
+
+  .order-view {
+    display: block !important;
+    position: static !important;
+    background: white !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  .order-view-bar { display: none !important; }
+  .order-view-scroll {
+    overflow: visible !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+
+  .printable-receipt {
+    box-shadow: none !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+    background: white !important;
+    border-radius: 0 !important;
+  }
+
+  .receipt-item,
+  .receipt-totals,
+  .receipt-warning,
+  .receipt-footer {
+    page-break-inside: avoid;
+  }
+
+  html, body {
+    background: white !important;
+    color: black !important;
+  }
+}
+
 /* ============ ADICIONAIS CARDS ============ */
 .addon-card.luxo {
   background: linear-gradient(135deg, #3d2817 0%, #2D1810 100%);
@@ -1842,6 +2242,65 @@ body {
       Entendi, enviar pedido →
     </button>
     <button class="payment-cancel-btn" id="paymentCancel">Cancelar</button>
+  </div>
+</div>
+
+<!-- ============ ORDER VIEW (FOR RITA) ============ -->
+<div class="order-view" id="orderView">
+  <div class="order-view-bar">
+    <div class="order-view-bar-title">
+      <span class="order-view-badge">Pedido Recebido</span>
+      <span class="order-view-bar-id" id="orderBarId">—</span>
+    </div>
+    <div class="order-view-bar-actions">
+      <button class="order-view-print-btn" id="orderViewPrint">
+        🖨️ Imprimir
+      </button>
+      <button class="order-view-close-btn" id="orderViewClose" title="Fechar">✕</button>
+    </div>
+  </div>
+  <div class="order-view-scroll">
+    <div class="printable-receipt" id="printableReceipt">
+      <div class="receipt-header">
+        <div class="receipt-logo" id="receiptLogo"></div>
+        <h1 class="receipt-brand">Rita Bolos</h1>
+        <p class="receipt-tagline">Bolos e Sobremesas — O Tradicional está Aqui</p>
+      </div>
+
+      <div class="receipt-meta">
+        <div class="receipt-meta-row"><span>Pedido nº</span><strong id="receiptId">—</strong></div>
+        <div class="receipt-meta-row"><span>Data</span><strong id="receiptDate">—</strong></div>
+        <div class="receipt-meta-row"><span>Cliente</span><strong id="receiptCustomer">—</strong></div>
+      </div>
+
+      <h2 class="receipt-section-title">Itens do Pedido</h2>
+      <div id="receiptItems"></div>
+
+      <div class="receipt-totals">
+        <div class="receipt-total-row">
+          <span>Subtotal</span>
+          <strong id="receiptSubtotal">—</strong>
+        </div>
+        <div class="receipt-total-row final">
+          <span>Total</span>
+          <strong id="receiptTotal">—</strong>
+        </div>
+        <div class="receipt-total-row deposit">
+          <span>Sinal mínimo (50%)</span>
+          <strong id="receiptDeposit">—</strong>
+        </div>
+      </div>
+
+      <div class="receipt-warning">
+        <strong>⚠ ATENÇÃO</strong>
+        <p>O pedido só será confirmado mediante envio do comprovante de pagamento de pelo menos 50% do valor total.</p>
+      </div>
+
+      <div class="receipt-footer">
+        <p class="receipt-contact">WhatsApp: (19) 3845-1550</p>
+        <p class="receipt-thanks">Obrigada pelo seu pedido! 🎂</p>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -2351,8 +2810,18 @@ function sendOrderToWhatsapp() {
   const name = document.getElementById('customerName').value.trim();
   const subtotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
   const deposit = subtotal * 0.5;
+  const orderId = generateOrderId();
 
-  let message = `🎂 *Novo Pedido — Rita Bolos*\n\n`;
+  // Build the print link with encoded order data
+  const printUrl = buildPrintUrl({
+    id: orderId,
+    customer: name,
+    items: cart,
+    timestamp: Date.now()
+  });
+
+  let message = `🎂 *Novo Pedido — Rita Bolos*\n`;
+  message += `_Pedido nº ${orderId}_\n\n`;
   if (name) message += `*Cliente:* ${name}\n\n`;
   message += `*Itens do pedido:*\n`;
   cart.forEach((item, i) => {
@@ -2369,12 +2838,164 @@ function sendOrderToWhatsapp() {
   message += `\n━━━━━━━━━━━━━━━━━━\n`;
   message += `*Total:* ${formatPrice(subtotal)}\n`;
   message += `*Sinal mínimo (50%):* ${formatPrice(deposit)}\n\n`;
-  message += `_⚠️ Pedido só será confirmado mediante envio do comprovante de pagamento de pelo menos 50% do valor total._`;
+  message += `_⚠️ Pedido só será confirmado mediante envio do comprovante de pagamento de pelo menos 50% do valor total._\n\n`;
+  message += `━━━━━━━━━━━━━━━━━━\n`;
+  message += `🖨️ *Imprimir este pedido:*\n${printUrl}`;
 
   const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
   window.open(url, '_blank');
   closePaymentModal();
 }
+
+/* ============ ORDER ENCODING / PRINT VIEW (for Rita) ============ */
+function generateOrderId() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `RB${now.getFullYear().toString().slice(-2)}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+}
+
+// URL-safe base64 (works with UTF-8 like accented characters)
+function encodeOrderData(data) {
+  const json = JSON.stringify(data);
+  // encodeURIComponent handles UTF-8, btoa needs binary string
+  const utf8 = unescape(encodeURIComponent(json));
+  return btoa(utf8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function decodeOrderData(encoded) {
+  try {
+    let b64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+    // Pad to multiple of 4
+    while (b64.length % 4) b64 += '=';
+    const utf8 = atob(b64);
+    const json = decodeURIComponent(escape(utf8));
+    return JSON.parse(json);
+  } catch(e) {
+    console.error('Failed to decode order:', e);
+    return null;
+  }
+}
+
+function buildPrintUrl(orderData) {
+  // Use compact keys to keep URL short
+  const compact = {
+    id: orderData.id,
+    c: orderData.customer || '',
+    t: orderData.timestamp,
+    i: orderData.items.map(it => ({
+      n: it.name,
+      p: it.price,
+      q: it.qty,
+      w: it.weight || null,
+      m: it.massa || null,
+      o: it.notes || ''
+    }))
+  };
+  const encoded = encodeOrderData(compact);
+  const base = window.location.origin + window.location.pathname;
+  return `${base}#order=${encoded}`;
+}
+
+function showOrderView(orderData) {
+  // Restore item structure
+  const items = orderData.i.map(it => ({
+    name: it.n,
+    price: it.p,
+    qty: it.q,
+    weight: it.w,
+    massa: it.m,
+    notes: it.o
+  }));
+
+  const subtotal = items.reduce((s, it) => s + (it.price * it.qty), 0);
+  const deposit = subtotal * 0.5;
+
+  // Clone logo from header
+  const headerLogo = document.querySelector('.logo-img');
+  const receiptLogoContainer = document.getElementById('receiptLogo');
+  if (headerLogo && receiptLogoContainer) {
+    receiptLogoContainer.innerHTML = '';
+    const cloned = headerLogo.cloneNode(true);
+    cloned.classList.remove('logo-img');
+    receiptLogoContainer.appendChild(cloned);
+  }
+
+  // Fill meta
+  document.getElementById('orderBarId').textContent = `Nº ${orderData.id}`;
+  document.getElementById('receiptId').textContent = orderData.id;
+  document.getElementById('receiptDate').textContent = new Date(orderData.t).toLocaleString('pt-BR', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+  document.getElementById('receiptCustomer').textContent = orderData.c || '—';
+
+  // Fill items
+  const itemsHtml = items.map((item, i) => {
+    const nameWithWeight = item.weight ? `${item.name} (${item.weight}kg)` : item.name;
+    let detailsHtml = '';
+    if (item.massa) {
+      detailsHtml += `<div class="receipt-item-detail"><strong>Massa:</strong> ${item.massa}</div>`;
+    }
+    detailsHtml += `<div class="receipt-item-detail">Quantidade: ${item.qty} × ${formatPrice(item.price)}</div>`;
+    if (item.notes && item.notes.trim()) {
+      detailsHtml += `<div class="receipt-item-detail"><strong>Observações:</strong> ${escapeHtml(item.notes.trim())}</div>`;
+    }
+    return `
+      <div class="receipt-item">
+        <div class="receipt-item-header">
+          <span class="item-name">${i + 1}. ${escapeHtml(nameWithWeight)}</span>
+          <span class="item-total">${formatPrice(item.qty * item.price)}</span>
+        </div>
+        ${detailsHtml}
+      </div>
+    `;
+  }).join('');
+  document.getElementById('receiptItems').innerHTML = itemsHtml;
+
+  // Fill totals
+  document.getElementById('receiptSubtotal').textContent = formatPrice(subtotal);
+  document.getElementById('receiptTotal').textContent = formatPrice(subtotal);
+  document.getElementById('receiptDeposit').textContent = formatPrice(deposit);
+
+  // Show overlay, prevent scroll behind
+  document.getElementById('orderView').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeOrderView() {
+  document.getElementById('orderView').classList.remove('open');
+  document.body.style.overflow = '';
+  // Clean URL hash so reload shows menu
+  if (window.location.hash.startsWith('#order=')) {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+document.getElementById('orderViewPrint').addEventListener('click', () => window.print());
+document.getElementById('orderViewClose').addEventListener('click', closeOrderView);
+
+// Check URL on load for order data
+function checkUrlForOrder() {
+  const hash = window.location.hash;
+  if (hash.startsWith('#order=')) {
+    const encoded = hash.substring(7);
+    const orderData = decodeOrderData(encoded);
+    if (orderData && orderData.i && Array.isArray(orderData.i)) {
+      showOrderView(orderData);
+    }
+  }
+}
+// React to back-forward changes too
+window.addEventListener('hashchange', checkUrlForOrder);
 
 document.getElementById('sendWhatsapp').addEventListener('click', openPaymentModal);
 document.getElementById('paymentConfirm').addEventListener('click', sendOrderToWhatsapp);
@@ -2552,6 +3173,7 @@ renderCategory('bolopote', 'bolopote-content');
 renderCategory('adicionais', 'adicionais-content');
 renderPromocoes();
 updateCartCount();
+checkUrlForOrder();
 </script>
 
 </body>
