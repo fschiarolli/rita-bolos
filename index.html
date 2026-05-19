@@ -1028,9 +1028,17 @@ body {
   z-index: 250;
   backdrop-filter: blur(6px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: 1rem;
+  padding: 2rem 1rem;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (min-height: 700px) {
+  .modal-overlay {
+    align-items: center;
+  }
 }
 
 .modal-overlay.open {
@@ -1043,13 +1051,12 @@ body {
   border-radius: 18px;
   width: 100%;
   max-width: 460px;
-  max-height: 90vh;
-  overflow-y: auto;
   padding: 2rem;
   position: relative;
   transform: scale(0.95);
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: var(--shadow-lg);
+  margin: auto 0;
 }
 
 .modal-overlay.open .modal {
@@ -1378,6 +1385,20 @@ body {
   font-style: italic;
 }
 
+.second-flavor-hint.hint-active {
+  font-style: normal;
+  color: var(--teal-deep);
+  background: rgba(125, 196, 176, 0.12);
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  border-left: 3px solid var(--teal-deep);
+}
+
+.second-flavor-hint.hint-active strong {
+  color: var(--teal-deep);
+  font-weight: 700;
+}
+
 .modal-qty-row {
   display: flex;
   justify-content: space-between;
@@ -1613,13 +1634,14 @@ body {
 
 .pickup-grid {
   display: grid;
-  grid-template-columns: 1.4fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 0.6rem;
 }
 
 .pickup-field {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .pickup-label {
@@ -1632,6 +1654,9 @@ body {
 }
 
 .pickup-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
   padding: 0.65rem 0.7rem;
   border: 1.5px solid rgba(45, 24, 16, 0.18);
   border-radius: 8px;
@@ -1642,6 +1667,8 @@ body {
   cursor: pointer;
   font-weight: 500;
   transition: border-color 0.2s;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .pickup-input:focus {
@@ -1652,6 +1679,24 @@ body {
 .pickup-input::-webkit-calendar-picker-indicator {
   cursor: pointer;
   opacity: 0.7;
+  margin-left: 0.3rem;
+}
+
+/* iOS-specific fixes for date/time inputs */
+.pickup-input::-webkit-date-and-time-value {
+  text-align: left;
+  min-height: 1.2em;
+}
+
+@media (max-width: 420px) {
+  .pickup-grid {
+    grid-template-columns: 1fr;
+    gap: 0.7rem;
+  }
+  .pickup-input {
+    font-size: 0.95rem;
+    padding: 0.75rem 0.7rem;
+  }
 }
 
 /* ============ ORDER VIEW OVERLAY (FOR RITA) ============ */
@@ -2864,8 +2909,16 @@ function renderCategory(catKey, containerId) {
               onclick = `addToCart(${JSON.stringify({name: item.name, price: item.price, askFlavor: item.askFlavor || false}).replace(/'/g, "&#39;")})`;
             }
 
-            // Price label
-            const priceLabel = catKey === 'bolos' ? '1kg • a partir de' : 'preço';
+            // Price label and display for bolos (showing 1.5kg minimum price)
+            let priceLabel;
+            let displayPrice;
+            if (catKey === 'bolos') {
+              priceLabel = '1,5kg • a partir de';
+              displayPrice = item.price * 1.5;
+            } else {
+              priceLabel = 'preço';
+              displayPrice = item.price;
+            }
 
             return `
               <div class="${cardClass}">
@@ -2877,7 +2930,7 @@ function renderCategory(catKey, containerId) {
                 <div class="product-footer">
                   <div>
                     <div class="product-price-label">${priceLabel}</div>
-                    <div class="product-price">${formatPrice(item.price)}</div>
+                    <div class="product-price">${formatPrice(displayPrice)}</div>
                   </div>
                   <button class="add-btn" onclick='${onclick}'>+</button>
                 </div>
@@ -3348,9 +3401,10 @@ document.getElementById('paymentModal').addEventListener('click', (e) => {
 });
 
 /* ============ CAKE MODAL ============ */
-// Cake weight options (in kg) — minimum 1kg in 500g increments
-const WEIGHT_OPTIONS = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0];
-const BASE_WEIGHT = 1.0; // base weight that the menu prices refer to
+// Cake weight options (in kg) — minimum 1.5kg in 500g increments
+const WEIGHT_OPTIONS = [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0];
+const MIN_WEIGHT = 1.5;
+const BASE_WEIGHT = 1.0; // menu prices are per 1kg
 const MASSA_OPTIONS = [
   { value: 'branca', label: 'Massa Branca', desc: 'Baunilha tradicional' },
   { value: 'preta', label: 'Massa Preta', desc: 'Chocolate' }
@@ -3359,10 +3413,10 @@ const MASSA_OPTIONS = [
 let modalState = {
   productName: '',
   basePrice: 0,
-  selectedWeight: 1.0,
+  selectedWeight: MIN_WEIGHT,
   selectedMassa: 'branca',
   qty: 1,
-  secondFlavor: null,    // { name, price }
+  secondFlavor: null,
   secondFlavorEnabled: false
 };
 
@@ -3384,7 +3438,7 @@ function calculateCakePrice(basePrice, weight) {
 function openCakeModal(item) {
   modalState.productName = item.name;
   modalState.basePrice = item.basePrice;
-  modalState.selectedWeight = 1.0;
+  modalState.selectedWeight = MIN_WEIGHT;
   modalState.selectedMassa = 'branca';
   modalState.qty = 1;
   modalState.secondFlavor = null;
@@ -3396,13 +3450,14 @@ function openCakeModal(item) {
   document.getElementById('secondFlavorToggle').checked = false;
   document.getElementById('secondFlavorSelectWrap').classList.remove('open');
   document.getElementById('secondFlavorSelect').value = '';
+  updateSecondFlavorHint();
 
   // Render weight grid
   const grid = document.getElementById('weightGrid');
   grid.innerHTML = WEIGHT_OPTIONS.map(w => {
     const price = calculateCakePrice(item.basePrice, w);
     return `
-      <button type="button" class="weight-option ${w === 1.0 ? 'selected' : ''}" data-weight="${w}">
+      <button type="button" class="weight-option ${w === MIN_WEIGHT ? 'selected' : ''}" data-weight="${w}">
         <span class="weight-value">${w.toFixed(1).replace('.', ',')}kg</span>
         <span class="weight-price">${formatPrice(price)}</span>
       </button>
@@ -3529,6 +3584,7 @@ document.getElementById('secondFlavorToggle').addEventListener('change', (e) => 
     modalState.secondFlavor = null;
     document.getElementById('secondFlavorSelect').value = '';
   }
+  updateSecondFlavorHint();
   refreshWeightPrices();
   updateModalTotal();
 });
@@ -3541,9 +3597,30 @@ document.getElementById('secondFlavorSelect').addEventListener('change', (e) => 
   } else {
     modalState.secondFlavor = null;
   }
+  updateSecondFlavorHint();
   refreshWeightPrices();
   updateModalTotal();
 });
+
+function updateSecondFlavorHint() {
+  const hint = document.getElementById('secondFlavorHint');
+  if (!hint) return;
+  if (!modalState.secondFlavorEnabled || !modalState.secondFlavor) {
+    hint.innerHTML = 'Quando há 2 recheios, prevalece o valor do recheio mais caro.';
+    hint.classList.remove('hint-active');
+    return;
+  }
+  const p1 = modalState.basePrice;
+  const p2 = modalState.secondFlavor.price;
+  const winner = p1 >= p2 ? modalState.productName : modalState.secondFlavor.name;
+  const winningPrice = Math.max(p1, p2);
+  if (p1 === p2) {
+    hint.innerHTML = `✓ Os 2 recheios têm o mesmo valor: <strong>${formatPrice(winningPrice)}/kg</strong>`;
+  } else {
+    hint.innerHTML = `✓ Aplicando o valor mais alto: <strong>${formatPrice(winningPrice)}/kg</strong> <span style="opacity:0.7;">(${winner})</span>`;
+  }
+  hint.classList.add('hint-active');
+}
 
 document.getElementById('modalAddBtn').addEventListener('click', () => {
   const unitPrice = getEffectiveUnitPrice();
