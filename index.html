@@ -2269,6 +2269,7 @@ body {
       <button class="nav-item" data-target="docinhos">Docinhos</button>
       <button class="nav-item" data-target="bolopote">Bolo no Pote</button>
       <button class="nav-item" data-target="adicionais">Adicionais</button>
+      <button class="nav-item" data-target="bebidas">Bebidas</button>
       <button class="nav-item" data-target="promocoes">Promoções</button>
       <button class="cart-btn" id="openCart">
         Carrinho <span class="cart-count" id="cartCount">0</span>
@@ -2285,6 +2286,7 @@ body {
     <button class="nav-item" data-target="docinhos">Docinhos</button>
     <button class="nav-item" data-target="bolopote">Bolo no Pote</button>
     <button class="nav-item" data-target="adicionais">Adicionais</button>
+    <button class="nav-item" data-target="bebidas">Bebidas</button>
     <button class="nav-item" data-target="promocoes">Promoções</button>
   </div>
 </nav>
@@ -2362,6 +2364,17 @@ body {
     <p class="section-subtitle">Topos, velas e confetes para completar sua decoração. Combine como quiser.</p>
   </div>
   <div id="adicionais-content"></div>
+</section>
+
+<!-- ============ BEBIDAS ============ -->
+<section class="section" id="bebidas">
+  <div class="section-header fade-in">
+    <div class="section-eyebrow">Para acompanhar</div>
+    <h2 class="section-title">Bebidas</h2>
+    <div class="section-divider"><span></span><span></span><span></span></div>
+    <p class="section-subtitle">Refrigerantes geladinhos para sua festa.</p>
+  </div>
+  <div id="bebidas-content"></div>
 </section>
 
 <!-- ============ PROMOÇÕES ============ -->
@@ -2850,11 +2863,9 @@ const menuData = {
     {
       title: 'Velas',
       icon: '🕯️',
-      info: 'Velas para completar o momento de soprar.',
+      info: 'Vela tradicional para o momento de soprar.',
       items: [
-        { name: 'Vela Numérica', price: 8, desc: 'Vela com número da idade (informe o número nas observações).' },
-        { name: 'Velas Coloridas (jogo)', price: 10, desc: 'Conjunto de velas finas coloridas.' },
-        { name: 'Vela Personalizada', price: 25, desc: 'Vela temática combinando com o topo do bolo.' }
+        { name: 'Vela', price: 5, desc: 'Vela tradicional para colocar no bolo.' }
       ]
     },
     {
@@ -2866,8 +2877,32 @@ const menuData = {
         { name: 'Confetes Metalizados', price: 15, desc: 'Confetes metalizados dourados ou prateados.' },
         { name: 'Kit Decoração Completa', price: 50, desc: 'Confetes + velas + topper simples em um pacote especial.' }
       ]
+    },
+    {
+      title: 'Acessórios para Festa',
+      icon: '🎈',
+      info: 'Itens descartáveis para complementar sua festa.',
+      items: [
+        { name: 'Guardanapo de Papel', price: 5, desc: 'Pacote de guardanapos de papel para festa.' },
+        { name: 'Garfinho (pacote 50 un)', price: 5, desc: 'Pacote com 50 garfinhos descartáveis.' },
+        { name: 'Copo Descartável (100 un)', price: 5.5, desc: 'Pacote com 100 copos descartáveis.' },
+        { name: 'Pratinho (pacote 10 un)', price: 5, desc: 'Pacote com 10 pratinhos descartáveis.' }
+      ]
     }
-  ]
+  ],
+  bebidas: [
+    {
+      title: 'Refrigerantes 2L',
+      icon: '🥤',
+      info: 'Acompanhamento perfeito para o seu pedido.',
+      items: [
+        { name: 'Coca-Cola 2L', price: 12, desc: 'Refrigerante Coca-Cola tradicional, garrafa 2 litros.' },
+        { name: 'Coca-Cola Zero 2L', price: 12, desc: 'Refrigerante Coca-Cola Zero açúcar, garrafa 2 litros.' },
+        { name: 'Guaraná Antártica 2L', price: 12, desc: 'Refrigerante Guaraná Antártica, garrafa 2 litros.' },
+        { name: 'Fanta Laranja 2L', price: 12, desc: 'Refrigerante Fanta sabor laranja, garrafa 2 litros.' }
+      ]
+    }
+  ],
 };
 
 /* ============ ESTADO ============ */
@@ -3194,31 +3229,31 @@ function sendOrderToWhatsapp() {
     pickupTime: pickupTime
   });
 
-  let message = `🎂 *Novo Pedido — Rita Bolos*\n`;
+  let message = `*NOVO PEDIDO — RITA BOLOS*\n`;
   message += `_Pedido nº ${orderId}_\n\n`;
   message += `*Cliente:* ${name}\n`;
-  message += `📅 *Retirada:* ${pickupDisplay}\n\n`;
+  message += `*Retirada:* ${pickupDisplay}\n\n`;
   message += `*Itens do pedido:*\n`;
   cart.forEach((item, i) => {
     const nameWithWeight = item.weight ? `${item.name} (${item.weight}kg)` : item.name;
     message += `\n${i + 1}. *${nameWithWeight}*\n`;
     if (item.massa) {
-      message += `   🎂 _Massa:_ ${item.massa}\n`;
+      message += `   _Massa:_ ${item.massa}\n`;
     }
     if (item.secondFlavor) {
-      message += `   ➕ _2º recheio:_ ${item.secondFlavor}\n`;
+      message += `   _2º recheio:_ ${item.secondFlavor}\n`;
     }
-    message += `   Qtd: ${item.qty} × ${formatPrice(item.price)} = ${formatPrice(item.qty * item.price)}\n`;
+    message += `   Qtd: ${item.qty} x ${formatPrice(item.price)} = ${formatPrice(item.qty * item.price)}\n`;
     if (item.notes && item.notes.trim()) {
-      message += `   📝 _Obs:_ ${item.notes.trim()}\n`;
+      message += `   _Obs:_ ${item.notes.trim()}\n`;
     }
   });
-  message += `\n━━━━━━━━━━━━━━━━━━\n`;
+  message += `\n----------------------------\n`;
   message += `*Total:* ${formatPrice(subtotal)}\n`;
   message += `*Sinal mínimo (50%):* ${formatPrice(deposit)}\n\n`;
-  message += `_⚠️ Pedido só será confirmado mediante envio do comprovante de pagamento de pelo menos 50% do valor total._\n\n`;
-  message += `━━━━━━━━━━━━━━━━━━\n`;
-  message += `🖨️ *Imprimir este pedido:*\n${printUrl}`;
+  message += `*ATENÇÃO:* Pedido só será confirmado mediante envio do comprovante de pagamento de pelo menos 50% do valor total.\n\n`;
+  message += `----------------------------\n`;
+  message += `*IMPRIMIR ESTE PEDIDO:*\n${printUrl}`;
 
   const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
   window.open(url, '_blank');
@@ -3656,7 +3691,7 @@ document.querySelectorAll('.nav-item').forEach(btn => {
 });
 
 /* ============ SCROLL SPY ============ */
-const sections = ['bolos', 'salgados', 'docinhos', 'bolopote', 'adicionais', 'promocoes'];
+const sections = ['bolos', 'salgados', 'docinhos', 'bolopote', 'adicionais', 'bebidas', 'promocoes'];
 const navItems = document.querySelectorAll('.nav-item[data-target]');
 
 window.addEventListener('scroll', () => {
@@ -3686,6 +3721,7 @@ renderCategory('salgados', 'salgados-content');
 renderCategory('docinhos', 'docinhos-content');
 renderCategory('bolopote', 'bolopote-content');
 renderCategory('adicionais', 'adicionais-content');
+renderCategory('bebidas', 'bebidas-content');
 renderPromocoes();
 updateCartCount();
 checkUrlForOrder();
