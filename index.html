@@ -131,6 +131,24 @@ body {
   background: var(--teal-deep);
 }
 
+.nav-item-external {
+  text-decoration: none;
+  color: var(--gold) !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  position: relative;
+  font-weight: 600 !important;
+}
+
+.nav-item-external:hover {
+  color: var(--brown) !important;
+}
+
+.nav-item-external::after {
+  display: none !important;
+}
+
 .cart-btn {
   background: var(--brown);
   color: var(--off-white);
@@ -2212,6 +2230,16 @@ body {
 
 .mobile-nav .nav-item.active::after { display: none; }
 
+.mobile-nav .nav-item-external {
+  background: var(--gold) !important;
+  color: var(--brown) !important;
+}
+
+.mobile-nav .nav-item-external:hover {
+  background: var(--brown) !important;
+  color: var(--cream-light) !important;
+}
+
 @media (max-width: 900px) {
   .mobile-nav { display: block; }
 }
@@ -2234,6 +2262,7 @@ body {
       <button class="nav-item" data-target="adicionais">Adicionais</button>
       <button class="nav-item" data-target="bebidas">Bebidas</button>
       <button class="nav-item" data-target="promocoes">Promoções</button>
+      <a href="sacolinhas.html" class="nav-item nav-item-external" title="Sacolinha Surpresa — Ela Papel Atêlie">Sacolinhas ✦</a>
       <button class="cart-btn" id="openCart">
         Carrinho <span class="cart-count" id="cartCount">0</span>
       </button>
@@ -2251,6 +2280,7 @@ body {
     <button class="nav-item" data-target="adicionais">Adicionais</button>
     <button class="nav-item" data-target="bebidas">Bebidas</button>
     <button class="nav-item" data-target="promocoes">Promoções</button>
+    <a href="sacolinhas.html" class="nav-item nav-item-external">Sacolinhas ✦</a>
   </div>
 </nav>
 
