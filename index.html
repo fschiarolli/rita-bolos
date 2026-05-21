@@ -489,6 +489,22 @@ body {
   gap: 1.2rem;
 }
 
+.promo-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.promo-disclaimer {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 0.72rem;
+  color: var(--brown-soft);
+  opacity: 0.7;
+  text-align: center;
+  letter-spacing: 0.01em;
+}
+
 .promo-card {
   display: block;
   width: 100%;
@@ -2233,6 +2249,15 @@ body {
   gap: 0.45rem;
 }
 
+.bolo-section-info {
+  font-size: 0.85rem;
+  color: var(--brown-soft);
+  margin-bottom: 1.2rem;
+  opacity: 0.85;
+  max-width: 720px;
+  line-height: 1.55;
+}
+
 .bolo-row {
   display: flex;
   justify-content: space-between;
@@ -2255,14 +2280,55 @@ body {
   transform: translateY(-1px);
 }
 
+.bolo-row-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
 .bolo-row-name {
   font-family: 'Fraunces', serif;
   font-size: 1.05rem;
   font-weight: 500;
   color: var(--brown);
   line-height: 1.3;
-  flex: 1;
   letter-spacing: -0.005em;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.bolo-row-desc {
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.78rem;
+  color: var(--brown-soft);
+  line-height: 1.4;
+  opacity: 0.9;
+}
+
+.bolo-row-tier {
+  display: inline-block;
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.18rem 0.55rem;
+  border-radius: 100px;
+  flex-shrink: 0;
+}
+
+.bolo-row-tier.semi-luxo {
+  background: var(--cream-deep);
+  color: var(--brown);
+}
+
+.bolo-row-tier.luxo {
+  background: linear-gradient(135deg, var(--gold), #d9b870);
+  color: var(--brown);
 }
 
 .bolo-row-meta {
@@ -2315,13 +2381,16 @@ body {
 @media (max-width: 600px) {
   .bolo-row { padding: 0.75rem 1rem; }
   .bolo-row-name { font-size: 0.95rem; }
+  .bolo-row-desc { font-size: 0.72rem; }
   .bolo-row-price { font-size: 0.78rem; }
   .bolo-row-price small { font-size: 0.55rem; }
   .bolo-row-meta { gap: 0.6rem; }
   .bolo-section-title { font-size: 1.2rem; }
+  .bolo-section-info { font-size: 0.78rem; }
   .bolo-tabs-wrap { margin: 0 -1.2rem 1.2rem; }
   .bolo-tabs { padding: 0 1.2rem; }
   .bolo-tab { font-size: 0.72rem; padding: 0.45rem 0.95rem; }
+  .bolo-row-tier { font-size: 0.55rem; padding: 0.15rem 0.45rem; }
 }
 
 /* ============ POTE CAROUSEL (visual showcase) ============ */
@@ -2385,6 +2454,16 @@ body {
   line-height: 1.3;
   letter-spacing: -0.005em;
   max-width: 200px;
+}
+
+.pote-card-disclaimer {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 0.68rem;
+  color: var(--brown-soft);
+  opacity: 0.65;
+  margin-top: 0.4rem;
+  letter-spacing: 0.01em;
 }
 
 .pote-arrow {
@@ -2453,7 +2532,9 @@ body {
   .pote-card { flex-basis: 180px; }
   .pote-card-image { width: 140px; height: 140px; }
   .pote-card-name { font-size: 0.88rem; }
+  .pote-card-disclaimer { font-size: 0.62rem; margin-top: 0.3rem; }
   .pote-carousel { margin: 0 -1.2rem 0.5rem; padding: 0 1.2rem; }
+  .promo-disclaimer { font-size: 0.68rem; }
 }
 
 /* ============ FADE-IN ANIMATIONS ============ */
@@ -3291,49 +3372,59 @@ function renderCategory(catKey, containerId) {
   container.innerHTML = html;
 }
 
-function renderBolosCompact() {
-  const container = document.getElementById('bolos-content');
-  const subcategories = menuData.bolos;
+function buildCompactRow(item, catKey) {
+  const isCake = catKey === 'bolos';
+  const displayPrice = isCake ? item.price * 1.5 : item.price;
 
-  const tabsHtml = subcategories.map((sub, i) => `
-    <button class="bolo-tab ${i === 0 ? 'active' : ''}" data-target="bolo-sub-${i}">${sub.icon} ${sub.title}</button>
-  `).join('');
+  // Display name: strip "Bolo no Pote — " prefix for cleaner reading
+  let displayName = item.name;
+  if (catKey === 'bolopote' && item.name.includes(' — ')) {
+    displayName = item.name.split(' — ').slice(1).join(' — ');
+  }
 
-  const sectionsHtml = subcategories.map((sub, i) => {
-    const rowsHtml = sub.items.map(item => {
-      const displayPrice = item.price * 1.5;
-      const payload = JSON.stringify({ name: item.name, basePrice: item.price }).replace(/'/g, "&#39;");
-      return `
-        <button type="button" class="bolo-row" onclick='openCakeModal(${payload})' aria-label="Personalizar ${item.name}">
-          <span class="bolo-row-name">${item.name}</span>
-          <span class="bolo-row-meta">
-            <span class="bolo-row-price"><small>1,5kg • a partir de</small>${formatPrice(displayPrice)}</span>
-            <span class="bolo-row-add" aria-hidden="true">+</span>
-          </span>
-        </button>
-      `;
-    }).join('');
-    return `
-      <div class="bolo-section" id="bolo-sub-${i}">
-        <h3 class="bolo-section-title"><span class="icon">${sub.icon}</span> Bolos de ${sub.title}</h3>
-        <div class="bolo-rows">${rowsHtml}</div>
-      </div>
-    `;
-  }).join('');
+  let onclick;
+  if (isCake) {
+    onclick = `openCakeModal(${JSON.stringify({name: item.name, basePrice: item.price}).replace(/'/g, "&#39;")})`;
+  } else {
+    onclick = `addToCart(${JSON.stringify({name: item.name, price: item.price, askFlavor: item.askFlavor || false}).replace(/'/g, "&#39;")})`;
+  }
 
-  container.innerHTML = `
-    <div class="bolo-tabs-wrap"><div class="bolo-tabs">${tabsHtml}</div></div>
-    ${sectionsHtml}
+  // Tier badge (only for adicionais; basico = no badge)
+  let tierBadge = '';
+  if (item.tier === 'luxo') tierBadge = `<span class="bolo-row-tier luxo">✨ Luxo</span>`;
+  else if (item.tier === 'semi-luxo') tierBadge = `<span class="bolo-row-tier semi-luxo">Semi Luxo</span>`;
+
+  const descHtml = item.desc ? `<span class="bolo-row-desc">${item.desc}</span>` : '';
+
+  const priceHtml = isCake
+    ? `<small>1,5kg • a partir de</small>${formatPrice(displayPrice)}`
+    : formatPrice(displayPrice);
+
+  return `
+    <button type="button" class="bolo-row" onclick='${onclick}' aria-label="${item.name}">
+      <span class="bolo-row-content">
+        <span class="bolo-row-name">${displayName}${tierBadge}</span>
+        ${descHtml}
+      </span>
+      <span class="bolo-row-meta">
+        <span class="bolo-row-price">${priceHtml}</span>
+        <span class="bolo-row-add" aria-hidden="true">+</span>
+      </span>
+    </button>
   `;
+}
 
-  // Tab clicks → smooth scroll to subcategory
+function wireUpCompactTabs(container) {
   const tabs = container.querySelectorAll('.bolo-tab');
   const tabsWrap = container.querySelector('.bolo-tabs-wrap');
+  const tabsScroller = container.querySelector('.bolo-tabs');
+  const sections = container.querySelectorAll('.bolo-section');
+  if (!tabs.length || !tabsWrap) return;
+
   tabs.forEach(tab => {
     tab.addEventListener('click', () => {
-      const target = document.getElementById(tab.dataset.target);
+      const target = container.querySelector('#' + tab.dataset.target);
       if (!target) return;
-      // Offset = header (73) + mobile-nav if visible (~52) + tabs (~50) + small margin
       const isMobile = window.innerWidth <= 900;
       const offset = isMobile ? 195 : 145;
       const top = target.getBoundingClientRect().top + window.scrollY - offset;
@@ -3341,21 +3432,20 @@ function renderBolosCompact() {
     });
   });
 
-  // Scroll spy → highlight active tab
-  const sections = container.querySelectorAll('.bolo-section');
   let activeIdx = 0;
   const updateActive = () => {
-    const tabsTop = tabsWrap.getBoundingClientRect().bottom + 20;
+    const tabsRect = tabsWrap.getBoundingClientRect();
+    // Only update if these tabs are currently in view
+    if (tabsRect.bottom < 0 || tabsRect.top > window.innerHeight) return;
+    const threshold = tabsRect.bottom + 20;
     let newIdx = 0;
     sections.forEach((s, i) => {
-      if (s.getBoundingClientRect().top <= tabsTop) newIdx = i;
+      if (s.getBoundingClientRect().top <= threshold) newIdx = i;
     });
     if (newIdx !== activeIdx) {
       activeIdx = newIdx;
       tabs.forEach((t, i) => t.classList.toggle('active', i === newIdx));
-      // Scroll active tab into view in the tabs strip
       const activeTab = tabs[newIdx];
-      const tabsScroller = container.querySelector('.bolo-tabs');
       if (activeTab && tabsScroller) {
         const tabRect = activeTab.getBoundingClientRect();
         const scrollerRect = tabsScroller.getBoundingClientRect();
@@ -3369,14 +3459,50 @@ function renderBolosCompact() {
     }
   };
 
-  let scrollTimer = null;
+  let rafId = null;
   window.addEventListener('scroll', () => {
-    if (scrollTimer) return;
-    scrollTimer = requestAnimationFrame(() => {
+    if (rafId) return;
+    rafId = requestAnimationFrame(() => {
       updateActive();
-      scrollTimer = null;
+      rafId = null;
     });
   }, { passive: true });
+}
+
+function renderCategoryCompact(catKey, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const subcategories = menuData[catKey];
+  if (!subcategories || !subcategories.length) return;
+
+  const hasMultipleSubcats = subcategories.length > 1;
+
+  const tabsHtml = hasMultipleSubcats ? `
+    <div class="bolo-tabs-wrap"><div class="bolo-tabs">
+      ${subcategories.map((sub, i) => `
+        <button class="bolo-tab ${i === 0 ? 'active' : ''}" data-target="${catKey}-sub-${i}">${sub.icon} ${sub.title}</button>
+      `).join('')}
+    </div></div>
+  ` : '';
+
+  const sectionsHtml = subcategories.map((sub, i) => {
+    const rowsHtml = sub.items.map(item => buildCompactRow(item, catKey)).join('');
+    const titleHtml = hasMultipleSubcats
+      ? `<h3 class="bolo-section-title"><span class="icon">${sub.icon}</span> ${sub.title}</h3>`
+      : '';
+    const infoHtml = sub.info ? `<p class="bolo-section-info">${sub.info}</p>` : '';
+    return `
+      <div class="bolo-section" id="${catKey}-sub-${i}">
+        ${titleHtml}
+        ${infoHtml}
+        <div class="bolo-rows">${rowsHtml}</div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = tabsHtml + sectionsHtml;
+
+  if (hasMultipleSubcats) wireUpCompactTabs(container);
 }
 
 function renderPromocoes() {
@@ -3387,9 +3513,12 @@ function renderPromocoes() {
       ${items.map(promo => {
         const safeName = promo.name.replace(/'/g, "&#39;");
         return `
-          <button type="button" class="promo-card" onclick='addToCart(${JSON.stringify({name: promo.name, price: promo.price}).replace(/'/g, "&#39;")})' aria-label="Adicionar ${safeName} ao carrinho">
-            <img class="promo-image" src="${promo.image}" alt="${safeName} — ${formatPrice(promo.price)}" loading="lazy">
-          </button>
+          <div class="promo-item">
+            <button type="button" class="promo-card" onclick='addToCart(${JSON.stringify({name: promo.name, price: promo.price}).replace(/'/g, "&#39;")})' aria-label="Adicionar ${safeName} ao carrinho">
+              <img class="promo-image" src="${promo.image}" alt="${safeName} — ${formatPrice(promo.price)}" loading="lazy">
+            </button>
+            <small class="promo-disclaimer">*Imagem meramente ilustrativa</small>
+          </div>
         `;
       }).join('')}
     </div>
@@ -3407,6 +3536,7 @@ function renderBoloPoteCarousel() {
         <img src="${item.image}" alt="${item.name}" loading="lazy">
       </div>
       <h4 class="pote-card-name">${item.name}</h4>
+      <small class="pote-card-disclaimer">*Imagem meramente ilustrativa</small>
     </div>
   `).join('');
 
@@ -4180,13 +4310,13 @@ const observer = new IntersectionObserver((entries) => {
 document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
 
 /* ============ INIT ============ */
-renderBolosCompact();
-renderCategory('salgados', 'salgados-content');
-renderCategory('docinhos', 'docinhos-content');
+renderCategoryCompact('bolos', 'bolos-content');
+renderCategoryCompact('salgados', 'salgados-content');
+renderCategoryCompact('docinhos', 'docinhos-content');
 renderBoloPoteCarousel();
-renderCategory('bolopote', 'bolopote-content');
-renderCategory('adicionais', 'adicionais-content');
-renderCategory('bebidas', 'bebidas-content');
+renderCategoryCompact('bolopote', 'bolopote-content');
+renderCategoryCompact('adicionais', 'adicionais-content');
+renderCategoryCompact('bebidas', 'bebidas-content');
 renderPromocoes();
 updateCartCount();
 checkUrlForOrder();
