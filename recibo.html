@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Recibo do pedido — Rita Bolos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+/*
+  Recibo imprimível do pedido.
+    recibo.html?t=TOKEN   -> link enviado no WhatsApp (cliente e Rita)
+    recibo.html?id=UUID   -> aberto pelo backoffice (precisa estar logado)
+    recibo.html?demo=1    -> exemplo, sem precisar do banco
+*/
+:root {
+  --font-display: 'DM Serif Display', Georgia, 'Times New Roman', serif;
+  --font-ui: 'Nunito', ui-rounded, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --bg: #FBF4EC; --paper: #FFFFFF; --ink: #3A1F14; --ink-2: #6E4B3A; --line: rgba(58,31,20,.14);
+  --teal: #2B7465; --mint-50: #E8F4EF; --rose-50: #FDEEF1; --rose-600: #B9476A; --warm-50: #FFF1DE; --cocoa: #4A2A1C;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #1E130E; }
+}
+:root[data-theme="dark"] { --bg: #1E130E; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: var(--font-ui); color: var(--ink); background: var(--bg);
+  -webkit-font-smoothing: antialiased; min-height: 100vh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+button, select { font: inherit; }
+
+/* Barra de ações (não sai na impressão) */
+.barra {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px;
+  background: #3A1F14; color: #FBF4EC;
+}
+.barra .titulo { font-weight: 800; flex: 1; min-width: 140px; }
+.barra .titulo small { display: block; font-weight: 600; opacity: .75; font-size: 12.5px; }
+.seg { display: inline-flex; background: rgba(255,255,255,.12); border-radius: 999px; padding: 3px; }
+.seg button { border: 0; background: transparent; color: #FBF4EC; min-height: 38px; padding: 0 14px; border-radius: 999px; font-weight: 800; font-size: 13.5px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: #FBF4EC; color: #3A1F14; }
+.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 700; cursor: pointer; }
+.chk input { width: 18px; height: 18px; accent-color: #7DC4B0; }
+.btn-imprimir { border: 0; min-height: 44px; padding: 0 18px; border-radius: 999px; background: #F7C6D2; color: #3A1F14; font-weight: 900; font-size: 15px; cursor: pointer; }
+.btn-imprimir:focus-visible, .seg button:focus-visible { outline: 3px solid #E890A8; outline-offset: 2px; }
+
+/* Folha */
+.area { padding: 20px 14px 40px; }
+.recibo {
+  max-width: 720px; margin: 0 auto; background: var(--paper); color: var(--ink);
+  border-radius: 16px; padding: 30px 28px; box-shadow: 0 8px 30px rgba(58,31,20,.10);
+}
+.cab { text-align: center; padding-bottom: 14px; border-bottom: 2px solid var(--ink); }
+.cab img { height: 92px; width: auto; display: inline-block; }
+.cab h1 { font-family: var(--font-display); font-weight: 400; font-size: 30px; color: var(--teal); margin: 6px 0 0; }
+.cab p { margin: 4px 0 0; font-size: 13px; font-weight: 700; color: var(--ink-2); }
+
+.meta { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 20px; margin: 18px 0; padding: 12px 16px; background: #F7EFE4; border-radius: 12px; }
+.meta div { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px dotted #C8B89A; font-size: 14px; }
+.meta div:last-child { border-bottom: 0; }
+.meta span { color: var(--ink-2); font-weight: 700; }
+.meta strong { text-align: right; font-weight: 800; }
+.meta .retirada { grid-column: 1 / -1; background: #BFE3D6; border-radius: 8px; padding: 8px 10px; margin-top: 4px; border: 0; }
+.meta .retirada strong { color: var(--teal); }
+.meta .selo, .selo { display: inline-block; padding: 3px 10px; border-radius: 999px; color: #fff; font-size: 12.5px; font-weight: 800; }
+
+h2 { font-family: var(--font-display); font-weight: 400; font-size: 20px; margin: 0 0 6px; padding-bottom: 6px; border-bottom: 1px solid var(--ink); }
+.item { padding: 11px 0; border-bottom: 1px dashed #C8B89A; break-inside: avoid; }
+.item-l { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; font-size: 15.5px; }
+.item-l b { font-weight: 800; }
+.item-l .v { font-weight: 900; color: var(--teal); white-space: nowrap; }
+.det { font-size: 13.5px; color: var(--ink-2); margin: 3px 0 0 18px; line-height: 1.5; }
+.det strong { color: var(--ink); }
+
+.totais { margin-top: 18px; padding-top: 12px; border-top: 2px solid var(--ink); }
+.t { display: flex; justify-content: space-between; padding: 4px 0; font-size: 15px; }
+.t.total { font-size: 22px; font-weight: 900; color: var(--teal); border-top: 1px solid #C8B89A; margin-top: 6px; padding-top: 10px; }
+.t.sinal { background: var(--rose-50); color: #8A2E4C; font-weight: 800; padding: 9px 12px; border-radius: 10px; margin-top: 8px; }
+.t.saldo { font-weight: 800; }
+
+.bloco { margin-top: 18px; padding: 12px 14px; border-radius: 12px; background: var(--warm-50); font-size: 13.5px; line-height: 1.55; break-inside: avoid; }
+.bloco strong { display: block; margin-bottom: 2px; }
+.bloco.aviso { border: 2px dashed var(--ink); background: #FFF6E6; }
+.bloco.interno { background: var(--mint-50); }
+.bloco ul { margin: 4px 0 0; padding-left: 18px; }
+.rodape { margin-top: 22px; padding-top: 14px; border-top: 1px solid #C8B89A; text-align: center; }
+.rodape p { margin: 0; }
+.rodape .zap { font-weight: 800; font-size: 15px; margin-bottom: 4px; }
+.rodape .obg { font-family: var(--font-display); color: var(--teal); font-size: 18px; }
+
+.estado { max-width: 520px; margin: 60px auto; text-align: center; padding: 0 20px; color: var(--ink); }
+:root[data-theme="dark"] .estado { color: #F7EBDD; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .estado { color: #F7EBDD; } }
+.estado h1 { font-family: var(--font-display); font-weight: 400; font-size: 26px; margin: 0 0 8px; }
+.estado p { margin: 0; line-height: 1.5; }
+.carregando { width: 34px; height: 34px; border-radius: 50%; border: 4px solid #BFE3D6; border-top-color: #2B7465; margin: 0 auto 14px; animation: gira .8s linear infinite; }
+@keyframes gira { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .carregando { animation: none; } }
+
+@media (max-width: 560px) {
+  .recibo { padding: 22px 16px; }
+  .meta { grid-template-columns: 1fr; }
+}
+
+/* Formato cupom (impressora térmica 80 mm) */
+body.cupom .recibo { max-width: 76mm; padding: 14px 10px; font-size: 12px; border-radius: 0; }
+body.cupom .cab img { height: 60px; }
+body.cupom .cab h1 { font-size: 20px; }
+body.cupom .meta { grid-template-columns: 1fr; padding: 6px 0; background: none; border-radius: 0; }
+body.cupom .meta div { font-size: 12px; padding: 3px 0; }
+body.cupom .meta .retirada { background: none; border-radius: 0; padding: 3px 0; border-top: 1px dashed #000; border-bottom: 1px dashed #000; }
+body.cupom h2 { font-size: 15px; }
+body.cupom .item-l { font-size: 12.5px; }
+body.cupom .det { font-size: 11.5px; margin-left: 8px; }
+body.cupom .t { font-size: 12.5px; }
+body.cupom .t.total { font-size: 16px; }
+body.cupom .t.sinal { padding: 4px 0; background: none; }
+body.cupom .bloco { font-size: 11.5px; padding: 6px 0; background: none; border-radius: 0; }
+body.cupom .bloco.aviso { border: 1px dashed #000; padding: 6px; }
+
+@media print {
+  @page { size: A4; margin: 14mm; }
+  body { background: #fff !important; min-height: 0; }
+  .barra { display: none !important; }
+  .area { padding: 0; }
+  .recibo { box-shadow: none; border-radius: 0; padding: 0; max-width: 100%; }
+  body.cupom .recibo { max-width: 72mm; margin: 0; }
+  body:not(.cupom) .recibo { zoom: .88; }
+  body:not(.cupom) .meta { margin: 12px 0; }
+  body:not(.cupom) .item { padding: 8px 0; }
+  body:not(.cupom) .totais { margin-top: 12px; }
+  body:not(.cupom) .bloco { margin-top: 12px; padding: 9px 12px; }
+  body:not(.cupom) .rodape { margin-top: 14px; padding-top: 10px; }
+  .rodape, .totais { break-inside: avoid; }
+  .selo { color: #000 !important; background: none !important; border: 1px solid #000; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+</style>
+<style id="paginaCupom" media="print"></style>
+</head>
+<body>
+
+<div class="barra" id="barra" hidden>
+  <div class="titulo" id="barraTitulo">Recibo</div>
+  <div class="seg" role="group" aria-label="Formato de impressão">
+    <button type="button" data-formato="a4" aria-pressed="true">A4</button>
+    <button type="button" data-formato="cupom" aria-pressed="false">Cupom 80 mm</button>
+  </div>
+  <label class="chk" id="chkInternoWrap" hidden><input type="checkbox" id="chkInterno"> Anotações internas</label>
+  <button type="button" class="btn-imprimir" id="btnImprimir">Imprimir</button>
+</div>
+
+<main class="area" id="area">
+  <div class="estado"><div class="carregando" aria-hidden="true"></div><p>Carregando o pedido…</p></div>
+</main>
+
+<script type="module">
+import { conectar, formatarPreco as R, formatarPeso, formatarData } from './js/rita-api.js';
+
+const LOGO_DEMO = null;
+const PEDIDO_DEMO = {
+  codigo: 'RB-01042', status: 'confirmado', status_nome: 'Confirmado', status_cor: '#2B7465',
+  cliente_nome: 'Maria Souza', cliente_telefone: '(19) 99999-0000',
+  data_retirada: '2026-10-04', hora_retirada: '10:00', criado_em: '2026-10-02T14:32:00-03:00',
+  observacao_cliente: null, subtotal: 650, desconto: 0, total: 650, percentual_sinal: 50, valor_sinal: 325, valor_pago: 325, saldo: 325,
+  itens: [
+    { nome: 'Bolo Ninho + Morango', quantidade: 1, preco_unitario: 225, subtotal: 225, peso_kg: 2.5, preco_kg: 90, massa: 'Massa preta', formato: 'Redondo', segundo_recheio: 'Ninho + Nutella', observacao: 'Escrever “Parabéns, Ana!”' },
+    { nome: 'Brigadeiro (cento)', quantidade: 2, preco_unitario: 180, subtotal: 360 },
+    { nome: 'Mini salgados fritos (cento)', quantidade: 1, preco_unitario: 65, subtotal: 65, observacao: '40 coxinhas, 30 kibes, 30 queijo' }
+  ],
+  pagamentos: [{ tipo: 'sinal', forma: 'pix', valor: 325, pago_em: '2026-10-02T15:10:00-03:00' }],
+  observacoes: [{ texto: 'Cliente pediu caixa para transporte.', autor_nome: 'Rita', criado_em: '2026-10-02T15:12:00-03:00', fixada: true }],
+  loja: { nome: 'Rita Bolos', slogan: 'O tradicional está aqui', logo_path: LOGO_DEMO, whatsapp_exibicao: '(19) 3845-1550' }
+};
+
+const FORMAS = { pix: 'Pix', dinheiro: 'Dinheiro', cartao_debito: 'Cartão de débito', cartao_credito: 'Cartão de crédito', transferencia: 'Transferência', outro: 'Outro' };
+const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const FUSO = 'America/Sao_Paulo';
+const dataHora = iso => iso ? new Date(iso).toLocaleString('pt-BR', { timeZone: FUSO, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+const area = document.getElementById('area');
+
+function estado(titulo, texto) {
+  area.innerHTML = `<div class="estado"><h1>${esc(titulo)}</h1><p>${esc(texto)}</p></div>`;
+}
+
+function render(p, { urlLogo, interno, mostrarInterno }) {
+  const pct = Number(p.percentual_sinal ?? 50).toLocaleString('pt-BR');
+  const itens = (p.itens || []).map((i, n) => {
+    const det = [];
+    if (i.peso_kg) det.push(`<div class="det"><strong>Peso:</strong> ${formatarPeso(i.peso_kg)}${i.preco_kg ? ` (${R(i.preco_kg)} o kg)` : ''}</div>`);
+    if (i.massa) det.push(`<div class="det"><strong>Massa:</strong> ${esc(i.massa)}</div>`);
+    if (i.formato) det.push(`<div class="det"><strong>Formato:</strong> ${esc(i.formato)}</div>`);
+    if (i.segundo_recheio) det.push(`<div class="det"><strong>2º recheio:</strong> ${esc(i.segundo_recheio)}</div>`);
+    if (i.faixa_preco) det.push(`<div class="det"><strong>Faixa de preço:</strong> ${esc(i.faixa_preco)}</div>`);
+    det.push(`<div class="det">Quantidade: ${i.quantidade} × ${R(i.preco_unitario)}</div>`);
+    if (i.observacao) det.push(`<div class="det"><strong>Observações:</strong> ${esc(i.observacao)}</div>`);
+    return `<div class="item"><div class="item-l"><b>${n + 1}. ${esc(i.nome)}</b><span class="v">${R(i.subtotal)}</span></div>${det.join('')}</div>`;
+  }).join('');
+
+  const pagamentos = interno && (p.pagamentos || []).length
+    ? `<div class="bloco interno"><strong>Pagamentos recebidos</strong><ul>${p.pagamentos.map(g =>
+        `<li>${dataHora(g.pago_em)}: ${R(g.valor)} (${esc(FORMAS[g.forma] || g.forma)}, ${g.tipo === 'sinal' ? 'sinal' : g.tipo === 'restante' ? 'restante' : 'outro'})</li>`).join('')}</ul></div>` : '';
+  const anotacoes = interno && mostrarInterno && (p.observacoes || []).length
+    ? `<div class="bloco interno"><strong>Anotações internas</strong><ul>${p.observacoes.map(o =>
+        `<li>${esc(o.texto)} <small>(${esc(o.autor_nome || 'equipe')}, ${dataHora(o.criado_em)})</small></li>`).join('')}</ul></div>` : '';
+
+  area.innerHTML = `
+  <article class="recibo" aria-label="Recibo do pedido ${esc(p.codigo)}">
+    <header class="cab">
+      ${urlLogo ? `<img src="${esc(urlLogo)}" alt="${esc(p.loja?.nome || 'Rita Bolos')}">` : ''}
+      <h1>${esc(p.loja?.nome || 'Rita Bolos')}</h1>
+      <p>Bolos e Sobremesas — ${esc(p.loja?.slogan || 'O tradicional está aqui')}</p>
+    </header>
+    <section class="meta">
+      <div><span>Pedido nº</span><strong>${esc(p.codigo)}</strong></div>
+      <div><span>Feito em</span><strong>${dataHora(p.criado_em)}</strong></div>
+      <div><span>Cliente</span><strong>${esc(p.cliente_nome)}</strong></div>
+      ${interno && p.cliente_telefone ? `<div><span>Telefone</span><strong>${esc(p.cliente_telefone)}</strong></div>` : ''}
+      <div><span>Situação</span><strong><span class="selo" style="background:${esc(p.status_cor || '#4A2A1C')}">${esc(p.status_nome || p.status)}</span></strong></div>
+      <div class="retirada"><span>Retirada</span><strong>${formatarData(p.data_retirada)}${p.hora_retirada ? ' às ' + esc(p.hora_retirada) : ''}</strong></div>
+    </section>
+    <h2>Itens do pedido</h2>
+    ${itens}
+    <section class="totais">
+      <div class="t"><span>Subtotal</span><strong>${R(p.subtotal)}</strong></div>
+      ${Number(p.desconto) > 0 ? `<div class="t"><span>Desconto</span><strong>− ${R(p.desconto)}</strong></div>` : ''}
+      <div class="t total"><span>Total</span><strong>${R(p.total)}</strong></div>
+      <div class="t sinal"><span>Sinal mínimo (${pct}%)</span><strong>${R(p.valor_sinal)}</strong></div>
+      <div class="t"><span>Valor pago</span><strong>${R(p.valor_pago)}</strong></div>
+      <div class="t saldo"><span>Falta pagar</span><strong>${R(p.saldo)}</strong></div>
+    </section>
+    ${p.observacao_cliente ? `<div class="bloco"><strong>Observação do cliente</strong>${esc(p.observacao_cliente)}</div>` : ''}
+    ${pagamentos}${anotacoes}
+    <div class="bloco aviso"><strong>Atenção</strong>O pedido só é confirmado mediante envio do comprovante de pagamento de pelo menos ${pct}% do valor total.</div>
+    <footer class="rodape">
+      ${p.loja?.whatsapp_exibicao ? `<p class="zap">WhatsApp: ${esc(p.loja.whatsapp_exibicao)}</p>` : ''}
+      <p class="obg">Obrigada pelo seu pedido!</p>
+    </footer>
+  </article>`;
+  document.title = `Recibo ${p.codigo} — ${p.loja?.nome || 'Rita Bolos'}`;
+  document.getElementById('barraTitulo').innerHTML = `Recibo ${esc(p.codigo)}<small>${esc(p.cliente_nome)}, retirada ${formatarData(p.data_retirada)}</small>`;
+}
+
+function configurarBarra(p, opts) {
+  const barra = document.getElementById('barra');
+  barra.hidden = false;
+  const estilo = document.getElementById('paginaCupom');
+  barra.querySelectorAll('[data-formato]').forEach(b => b.addEventListener('click', () => {
+    const cupom = b.dataset.formato === 'cupom';
+    document.body.classList.toggle('cupom', cupom);
+    estilo.textContent = cupom ? '@page { size: auto; margin: 2mm; }' : '';  // o papel de 80 mm é escolhido na janela de impressão
+    barra.querySelectorAll('[data-formato]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    try { localStorage.setItem('ritabolos.recibo.formato', b.dataset.formato); } catch (e) {}
+  }));
+  try { if (localStorage.getItem('ritabolos.recibo.formato') === 'cupom') barra.querySelector('[data-formato="cupom"]').click(); } catch (e) {}
+  if (opts.interno) {
+    document.getElementById('chkInternoWrap').hidden = false;
+    document.getElementById('chkInterno').addEventListener('change', e => render(p, { ...opts, mostrarInterno: e.target.checked }));
+  }
+  document.getElementById('btnImprimir').addEventListener('click', () => window.print());
+}
+
+async function iniciar() {
+  const qs = new URLSearchParams(location.search);
+  const token = qs.get('t'), id = qs.get('id');
+
+  const demo = qs.has('demo');
+  if (demo && !token && !id) {
+    const opts = { urlLogo: LOGO_DEMO, interno: true, mostrarInterno: false };
+    render(PEDIDO_DEMO, opts); configurarBarra(PEDIDO_DEMO, opts);
+    return;
+  }
+  if (!token && !id) { estado('Recibo não encontrado', 'O link está incompleto. Abra o recibo pelo link enviado no WhatsApp ou pelo backoffice.'); return; }
+
+  let api;
+  try {
+    if (demo) {
+      // modo demonstração: mesmo banco de mentirinha do site e do backoffice (?demo)
+      const [{ criarApi }, { criarSupabaseDemo }] = await Promise.all([import('./js/rita-api.js'), import('./demo/supabase-demo.js')]);
+      api = criarApi(criarSupabaseDemo({ anonimo: !id }));
+    } else {
+      const cfg = await import('./js/config.js');
+      api = await conectar(cfg.SUPABASE_URL, cfg.SUPABASE_PUBLISHABLE_KEY || cfg.SUPABASE_ANON_KEY, { anonimo: !id });
+    }
+  } catch (e) {
+    estado('Não foi possível conectar', 'Confira a configuração do site (js/config.js) e a internet.');
+    return;
+  }
+
+  try {
+    let pedido, interno = false;
+    if (id) {
+      const perfil = await api.auth.perfil();
+      if (!perfil) { estado('Entre no backoffice', 'Este recibo é da área da equipe. Faça login no backoffice e abra o pedido de novo.'); return; }
+      pedido = await api.admin.pedidos.obter(id);
+      interno = true;
+    } else {
+      pedido = await api.pedidos.consultar(token);
+    }
+    if (!pedido) { estado('Pedido não encontrado', 'Confira se o link está completo ou fale com a Rita pelo WhatsApp.'); return; }
+    const opts = { urlLogo: api.urlImagem(pedido.loja?.logo_path), interno, mostrarInterno: false };
+    render(pedido, opts); configurarBarra(pedido, opts);
+    if (qs.has('imprimir')) setTimeout(() => window.print(), 400);
+  } catch (e) {
+    estado('Não foi possível abrir o recibo', e.message || 'Tente novamente em instantes.');
+  }
+}
+iniciar();
+</script>
+</body>
+</html>
