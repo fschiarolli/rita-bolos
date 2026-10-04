@@ -582,6 +582,60 @@ a.chip { text-decoration: none; }
   .hj-acoes .btn { flex: 1 1 100%; }
 }
 
+/* ---------- Relatório da semana ---------- */
+.sem-nav { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sem-rot { min-width: 120px; text-align: center; font-family: var(--font-display); font-weight: 700; font-size: 16px; letter-spacing: -.01em; }
+.sem-rot small { display: block; font-family: var(--font-ui); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--teal); }
+.sem-nav [aria-disabled="true"] { opacity: .35; pointer-events: none; }
+.kpi .delta { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.delta.bom { color: var(--teal); } .delta.ruim { color: var(--rose-600); } .delta.neutro { color: var(--ink-3); font-weight: 500; }
+.delta small { font-weight: 500; color: var(--ink-3); margin-left: 2px; }
+.delta.claro, .delta.claro small { color: #fff; }
+.sem-din { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 4px 0 14px; }
+.sem-din span { display: block; font-size: 12.5px; color: var(--ink-3); }
+.sem-din strong { font-family: var(--font-display); font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
+/* colunas por dia */
+.g-colunas { padding: 4px 0 0; }
+.g-area { position: relative; height: 230px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; align-items: end; padding-left: 64px; }
+.g-linha { position: absolute; left: 64px; right: 0; height: 0; border-top: 1px solid var(--line); }
+.g-linha span { position: absolute; right: calc(100% + 10px); top: -8px; font-family: var(--font-num); font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+.g-col { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; z-index: 1; cursor: default; }
+.g-barra { width: min(46px, 70%); border-radius: 6px 6px 0 0; background: rgba(var(--teal-rgb), .38); transition: background .14s; }
+.g-col.top .g-barra { background: var(--teal); }
+.g-col:hover .g-barra { background: rgba(var(--teal-rgb), .6); }
+.g-col.top:hover .g-barra { background: var(--teal); filter: brightness(1.08); }
+.g-val { font-size: 11.5px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.g-col.top .g-val { color: var(--ink); font-weight: 700; }
+.g-eixo { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; padding: 10px 0 0 64px; border-top: 1px solid var(--line-2); margin-top: -1px; }
+.g-eixo span { text-align: center; font-family: var(--font-num); font-size: 11px; color: var(--ink-3); }
+.g-eixo b { display: block; font-family: var(--font-ui); font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+/* barras horizontais */
+.g-barras { display: grid; gap: 14px; }
+.gb-txt { display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; margin-bottom: 6px; }
+.gb-txt span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gb-txt b { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gb-trilho { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.gb-trilho i { display: block; height: 100%; border-radius: 999px; background: var(--teal); }
+.gb-linha small { display: block; font-size: 12px; color: var(--ink-3); margin-top: 4px; }
+/* tabela dia a dia */
+.sem-tab-wrap { overflow-x: auto; }
+.sem-tab { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; margin-top: 12px; }
+.sem-tab th, .sem-tab td { padding: 11px 22px; text-align: right; border-top: 1px solid var(--line); }
+.sem-tab th:first-child { text-align: left; font-weight: 500; }
+.sem-tab tbody th { text-transform: capitalize; }
+.sem-tab thead th { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); background: var(--surface-2); border-top: 0; }
+.sem-tab tbody tr:hover { background: var(--surface-2); }
+.sem-tab tr.top th, .sem-tab tr.top td { color: var(--teal); font-weight: 700; }
+.sem-tab tfoot th, .sem-tab tfoot td { font-weight: 700; border-top: 1px solid var(--line-2); }
+@media (max-width: 640px) {
+  .g-area, .g-eixo { padding-left: 0; gap: 4px; }
+  .g-linha { left: 0; } .g-linha span { display: none; }
+  .g-val { font-size: 10px; writing-mode: vertical-rl; transform: rotate(180deg); }
+  .g-area { height: 200px; }
+  .sem-tab th, .sem-tab td { padding: 10px 14px; }
+  .sem-din strong { font-size: 21px; }
+}
+
 /* Algarismos de largura fixa onde números alinham em coluna */
 .valor-numerico, .ped .total, .valores .lin, .it-l, .pgto, .preco-in .in, .money .in, .np-item .sub, .hj-pg .falta, .hj-pagto, .hj-it .l, .hj-resumo,
 .status-bar, .tbl, .kv dd, .pill, .tag, .nav-badge, .hj-falta-g { font-variant-numeric: tabular-nums; }
@@ -621,6 +675,7 @@ a.chip { text-decoration: none; }
     <symbol id="i-lua" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
     <symbol id="i-casa" viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></symbol>
     <symbol id="i-tv" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+    <symbol id="i-grafico" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6" rx="1"/><rect x="12.5" y="7" width="3" height="10" rx="1"/><rect x="18" y="13" width="3" height="4" rx="1"/></symbol>
   </defs>
 </svg>
 

@@ -335,6 +335,7 @@ const NAV = [
   { id: 'painel', rot: 'Painel', ic: 'painel' },
   { id: 'hoje', rot: 'Hoje', ic: 'hoje' },
   { id: 'pedidos', rot: 'Pedidos', ic: 'pedidos', badge: true },
+  { id: 'relatorio', rot: 'Relatório', ic: 'grafico', admin: true },
   { id: 'cardapio', rot: 'Cardápio', ic: 'bolo', admin: true },
   { id: 'ajustes', rot: 'Ajustes', ic: 'config', admin: true }
 ];
@@ -453,7 +454,7 @@ function rotear(forcar = false) {
     $$('[data-nav]').forEach(a => { if (a.dataset.nav === tela) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
     const el = $('#conteudo');
     document.title = `${NAV.find(n => n.id === tela)?.rot || 'Painel'} — Backoffice Rita Bolos`;
-    ({ painel: telaPainel, hoje: telaHoje, pedidos: telaPedidos, cardapio: telaCardapio, ajustes: telaAjustes })[tela](el, sub);
+    ({ painel: telaPainel, hoje: telaHoje, pedidos: telaPedidos, relatorio: telaRelatorio, cardapio: telaCardapio, ajustes: telaAjustes })[tela](el, sub);
     window.scrollTo(0, 0);
   }
   if (pedidoId) abrirGaveta(pedidoId); else fecharGaveta(true);
@@ -647,6 +648,169 @@ async function telaPainel(el, _sub, silencioso = false) {
     if (!silencioso) el.innerHTML = cab + `<div class="vazio"><h2>Não foi possível carregar</h2><p>${esc(e.message)}</p><button type="button" class="btn primary" onclick="location.reload()">Tentar de novo</button></div>`;
   }
 }
+/* =========================================================
+   RELATÓRIO DA SEMANA (segunda a domingo, pela data de retirada)
+   #relatorio  ·  #relatorio/2026-09-28 (segunda-feira da semana)
+========================================================= */
+const DIAS_SEMANA = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+const DIAS_SEMANA_LONGOS = ['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo'];
+const isoMais = (iso, n) => { const [a, m, d] = iso.split('-').map(Number); return new Date(Date.UTC(a, m - 1, d + n)).toISOString().slice(0, 10); };
+/** Segunda-feira da semana de uma data ISO. */
+function segundaDe(iso) {
+  const [a, m, d] = iso.split('-').map(Number);
+  const dow = (new Date(Date.UTC(a, m - 1, d)).getUTCDay() + 6) % 7;   // 0 = segunda
+  return isoMais(iso, -dow);
+}
+const ddmm = iso => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+const valorCurto = n => (n >= 1000 ? 'R$ ' + (n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mil' : R(n).replace(/ /g, ' ').replace(/,00$/, ''));
+
+/** Números de uma semana a partir dos pedidos (retirada entre seg e dom). */
+function resumoSemana(pedidos, ini) {
+  const ret = statusRetirado()?.codigo;
+  const validos = pedidos.filter(p => p.status !== 'cancelado');
+  const soma = (l, f) => Math.round(l.reduce((s, p) => s + (Number(f(p)) || 0), 0) * 100) / 100;
+  const dias = DIAS_SEMANA.map((rot, i) => {
+    const iso = isoMais(ini, i), doDia = validos.filter(p => p.data_retirada === iso);
+    return { rot, iso, pedidos: doDia.length, valor: soma(doDia, p => p.total) };
+  });
+  const porOrigem = {};
+  validos.forEach(p => { porOrigem[p.origem] = (porOrigem[p.origem] || 0) + 1; });
+  const faturamento = soma(validos, p => p.total);
+  return {
+    pedidos: validos.length,
+    concluidos: validos.filter(p => p.status === ret || (p.finalizado && p.status !== 'cancelado')).length,
+    cancelados: pedidos.length - validos.length,
+    faturamento, recebido: soma(validos, p => p.valor_pago), aReceber: soma(validos, p => Math.max(0, Number(p.total) - Number(p.valor_pago))),
+    ticket: validos.length ? Math.round(faturamento / validos.length * 100) / 100 : 0,
+    dias, porOrigem
+  };
+}
+async function carregarSemana(ini) {
+  const r = await api.admin.pedidos.listar({ de: ini, ate: isoMais(ini, 6), porPagina: 1000, ordenarPor: 'data_retirada', crescente: true });
+  return r.pedidos;
+}
+/** Itens mais vendidos (quantidade) entre os pedidos não cancelados. */
+async function topProdutos(pedidos) {
+  const ids = pedidos.filter(p => p.status !== 'cancelado').map(p => p.id);
+  if (!ids.length) return [];
+  const lotes = [];
+  for (let i = 0; i < ids.length; i += 80) lotes.push(api.admin.pedidos.itens.listar({ filtros: { pedido_id: ids.slice(i, i + 80) }, ordenarPor: [['pedido_id', true]] }));
+  const itens = (await Promise.all(lotes)).flat();
+  const mapa = new Map();
+  for (const i of itens) {
+    const k = i.nome, x = mapa.get(k) || { nome: k, qtd: 0, valor: 0 };
+    x.qtd += Number(i.quantidade) || 0; x.valor += (Number(i.preco_unitario) || 0) * (Number(i.quantidade) || 0);
+    mapa.set(k, x);
+  }
+  return [...mapa.values()].sort((a, b) => b.valor - a.valor || b.qtd - a.qtd).slice(0, 6);
+}
+
+/* Variação contra a semana anterior: sobe/desce com ícone e texto, nunca só cor */
+function variacao(atual, antes, { dinheiro = false, menorMelhor = false } = {}) {
+  if (!antes && !atual) return '<span class="delta neutro">igual à semana anterior</span>';
+  if (!antes) return `<span class="delta neutro">${dinheiro ? 'sem vendas' : 'nenhum'} na semana anterior</span>`;
+  const pct = Math.round((atual - antes) / antes * 100);
+  if (pct === 0) return '<span class="delta neutro">igual à semana anterior</span>';
+  const bom = menorMelhor ? pct < 0 : pct > 0;
+  return `<span class="delta ${bom ? 'bom' : 'ruim'}">${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}%<span class="sr"> ${pct > 0 ? 'a mais' : 'a menos'}</span> <small>vs. ${dinheiro ? valorCurto(antes) : antes}</small></span>`;
+}
+
+/* Gráfico de colunas: vendas por dia (destaca o melhor dia, valores no topo) */
+function graficoDias(dias) {
+  const max = Math.max(...dias.map(d => d.valor), 0);
+  // topo do eixo num valor redondo logo acima do maior dia (1, 1,2, 1,5, 2, 2,5, 3, 4, 5, 6, 8, 10 × potência de 10)
+  const pot = max ? Math.pow(10, Math.floor(Math.log10(max))) : 100;
+  const topo = max ? [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map(f => f * pot).find(v => v >= max * 1.08) : 100;
+  const melhor = max ? dias.findIndex(d => d.valor === max) : -1;
+  const linhas = [1, .5, 0].map(f => `<div class="g-linha" style="bottom:${f * 100}%"><span>${valorCurto(topo * f)}</span></div>`).join('');
+  return `<div class="g-colunas" role="img" aria-label="Vendas por dia: ${esc(dias.map(d => `${d.rot} ${R(d.valor)}`).join(', '))}">
+      <div class="g-area">${linhas}
+        ${dias.map((d, i) => `<div class="g-col${i === melhor ? ' top' : ''}" title="${esc(`${DIAS_SEMANA_LONGOS[i]}, ${ddmm(d.iso)}: ${R(d.valor)} em ${d.pedidos} ${d.pedidos === 1 ? 'pedido' : 'pedidos'}`)}">
+          <span class="g-val">${d.valor ? valorCurto(d.valor) : ''}</span>
+          <span class="g-barra" style="height:${topo ? Math.max(d.valor ? 2 : 0, d.valor / topo * 100) : 0}%"></span></div>`).join('')}
+      </div>
+      <div class="g-eixo">${dias.map(d => `<span><b>${d.rot}</b>${ddmm(d.iso)}</span>`).join('')}</div>
+    </div>`;
+}
+/* Barras horizontais (origem e produtos): uma cor só, rótulo e valor em texto */
+function barrasH(itens, fmtValor) {
+  const max = Math.max(...itens.map(i => i.v), 1);
+  return `<div class="g-barras">${itens.map(i => `<div class="gb-linha" title="${esc(i.rot)}: ${esc(fmtValor(i.v))}">
+      <div class="gb-txt"><span>${esc(i.rot)}</span><b>${esc(fmtValor(i.v))}</b></div>
+      <div class="gb-trilho"><i style="width:${Math.max(2, i.v / max * 100)}%"></i></div>${i.sub ? `<small>${esc(i.sub)}</small>` : ''}</div>`).join('')}</div>`;
+}
+
+async function telaRelatorio(el, sub) {
+  const atual = segundaDe(hojeISO());
+  const ini = /^\d{4}-\d{2}-\d{2}$/.test(sub || '') ? segundaDe(sub) : atual;
+  const fim = isoMais(ini, 6), ehAtual = ini === atual;
+  const nav = `<div class="sem-nav" role="group" aria-label="Escolher semana">
+      <a class="btn icon ghost" href="#relatorio/${isoMais(ini, -7)}" aria-label="Semana anterior">${ic('voltar')}</a>
+      <span class="sem-rot">${ddmm(ini)} a ${ddmm(fim)}${ehAtual ? ' <small>esta semana</small>' : ''}</span>
+      <a class="btn icon ghost" ${ini >= atual ? 'aria-disabled="true" tabindex="-1"' : ''} href="#relatorio/${isoMais(ini, 7)}" aria-label="Próxima semana">${ic('seta')}</a>
+      ${ehAtual ? '' : `<a class="btn sm ghost" href="#relatorio">Esta semana</a>`}</div>`;
+  const cab = cabecalho('Relatório da semana', nav, `Vendas de segunda a domingo, pela data de retirada.${ehAtual ? ' A semana ainda está em andamento.' : ''}`);
+  el.innerHTML = cab + `<div class="card kpi-strip">${'<div class="kpi"><div class="skel" style="height:44px;width:100%"></div></div>'.repeat(4)}</div><div class="skel" style="height:320px"></div>`;
+  try {
+    const [esta, anterior] = await Promise.all([carregarSemana(ini), carregarSemana(isoMais(ini, -7))]);
+    if (telaAtual !== 'relatorio') return;
+    const s = resumoSemana(esta, ini), a = resumoSemana(anterior, isoMais(ini, -7));
+    const top = await topProdutos(esta).catch(() => []);
+    if (telaAtual !== 'relatorio') return;
+    const melhor = s.dias.reduce((m, d) => (d.valor > m.valor ? d : m), s.dias[0]);
+    const tile = (cor, icone, rot, valor, delta) => `<div class="kpi" style="${corVars(cor)}"><span class="kpi-ic">${ic(icone)}</span>
+        <span class="kpi-t"><span>${rot}</span><strong>${valor}</strong>${delta}</span></div>`;
+    const origens = Object.entries(s.porOrigem).sort((x, y) => y[1] - x[1]).map(([o, n]) => ({ rot: ORIGENS[o] || o, v: n, sub: `${Math.round(n / s.pedidos * 100)}% dos pedidos` }));
+    el.innerHTML = cab + `
+      <div class="hero-grid">
+        <section class="card destaque-card">
+          <p class="eyebrow">Faturamento da semana</p>
+          <strong class="dc-val">${R(s.faturamento)}</strong>
+          <span class="dc-chip">${variacao(s.faturamento, a.faturamento, { dinheiro: true }).replace('class="delta', 'class="delta claro')}</span>
+          <p>${s.pedidos ? `${s.pedidos} ${s.pedidos === 1 ? 'pedido' : 'pedidos'} com retirada entre ${ddmm(ini)} e ${ddmm(fim)}. Cancelados não entram na conta.` : 'Nenhum pedido com retirada nesta semana.'}</p>
+          <svg class="ic dc-art" aria-hidden="true"><use href="#i-grafico"/></svg>
+        </section>
+        <section class="card">
+          <div class="card-h"><div><p class="eyebrow">Dinheiro</p><h2>Recebido e a receber</h2></div></div>
+          <div class="sem-din">
+            <div><span>Recebido</span><strong>${R(s.recebido)}</strong></div>
+            <div><span>A receber</span><strong>${R(s.aReceber)}</strong></div>
+          </div>
+          <div class="hj-barra" role="img" aria-label="${s.faturamento ? Math.round(s.recebido / s.faturamento * 100) : 0}% recebido"><i style="width:${s.faturamento ? Math.min(100, s.recebido / s.faturamento * 100) : 0}%"></i></div>
+          <p class="dica" style="margin:6px 0 0;color:var(--ink-3)">${s.faturamento ? Math.round(s.recebido / s.faturamento * 100) : 0}% do faturamento já foi pago (sinais e restantes).</p>
+        </section>
+      </div>
+      <div class="card kpi-strip">
+        ${tile('#2B7465', 'pedidos', 'Pedidos', s.pedidos, variacao(s.pedidos, a.pedidos))}
+        ${tile('#7DC4B0', 'ok', 'Concluídos (retirados)', s.concluidos, variacao(s.concluidos, a.concluidos))}
+        ${tile('#C9A15A', 'moeda', 'Ticket médio', R(s.ticket), variacao(s.ticket, a.ticket, { dinheiro: true }))}
+        ${tile('#B9476A', 'x', 'Cancelados', s.cancelados, variacao(s.cancelados, a.cancelados, { menorMelhor: true }))}
+      </div>
+      <section class="card" style="margin-bottom:18px">
+        <div class="card-h"><div><p class="eyebrow">Vendas por dia</p><h2>${melhor.valor ? `Melhor dia: ${DIAS_SEMANA_LONGOS[s.dias.indexOf(melhor)]}, ${ddmm(melhor.iso)}` : 'Sem vendas nesta semana'}</h2></div>
+          ${melhor.valor ? `<span class="tag pago">${R(melhor.valor)} · ${melhor.pedidos} ${melhor.pedidos === 1 ? 'pedido' : 'pedidos'}</span>` : ''}</div>
+        ${graficoDias(s.dias)}
+      </section>
+      <div class="cols">
+        <section class="card"><div class="card-h"><div><p class="eyebrow">Mais vendidos</p><h2>Produtos da semana</h2></div></div>
+          ${top.length ? barrasH(top.map(t => ({ rot: t.nome, v: t.valor, sub: `${t.qtd} ${t.qtd === 1 ? 'unidade' : 'unidades'}` })), v => R(v).replace(/ /g, ' ')) : '<p class="vazio" style="padding:18px">Nenhum item vendido.</p>'}</section>
+        <section class="card"><div class="card-h"><div><p class="eyebrow">Canais</p><h2>De onde vieram os pedidos</h2></div></div>
+          ${origens.length ? barrasH(origens, v => `${v} ${v === 1 ? 'pedido' : 'pedidos'}`) : '<p class="vazio" style="padding:18px">Nenhum pedido.</p>'}</section>
+      </div>
+      <section class="card tabela" style="margin-top:18px" aria-label="Tabela da semana por dia">
+        <div class="card-h" style="padding:18px 22px 0"><div><p class="eyebrow">Detalhe</p><h2>Dia a dia</h2></div></div>
+        <div class="sem-tab-wrap"><table class="sem-tab">
+          <thead><tr><th scope="col">Dia</th><th scope="col">Pedidos</th><th scope="col">Vendas</th><th scope="col">Ticket médio</th></tr></thead>
+          <tbody>${s.dias.map((d, i) => `<tr${d === melhor && d.valor ? ' class="top"' : ''}><th scope="row">${DIAS_SEMANA_LONGOS[i]}, ${ddmm(d.iso)}</th><td>${d.pedidos}</td><td>${R(d.valor)}</td><td>${d.pedidos ? R(d.valor / d.pedidos) : '—'}</td></tr>`).join('')}</tbody>
+          <tfoot><tr><th scope="row">Total</th><td>${s.pedidos}</td><td>${R(s.faturamento)}</td><td>${s.pedidos ? R(s.ticket) : '—'}</td></tr></tfoot>
+        </table></div>
+      </section>`;
+  } catch (e) {
+    erroToast(e);
+    el.innerHTML = cab + `<div class="vazio"><h2>Não foi possível carregar</h2><p>${esc(e.message)}</p></div>`;
+  }
+}
+
 /* Atalhos do painel para a lista já filtrada */
 document.addEventListener('click', e => {
   const a = e.target.closest('[data-filtro]'); if (!a) return;
