@@ -986,8 +986,6 @@ function renderGaveta(p) {
   const g = $('#gaveta');
   const rolagem = g.querySelector('.gav-b')?.scrollTop || 0;
   const prox = proximoStatus(p);
-  const wa = telefoneWa(p.cliente_telefone);
-  const msgWa = `Olá, ${p.cliente_nome.split(' ')[0]}! Aqui é da ${p.loja?.nome || 'Rita Bolos'}, sobre o seu pedido ${p.codigo}.`;
   const itens = p.itens.map(i => `<div class="it">
       <div class="it-l"><span>${i.quantidade}× ${esc(i.nome)}${i.peso_kg ? ` <span style="color:var(--teal)">${esc(formatarPeso(i.peso_kg))}</span>` : ''}</span><span>${R(i.subtotal)}</span></div>
       ${i.massa || i.formato ? `<div class="it-d">${i.massa ? `<b>Massa:</b> ${esc(i.massa)}` : ''}${i.massa && i.formato ? ' · ' : ''}${i.formato ? `<b>Formato:</b> ${esc(i.formato)}` : ''}</div>` : ''}
@@ -1006,7 +1004,7 @@ function renderGaveta(p) {
     <div class="gav-b">
       <div class="acoes-topo">
         <a class="btn sm" href="${esc(urlReciboInterno(p.id))}" target="_blank" rel="noopener">${ic('imprimir')}Imprimir recibo</a>
-        ${wa ? `<a class="btn sm wa" href="https://wa.me/${wa}?text=${encodeURIComponent(msgWa)}" target="_blank" rel="noopener">${ic('wa')}WhatsApp</a>` : ''}
+        <button type="button" class="btn sm wa" data-gav="msg">${ic('wa')}Mandar mensagem</button>
         <button type="button" class="btn sm ghost" data-gav="link">${ic('copiar')}Link do recibo</button>
       </div>
 
@@ -1092,6 +1090,10 @@ document.addEventListener('click', async e => {
     case 'fechar': fecharGaveta(); break;
     case 'editar': modalEditarPedido(p); break;
     case 'pagar': modalPagamento(p); break;
+    case 'msg':
+      if (!telefoneWa(p.cliente_telefone)) toast('Este pedido não tem o telefone do cliente.', { acao: { rotulo: 'Incluir telefone', fn: () => modalEditarPedido(p) } });
+      else modalMensagem(p);
+      break;
     case 'link': {
       const url = await urlReciboCliente(p);
       try { await navigator.clipboard.writeText(url); toast('Link do recibo copiado. É o mesmo que o cliente recebe.'); }
@@ -1148,6 +1150,66 @@ function avisoWa(m, p) {
     },
     cancelar() { aba.fechar(); }
   };
+}
+
+/* =========================================================
+   MENSAGEM AVULSA PARA O CLIENTE (botão "Mandar mensagem" do pedido)
+   Modelos prontos com os dados do pedido; a equipe edita e o WhatsApp
+   abre na conversa do cliente com o texto escrito.
+========================================================= */
+function modelosMensagem(p, urlRecibo) {
+  const nome = String(p.cliente_nome || '').trim().split(/\s+/)[0] || '';
+  const ola = `Olá${nome ? ', ' + nome : ''}! Aqui é da ${p.loja?.nome || 'Rita Bolos'}.`;
+  const v = x => R(x).replace(/ /g, ' ');
+  const ped = `*${p.codigo}*`;
+  const d = p.data_retirada;
+  const dia = d === hojeISO() ? 'hoje' : d === hojeISO(1) ? 'amanhã' : `no dia ${formatarData(d).slice(0, 5)}`;
+  const quando = `${dia}${p.hora_retirada ? ' às ' + hora(p.hora_retirada) : ''}`;
+  const saldo = Math.max(0, Number(p.saldo) || 0);
+  const faltaSinal = Math.max(0, Math.round((Number(p.valor_sinal) - Number(p.valor_pago)) * 100) / 100);
+  const itens = (p.itens || []).map(i => `• ${i.quantidade}× ${i.nome}${i.peso_kg ? ' ' + formatarPeso(i.peso_kg) : ''}`).join('\n');
+  const st = statusDe(p.status);
+  const modelos = [
+    { id: 'oi', rot: 'Saudação', txt: `${ola}\n\nEstou falando sobre o seu pedido ${ped}.` },
+    faltaSinal > 0 && !st.finalizado && { id: 'sinal', rot: 'Lembrar do sinal', txt: `${ola}\n\nPara confirmar o seu pedido ${ped}, falta o sinal de *${v(faltaSinal)}*. Pode mandar o comprovante por aqui mesmo.\n\nAgradecemos!` },
+    !st.finalizado && { id: 'retirada', rot: 'Lembrar da retirada', txt: `${ola}\n\nPassando para lembrar: a retirada do seu pedido ${ped} é ${quando}.\n\n${itens}${saldo > 0 ? `\n\nNa retirada, falta pagar *${v(saldo)}*.` : ''}` },
+    !st.finalizado && { id: 'pronto', rot: 'Pedido pronto', txt: `${ola}\n\nSeu pedido ${ped} está *pronto para retirada*!${p.hora_retirada || d ? ` Combinamos ${quando}.` : ''}${saldo > 0 ? `\n\nFalta pagar *${v(saldo)}*: pode ser na retirada.` : '\n\nEstá tudo pago, é só vir buscar.'}` },
+    saldo > 0 && faltaSinal <= 0 && { id: 'saldo', rot: 'Saldo a pagar', txt: `${ola}\n\nO restante do seu pedido ${ped} é *${v(saldo)}*. Pode pagar na retirada ou mandar o comprovante por aqui.` },
+    urlRecibo && { id: 'recibo', rot: 'Enviar recibo', txt: `${ola}\n\nAqui está o recibo do seu pedido ${ped}, com os itens e os valores:\n${urlRecibo}` },
+    { id: 'livre', rot: 'Escrever do zero', txt: `${ola}\n\n` }
+  ].filter(Boolean);
+  // Começa pelo que mais faz sentido agora
+  const sugerido = (p.status === 'recebido' && faltaSinal > 0 && 'sinal') || (p.status === 'pronto' && 'pronto')
+    || ((d === hojeISO() || d === hojeISO(1)) && !st.finalizado && 'retirada') || 'oi';
+  return { modelos, sugerido: modelos.some(m => m.id === sugerido) ? sugerido : 'oi' };
+}
+async function modalMensagem(p) {
+  const wa = telefoneWa(p.cliente_telefone); if (!wa) return;
+  const { modelos, sugerido } = modelosMensagem(p, await urlReciboCliente(p).catch(() => ''));
+  const nome = String(p.cliente_nome || '').trim().split(/\s+/)[0] || 'cliente';
+  const m = abrirModal({
+    titulo: `Mensagem para ${nome}`,
+    corpo: `<p class="dica" style="margin:0 0 12px;color:var(--ink-3)">${esc(p.cliente_nome)} · <span style="white-space:nowrap">${esc(p.cliente_telefone)}</span> · <span style="white-space:nowrap">pedido ${esc(p.codigo)}</span></p>
+      <div class="modelos" role="group" aria-label="Mensagens prontas">${modelos.map(x => `<button type="button" class="chip" data-modelo="${x.id}" aria-pressed="${x.id === sugerido}">${esc(x.rot)}</button>`).join('')}</div>
+      ${inTa('msgTxt', 'Mensagem <span style="font-weight:400;color:var(--ink-3)">(pode editar antes de enviar)</span>', modelos.find(x => x.id === sugerido).txt, { attrs: 'maxlength="2000" style="min-height:200px"' })}
+      <p class="dica" style="margin:-4px 0 0">O WhatsApp abre na conversa de ${esc(nome)} com o texto pronto. É só conferir e tocar em Enviar.</p>`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn wa" data-ok>${ic('wa')}Abrir no WhatsApp</button>`
+  });
+  const ta = m.$('#msgTxt');
+  m.$('.modelos').addEventListener('click', e => {
+    const b = e.target.closest('[data-modelo]'); if (!b) return;
+    m.$$('[data-modelo]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    ta.value = modelos.find(x => x.id === b.dataset.modelo).txt;
+    ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  });
+  m.$('[data-ok]').addEventListener('click', () => {
+    const txt = ta.value.trim();
+    if (!txt) { toast('Escreva a mensagem antes de abrir o WhatsApp.', { tipo: 'erro' }); ta.focus(); return; }
+    window.open(linkWhatsApp(wa, txt), '_blank', 'noopener');   // ainda dentro do clique: o navegador não bloqueia
+    m.fechar();
+    toast(`WhatsApp aberto na conversa de ${nome}.`);
+  });
+  setTimeout(() => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }, 60);
 }
 
 async function modalStatus(p, codigo) {
@@ -1658,7 +1720,7 @@ async function ajLoja(box) {
       <div class="grid2">${inTxt('lNome', 'Nome da loja', c.nome_loja, { attrs: 'maxlength="60"' })}${inTxt('lSlogan', 'Slogan', c.slogan || '', { attrs: 'maxlength="80"' })}</div>
       <div class="grid2">${inTxt('lWa', 'WhatsApp (só números, com 55 e DDD)', c.whatsapp_numero, { attrs: 'inputmode="numeric" maxlength="15"', dica: 'Ex.: 551938451550' })}${inTxt('lWaEx', 'WhatsApp como aparece no site', c.whatsapp_exibicao || '', { attrs: 'maxlength="30"', dica: 'Ex.: (19) 3845-1550' })}</div>
       <div class="grid3">${inNum('lSinal', 'Sinal (%)', c.percentual_sinal, { attrs: 'min="0" max="100" step="1"' })}${inNum('lAnt', 'Antecedência mínima (dias)', c.antecedencia_minima_dias, { attrs: 'min="0"' })}${inNum('lTol', 'Tolerância de peso do bolo (g)', c.tolerancia_peso_bolo_g, { attrs: 'min="0" step="50"' })}</div>
-      <div class="grid2">${inNum('lDias', 'Retirada sugerida (dias depois do pedido)', c.dias_retirada_sugerida, { attrs: 'min="0"' })}${campo('lHora', 'Horário sugerido', `<input class="in" id="lHora" type="time" value="${esc(hora(c.hora_retirada_sugerida))}">`)}</div>
+      <div class="grid2">${inNum('lDias', 'Retirada sugerida (dias depois do pedido)', c.dias_retirada_sugerida, { attrs: 'min="0"', dica: 'Só para pedidos lançados aqui pela equipe. No site, o cliente escolhe o dia.' })}${campo('lHora', 'Horário sugerido', `<input class="in" id="lHora" type="time" value="${esc(hora(c.hora_retirada_sugerida))}">`, 'Idem: no site, o cliente escolhe o horário.')}</div>
       ${inTxt('lUrl', 'Endereço do site', c.url_site || '', { attrs: 'type="url" placeholder="https://ritabolos.com.br/"', dica: 'Usado no link do recibo que vai no WhatsApp.' })}
       ${fotoCampo('lLogo', 'Logotipo', c.logo_path)}
       <div style="display:flex;justify-content:flex-end"><button type="button" class="btn primary" id="lSalvar">Salvar ajustes</button></div>

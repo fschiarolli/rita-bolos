@@ -615,6 +615,31 @@ a { color: var(--teal); }
 .err.show { display: block; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .two .lbl { font-size: 13.5px; margin-bottom: 6px; }
+/* Retirada: o cliente escolhe o dia e o horário (nada vem marcado) */
+.req { margin-left: 6px; font-size: 11.5px; font-weight: 800; color: var(--rose-600); background: var(--rose-50); padding: 2px 8px; border-radius: 999px; vertical-align: 2px; }
+.pick-sub { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 900; color: var(--ink); margin: 14px 0 8px; }
+.pick-sub .ic { width: 17px; height: 17px; color: var(--teal); }
+.pick-dias { display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x proximity; padding: 2px 2px 8px; margin: 0 -2px; scrollbar-width: thin; }
+.dia { flex: none; scroll-snap-align: start; width: 66px; min-height: 78px; display: grid; justify-items: center; align-content: center; gap: 1px; padding: 8px 4px; border-radius: 16px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; transition: border-color .15s, background .15s; }
+.dia .d-sem { font-size: 12px; font-weight: 800; color: var(--ink-2); }
+.dia .d-num { font-size: 22px; font-weight: 900; line-height: 1.15; }
+.dia .d-mes { font-size: 12px; font-weight: 700; color: var(--ink-3); }
+.dia:hover { border-color: var(--teal); }
+.dia[aria-checked="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.dia[aria-checked="true"] .d-sem, .dia[aria-checked="true"] .d-mes { color: inherit; opacity: .85; }
+.dia.outra .ic { width: 22px; height: 22px; margin: 3px 0 1px; }
+.horas-grupo + .horas-grupo { margin-top: 12px; }
+.h-rot { display: block; font-size: 11.5px; font-weight: 800; color: var(--ink-3); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 6px; }
+.horas { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 8px; }
+.hora { min-height: 44px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-weight: 800; font-size: 15px; cursor: pointer; font-variant-numeric: tabular-nums; transition: border-color .15s, background .15s; }
+.hora:hover:not(:disabled) { border-color: var(--teal); }
+.hora[aria-checked="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.hora:disabled { opacity: .35; cursor: not-allowed; text-decoration: line-through; }
+.hora.outra { grid-column: span 2; font-size: 14px; }
+.pick-outra { margin-top: 10px; }
+.pick-dias.invalido .dia:not(.outra), .horas.invalido .hora:not(:disabled) { border-color: color-mix(in srgb, var(--error) 55%, var(--line)); }
+.pick-resumo { margin-top: 14px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px; background: var(--mint-50); color: var(--ink); font-weight: 700; font-size: 15px; }
+.pick-resumo .ic { color: var(--teal); flex: none; }
 .sec-wrap { margin-top: 12px; }
 .sec-wrap[hidden] { display: none; }
 .confirm-box { margin-top: 18px; padding: 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
@@ -735,6 +760,7 @@ a { color: var(--teal); }
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.8h.01"/></symbol>
   <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
   <symbol id="i-scale" viewBox="0 0 24 24"><path d="M6 20.5h12l-1.5-11h-9z"/><path d="M9.5 9.5a2.5 2.5 0 1 1 5 0"/></symbol>
   <symbol id="i-coins" viewBox="0 0 24 24"><ellipse cx="12" cy="6.5" rx="7" ry="3"/><path d="M5 6.5v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5"/><path d="M5 11.5v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5"/></symbol>
   <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3.5 8.5 4.5L12 12.5 3.5 8z"/><path d="m3.5 12 8.5 4.5 8.5-4.5M3.5 16l8.5 4.5 8.5-4.5"/></symbol>
@@ -1768,12 +1794,126 @@ function openConfig(it, opener) {
 /* ---- Finalizar ---- */
 function todayISO(offsetDays = 0) { const d = new Date(Date.now() + offsetDays * 864e5); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; }
 function antecedenciaSacola() { return Math.max(Number(CFG.antecedencia_minima_dias || 0), ...cart.map(l => ITEMS[l.id]?.antecedencia || 0)); }
+
+/* ---- Retirada: dia e horário escolhidos pelo cliente (nada vem preenchido) ----
+   Horários oferecidos nos botões; "Outro horário" aceita qualquer um. Ajuste à rotina da loja. */
+const RETIRADA = { dias: 14, inicio: '08:00', fim: '18:00', passoMin: 30, tardeDesde: '12:00' };
+const SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const SEMANA_LONGA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const minutosDe = hm => { const [h, m] = String(hm).split(':').map(Number); return h * 60 + m; };
+const hmDe = min => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+const dataLocal = iso => { const [a, m, d] = iso.split('-').map(Number); return new Date(a, m - 1, d); };
+function campoRetirada(minD, ant) {
+  const hoje = todayISO(), amanha = todayISO(1);
+  const dias = [];
+  for (let i = 0, d = dataLocal(minD); i < RETIRADA.dias; i++, d.setDate(d.getDate() + 1)) {
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const rot = iso === hoje ? 'Hoje' : iso === amanha ? 'Amanhã' : SEMANA[d.getDay()];
+    dias.push(`<button type="button" class="dia" role="radio" aria-checked="false" data-dia="${iso}" aria-label="${rot === 'Hoje' || rot === 'Amanhã' ? rot + ', ' : ''}${SEMANA_LONGA[d.getDay()]}, ${d.getDate()} de ${MESES[d.getMonth()]}">
+      <span class="d-sem">${rot}</span><span class="d-num">${d.getDate()}</span><span class="d-mes">${MESES[d.getMonth()]}</span></button>`);
+  }
+  const slots = [];
+  for (let m = minutosDe(RETIRADA.inicio); m <= minutosDe(RETIRADA.fim); m += RETIRADA.passoMin) slots.push(hmDe(m));
+  const tarde = minutosDe(RETIRADA.tardeDesde);
+  const botao = h => `<button type="button" class="hora" role="radio" aria-checked="false" data-hora="${h}">${h.replace(/^0/, '')}</button>`;
+  const manha = slots.filter(h => minutosDe(h) < tarde), aTarde = slots.filter(h => minutosDe(h) >= tarde);
+  return `<fieldset class="field" id="fsPick">
+      <legend>Quando você vai retirar?<span class="req">obrigatório</span></legend>
+      <p class="hint" style="margin-top:0">Escolha o dia e o horário em que você vem buscar.${ant ? ` Este pedido precisa de ${ant} ${ant === 1 ? 'dia' : 'dias'} de antecedência.` : ''}</p>
+      <p class="err" id="ePick" role="alert">Escolha o dia e o horário da retirada.</p>
+      <div class="pick-sub" id="lblDia">${icon('cal')} Dia</div>
+      <div class="pick-dias" role="radiogroup" aria-labelledby="lblDia" aria-describedby="ePick">${dias.join('')}
+        <button type="button" class="dia outra" data-dia-outra aria-expanded="false" aria-controls="pickDataOutra"><span class="d-sem">Outra</span>${icon('cal')}<span class="d-mes">data</span></button></div>
+      <div class="pick-outra" id="pickDataOutra" hidden><label class="lbl" for="cDateOutra" style="font-size:13.5px;margin-bottom:6px">Outra data</label>
+        <input class="input" type="date" id="cDateOutra" min="${minD}"></div>
+      <div class="pick-sub" id="lblHora">${icon('clock')} Horário</div>
+      <div class="horas-wrap" role="radiogroup" aria-labelledby="lblHora" aria-describedby="ePick">
+        ${manha.length ? `<div class="horas-grupo"><span class="h-rot">Manhã</span><div class="horas">${manha.map(botao).join('')}</div></div>` : ''}
+        ${aTarde.length ? `<div class="horas-grupo"><span class="h-rot">Tarde</span><div class="horas">${aTarde.map(botao).join('')}
+          <button type="button" class="hora outra" data-hora-outra aria-expanded="false" aria-controls="pickHoraOutra">Outro horário</button></div></div>` : ''}
+      </div>
+      <div class="pick-outra" id="pickHoraOutra" hidden><label class="lbl" for="cTimeOutra" style="font-size:13.5px;margin-bottom:6px">Outro horário</label>
+        <input class="input" type="time" id="cTimeOutra"></div>
+      <input type="hidden" id="cDate" value=""><input type="hidden" id="cTime" value="">
+      <div class="pick-resumo" id="pickResumo" aria-live="polite" hidden></div>
+    </fieldset>`;
+}
+/** Marca o botão escolhido do grupo e guarda o valor nos campos que o envio lê. */
+function escolherDia(iso, origem) {
+  $('#cDate').value = iso || '';
+  $$('#fsPick [data-dia]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.dia === iso && origem !== 'outra')));
+  $('#fsPick [data-dia-outra]').setAttribute('aria-checked', String(origem === 'outra' && !!iso));
+  if (origem !== 'outra') { $('#pickDataOutra').hidden = true; $('#cDateOutra').value = ''; $('#fsPick [data-dia-outra]').setAttribute('aria-expanded', 'false'); }
+  atualizarHorarios(); atualizarResumoRetirada();
+}
+function escolherHora(hm, origem) {
+  $('#cTime').value = hm || '';
+  $$('#fsPick [data-hora]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.hora === hm && origem !== 'outra')));
+  $('#fsPick [data-hora-outra]')?.setAttribute('aria-checked', String(origem === 'outra' && !!hm));
+  if (origem !== 'outra') { $('#pickHoraOutra').hidden = true; $('#cTimeOutra').value = ''; $('#fsPick [data-hora-outra]')?.setAttribute('aria-expanded', 'false'); }
+  atualizarResumoRetirada();
+}
+/** Retirada hoje: horários que já passaram (ou em menos de 30 min) ficam indisponíveis. */
+function atualizarHorarios() {
+  const ehHoje = $('#cDate').value === todayISO();
+  const agora = new Date(), limite = agora.getHours() * 60 + agora.getMinutes() + 30;
+  $$('#fsPick [data-hora]').forEach(b => {
+    const passou = ehHoje && minutosDe(b.dataset.hora) < limite;
+    b.disabled = passou;
+    if (passou && $('#cTime').value === b.dataset.hora) escolherHora('');
+  });
+}
+function atualizarResumoRetirada() {
+  const d = $('#cDate').value, t = $('#cTime').value, box = $('#pickResumo');
+  if (!box) return;
+  if (d && t) {
+    const dt = dataLocal(d);
+    const dia = d === todayISO() ? 'hoje' : d === todayISO(1) ? 'amanhã' : SEMANA_LONGA[dt.getDay()];
+    box.innerHTML = `${icon('check')}<span>Retirada: <strong>${dia}, ${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')} às ${t}</strong></span>`;
+    box.hidden = false;
+    $('#ePick').classList.remove('show');
+    $('.pick-dias')?.classList.remove('invalido'); $$('.horas').forEach(h => h.classList.remove('invalido'));
+  } else box.hidden = true;
+  if (d) $('.pick-dias')?.classList.remove('invalido');
+  if (t) $$('.horas').forEach(h => h.classList.remove('invalido'));
+}
+document.addEventListener('click', e => {
+  if (sheetState?.type !== 'checkout') return;
+  const dia = e.target.closest('#fsPick [data-dia]');
+  if (dia) { escolherDia(dia.dataset.dia); return; }
+  const hora = e.target.closest('#fsPick [data-hora]');
+  if (hora && !hora.disabled) { escolherHora(hora.dataset.hora); return; }
+  const outraD = e.target.closest('#fsPick [data-dia-outra]');
+  if (outraD) {
+    const caixa = $('#pickDataOutra'); caixa.hidden = false; outraD.setAttribute('aria-expanded', 'true');
+    const inp = $('#cDateOutra'); inp.focus(); try { inp.showPicker?.(); } catch (err) { /* nem todo navegador abre o calendário por código */ }
+    return;
+  }
+  const outraH = e.target.closest('#fsPick [data-hora-outra]');
+  if (outraH) {
+    const caixa = $('#pickHoraOutra'); caixa.hidden = false; outraH.setAttribute('aria-expanded', 'true');
+    const inp = $('#cTimeOutra'); inp.focus(); try { inp.showPicker?.(); } catch (err) { /* idem */ }
+  }
+});
+document.addEventListener('change', e => {
+  if (e.target.id === 'cDateOutra') {
+    const v = e.target.value, minD = sheetState.minDate || todayISO();
+    if (v && v < minD) { e.target.value = ''; escolherDia('', 'outra'); $('#ePick').textContent = `Para este pedido, a retirada precisa ser a partir de ${minD.split('-').reverse().join('/')}.`; $('#ePick').classList.add('show'); return; }
+    // se a data também está nos botões, marca o botão; senão fica como "outra data"
+    if ($(`#fsPick [data-dia="${v}"]`)) escolherDia(v); else escolherDia(v, 'outra');
+  }
+  if (e.target.id === 'cTimeOutra') {
+    const v = e.target.value;
+    if (v && $(`#fsPick [data-hora="${v}"]`) && !$(`#fsPick [data-hora="${v}"]`).disabled) escolherHora(v); else escolherHora(v, 'outra');
+  }
+});
 function openCheckout(opener) {
   if (!cart.length) return;
   const total = cartTotal();
   const faltando = cart.filter(l => ITEMS[l.id]?.needsNotes && !ITEMS[l.id]?.notesRequired && !(l.notes || '').trim());
   const obrig = cart.filter(l => ITEMS[l.id]?.notesRequired && !(l.notes || '').trim());
-  const ant = antecedenciaSacola(), minD = todayISO(ant), sug = todayISO(Math.max(ant, Number(CFG.dias_retirada_sugerida || 0)));
+  const ant = antecedenciaSacola(), minD = todayISO(ant);
   sheetState = { type: 'checkout', chave: U?.novaChave ? U.novaChave() : String(Date.now()), minDate: minD, ant };
   if (!CFG.aceitando_pedidos) {
     openSheet(`${sheetHead('Pedidos pausados', '')}
@@ -1794,13 +1934,7 @@ function openCheckout(opener) {
         <input class="input" id="cPhone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="(19) 99999-9999" value="${esc(store(PHONE_KEY) || '')}" aria-describedby="hPhone ePhone">
         <p class="hint" id="hPhone">É por ele que avisamos cada etapa do pedido.</p>
         <p class="err" id="ePhone">Informe seu WhatsApp com DDD, por exemplo (19) 99999-9999.</p></div>
-      <div class="field"><span class="lbl" id="lblPick">Retirada</span>
-        <div class="two" role="group" aria-labelledby="lblPick">
-          <div><label class="lbl" for="cDate">Data</label><input class="input" type="date" id="cDate" min="${minD}" value="${sug}" aria-describedby="ePick"></div>
-          <div><label class="lbl" for="cTime">Horário</label><input class="input" type="time" id="cTime" value="${esc(String(CFG.hora_retirada_sugerida || '10:00').slice(0, 5))}" aria-describedby="ePick"></div>
-        </div>
-        ${ant ? `<p class="hint">Este pedido precisa de ${ant} ${ant === 1 ? 'dia' : 'dias'} de antecedência.</p>` : ''}
-        <p class="err" id="ePick">Escolha a data e o horário da retirada.</p></div>
+      ${campoRetirada(minD, ant)}
       <div class="confirm-box">
         <div class="sum-row total" style="border:0;margin:0;padding-top:0"><span>Total</span><strong>${fmt(total)}</strong></div>
         <div class="sum-row sinal"><span>Sinal mínimo (${pctTxt()})</span><strong>${fmt(sinalDe(total))}</strong></div>
@@ -1815,12 +1949,24 @@ function validateCheckout() {
   const nOk = !!name.value.trim(); name.setAttribute('aria-invalid', String(!nOk)); $('#eName').classList.toggle('show', !nOk); if (!nOk) { ok = false; first = first || name; }
   const ph = $('#cPhone'), dig = ph.value.replace(/\D/g, '');
   const pOk = dig.length >= 10 && dig.length <= 13; ph.setAttribute('aria-invalid', String(!pOk)); $('#ePhone').classList.toggle('show', !pOk); if (!pOk) { ok = false; first = first || ph; }
-  const dOk = !!d.value && d.value >= minD, tOk = !!t.value;
-  d.setAttribute('aria-invalid', String(!dOk)); t.setAttribute('aria-invalid', String(!tOk));
+  const agora = new Date(), jaPassou = d.value === todayISO() && t.value && minutosDe(t.value) <= agora.getHours() * 60 + agora.getMinutes();
+  const dOk = !!d.value && d.value >= minD, tOk = !!t.value && !jaPassou;
   $('#ePick').textContent = d.value && d.value < todayISO() ? 'A data de retirada não pode ser no passado.'
-    : d.value && d.value < minD ? `Para este pedido, a retirada precisa ser a partir de ${formatPickupDate(minD, '').trim() || minD.split('-').reverse().join('/')}.`
-    : 'Escolha a data e o horário da retirada.';
-  $('#ePick').classList.toggle('show', !(dOk && tOk)); if (!(dOk && tOk)) { ok = false; first = first || (!dOk ? d : t); }
+    : d.value && d.value < minD ? `Para este pedido, a retirada precisa ser a partir de ${minD.split('-').reverse().join('/')}.`
+    : jaPassou ? 'Esse horário de hoje já passou. Escolha outro.'
+    : !d.value && !t.value ? 'Escolha o dia e o horário da retirada.'
+    : !d.value ? 'Escolha o dia da retirada.' : 'Escolha o horário da retirada.';
+  $('.pick-dias')?.classList.toggle('invalido', !dOk);
+  $$('.horas').forEach(h => h.classList.toggle('invalido', !tOk));
+  $('#ePick').classList.toggle('show', !(dOk && tOk));
+  if (!(dOk && tOk)) {
+    ok = false;
+    // leva até o grupo que falta: o botão marcado, ou o primeiro disponível
+    const alvo = !dOk ? ($('#fsPick [data-dia][aria-checked="true"]') || $('#fsPick [data-dia]'))
+      : (!$('#pickHoraOutra').hidden ? $('#cTimeOutra') : $('#fsPick [data-hora]:not(:disabled)') || $('#fsPick [data-hora-outra]'));
+    first = first || alvo;
+    if (!first || first === alvo) $('#fsPick').scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
   if (first) first.focus();
   return ok;
 }
