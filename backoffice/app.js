@@ -65,6 +65,36 @@ function rgbDe(hex) {
 const corVars = cor => `--c:${esc(cor || '#6E4B3A')};--c-rgb:${rgbDe(cor)}`;
 const pill = (nome, cor) => `<span class="pill" style="${corVars(cor)}">${esc(nome)}</span>`;
 const statusDe = c => STATUS.find(s => s.codigo === c) || { codigo: c, nome: c, cor: '#6E4B3A' };
+/* ---- Telefone com máscara: (DD) 9999-9999 ou (DD) 99999-9999 ---- */
+/** Só os dígitos do telefone, sem o 55 do Brasil (no máximo DDD + 9 dígitos). */
+function digitosTel(v) {
+  let d = String(v || '').replace(/\D/g, '');
+  if (d.length > 11 && d.startsWith('55')) d = d.slice(2);
+  return d.replace(/^0+/, '').slice(0, 11);
+}
+function formatarTel(v) {
+  const d = digitosTel(v);
+  if (!d) return '';
+  if (d.length <= 2) return `(${d}`;
+  const n = d.slice(2), corte = n.length > 8 ? 5 : 4;   // 9 dígitos: celular
+  return `(${d.slice(0, 2)}) ${n.length > corte ? n.slice(0, corte) + '-' + n.slice(corte) : n}`;
+}
+/** Vazio é aceito (telefone opcional); preenchido precisa ter DDD + 8 ou 9 dígitos. */
+const telOk = v => { const n = digitosTel(v).length; return n === 0 || n === 10 || n === 11; };
+const ATTR_TEL = 'type="tel" inputmode="tel" data-tel maxlength="16" placeholder="(19) 99999-9999" autocomplete="off"';
+/* Aplica a máscara enquanto digita (ou cola), sem tirar o cursor do lugar */
+document.addEventListener('input', e => {
+  const el = e.target;
+  if (!el.matches?.('input[data-tel]')) return;
+  const pos = el.selectionStart ?? el.value.length;
+  const antes = el.value.slice(0, pos).replace(/\D/g, '').length;
+  const novo = formatarTel(el.value);
+  if (novo === el.value) return;
+  el.value = novo;
+  let i = 0, vistos = 0;
+  while (i < novo.length && vistos < antes) { if (/\d/.test(novo[i])) vistos++; i++; }
+  if (document.activeElement === el) el.setSelectionRange(i, i);
+});
 function telefoneWa(tel) {
   let d = String(tel || '').replace(/\D/g, '');
   if (!d) return null;
@@ -77,6 +107,7 @@ const TIPOS_PGTO = { sinal: 'Sinal', restante: 'Restante', outro: 'Outro' };
 const urlReciboInterno = (id, imprimir) => `${RAIZ_SITE}recibo.html?id=${encodeURIComponent(id)}${imprimir ? '&imprimir' : ''}${DEMO ? '&demo' : ''}`;
 const urlSite = () => `${RAIZ_SITE}index.html${DEMO ? '?demo' : ''}`;
 const urlQuadro = () => `quadro.html${DEMO ? '?demo' : ''}`;
+const urlPote = () => `${RAIZ_SITE}bolo-no-pote.html${DEMO ? '?demo' : ''}`;   // página só de bolo no pote, para mandar aos clientes
 
 /* =========================================================
    AVISOS (toasts), MODAIS E CONFIRMAÇÃO
@@ -355,6 +386,7 @@ function telaShell() {
         <p class="side-sec">Atalhos</p>
         <a class="nav-a" href="${esc(urlQuadro())}" target="_blank" rel="noopener">${ic('tv')}<span>Quadro da equipe</span>${ic('externo', 'ic ext')}</a>
         <a class="nav-a" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}<span>Ver o site</span>${ic('externo', 'ic ext')}</a>
+        <a class="nav-a" href="${esc(urlPote())}" target="_blank" rel="noopener">${ic('pote')}<span>Página do bolo no pote</span>${ic('externo', 'ic ext')}</a>
       </nav>
       <div class="side-foot">
         <button type="button" class="user-card" data-act="conta" aria-label="Minha conta"><span class="avatar" aria-hidden="true">${esc(iniciais(perfil.nome))}</span>
@@ -425,12 +457,19 @@ function modalConta() {
       <div style="display:grid;gap:10px">
         <button type="button" class="btn ghost block" data-act="tema">${ic(temaAtual() === 'dark' ? 'sol' : 'lua')}${temaAtual() === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}</button>
         <a class="btn ghost block" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}Abrir o site</a>
+        <div style="display:flex;gap:8px"><a class="btn ghost" style="flex:1" href="${esc(urlPote())}" target="_blank" rel="noopener">${ic('pote')}Página do bolo no pote</a>
+          <button type="button" class="btn ghost" data-copiar-pote aria-label="Copiar o link da página do bolo no pote" title="Copiar link">${ic('copiar')}</button></div>
         <a class="btn ghost block" href="${esc(urlQuadro())}" target="_blank" rel="noopener">${ic('tv')}Quadro da equipe (TV)</a>
         ${DEMO ? `<button type="button" class="btn ghost block" data-reiniciar>${ic('atualizar')}Recomeçar a demonstração</button>` : `<button type="button" class="btn ghost block" data-senha>Trocar senha</button>`}
         <button type="button" class="btn danger block" data-sair>${ic('sair')}Sair</button>
       </div>`
   });
   m.$('[data-act="tema"]').addEventListener('click', () => m.fechar());
+  m.$('[data-copiar-pote]').addEventListener('click', async () => {
+    const url = new URL(urlPote(), location.href).href;
+    try { await navigator.clipboard.writeText(url); toast('Link da página do bolo no pote copiado. É só colar para o cliente.'); }
+    catch (e) { prompt('Copie o link da página do bolo no pote:', url); }
+  });
   m.$('[data-senha]')?.addEventListener('click', () => { m.fechar(); modalNovaSenha('Trocar senha'); });
   m.$('[data-reiniciar]')?.addEventListener('click', async () => {
     if (!await confirmar('Recomeçar a demonstração?', 'Os pedidos e mudanças feitos aqui serão apagados e os dados de exemplo voltam ao original.', { botao: 'Recomeçar', perigo: true })) return;
@@ -1371,7 +1410,7 @@ function renderGaveta(p) {
           <dt>Data</dt><dd>${esc(formatarData(p.data_retirada))} (${esc(dataCurta(p.data_retirada))})</dd>
           <dt>Horário</dt><dd>${p.hora_retirada ? esc(hora(p.hora_retirada)) : 'não informado'}</dd>
           <dt>Cliente</dt><dd>${esc(p.cliente_nome)}</dd>
-          <dt>Telefone</dt><dd>${p.cliente_telefone ? `<a href="tel:${esc(String(p.cliente_telefone).replace(/[^\d+]/g, ''))}">${esc(p.cliente_telefone)}</a>` : 'não informado'}</dd>
+          <dt>Telefone</dt><dd>${p.cliente_telefone ? `<a href="tel:${esc(String(p.cliente_telefone).replace(/[^\d+]/g, ''))}">${esc(formatarTel(p.cliente_telefone) || p.cliente_telefone)}</a>` : 'não informado'}</dd>
         </dl>
         ${p.observacao_cliente ? `<div class="cliente-obs"><b>Observação do cliente:</b> ${esc(p.observacao_cliente)}</div>` : ''}
       </section>
@@ -1540,7 +1579,7 @@ async function modalMensagem(p) {
   const nome = String(p.cliente_nome || '').trim().split(/\s+/)[0] || 'cliente';
   const m = abrirModal({
     titulo: `Mensagem para ${nome}`,
-    corpo: `<p class="dica" style="margin:0 0 12px;color:var(--ink-3)">${esc(p.cliente_nome)} · <span style="white-space:nowrap">${esc(p.cliente_telefone)}</span> · <span style="white-space:nowrap">pedido ${esc(p.codigo)}</span></p>
+    corpo: `<p class="dica" style="margin:0 0 12px;color:var(--ink-3)">${esc(p.cliente_nome)} · <span style="white-space:nowrap">${esc(formatarTel(p.cliente_telefone) || p.cliente_telefone)}</span> · <span style="white-space:nowrap">pedido ${esc(p.codigo)}</span></p>
       <div class="modelos" role="group" aria-label="Mensagens prontas">${modelos.map(x => `<button type="button" class="chip" data-modelo="${x.id}" aria-pressed="${x.id === sugerido}">${esc(x.rot)}</button>`).join('')}</div>
       ${inTa('msgTxt', 'Mensagem <span style="font-weight:400;color:var(--ink-3)">(pode editar antes de enviar)</span>', modelos.find(x => x.id === sugerido).txt, { attrs: 'maxlength="2000" style="min-height:200px"' })}
       <p class="dica" style="margin:-4px 0 0">O WhatsApp abre na conversa de ${esc(nome)} com o texto pronto. É só conferir e tocar em Enviar.</p>`,
@@ -1623,7 +1662,7 @@ function modalPagamento(p) {
 function modalEditarPedido(p) {
   const m = abrirModal({
     titulo: `Editar ${p.codigo}`,
-    corpo: `<div class="grid2">${inTxt('edNome', 'Cliente', p.cliente_nome, { attrs: 'maxlength="120"' })}${inTxt('edTel', 'Telefone', p.cliente_telefone || '', { attrs: 'type="tel" maxlength="30"' })}</div>
+    corpo: `<div class="grid2">${inTxt('edNome', 'Cliente', p.cliente_nome, { attrs: 'maxlength="120"' })}${inTxt('edTel', 'Telefone (DDD + número)', formatarTel(p.cliente_telefone) || p.cliente_telefone || '', { attrs: ATTR_TEL })}</div>
       <div class="grid2">${campo('edData', 'Data da retirada', `<input class="in" id="edData" type="date" value="${esc(p.data_retirada)}">`)}${campo('edHora', 'Horário', `<input class="in" id="edHora" type="time" value="${esc(hora(p.hora_retirada))}">`)}</div>
       ${inDin('edDesc', 'Desconto', p.desconto || '', { dica: `Subtotal de ${R(p.subtotal)}. O total e o sinal são recalculados.` })}
       ${inTa('edObs', 'Observação do cliente', p.observacao_cliente || '', { attrs: 'maxlength="1000"' })}
@@ -1633,9 +1672,10 @@ function modalEditarPedido(p) {
   m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
     exigir(m, 'edNome', 'Informe o nome do cliente.');
     exigir(m, 'edData', 'Informe a data da retirada.');
+    if (!telOk(valDe(m, 'edTel'))) throw new Error('Telefone incompleto: informe DDD + número, ex.: (19) 99999-9999.');
     const desc = lerValor(valDe(m, 'edDesc')) || 0;
     if (Number.isNaN(desc) || desc < 0) throw new Error('Desconto inválido.');
-    const dados = { cliente_nome: valDe(m, 'edNome'), cliente_telefone: valDe(m, 'edTel') || null, data_retirada: valDe(m, 'edData'),
+    const dados = { cliente_nome: valDe(m, 'edNome'), cliente_telefone: formatarTel(valDe(m, 'edTel')) || null, data_retirada: valDe(m, 'edData'),
       hora_retirada: valDe(m, 'edHora') || null, desconto: desc, observacao_cliente: valDe(m, 'edObs') || null };
     m.fechar();
     await acaoGaveta(null, async () => { const r = await api.admin.pedidos.atualizar(p.id, dados); toast('Pedido atualizado.'); return r; });
@@ -1646,6 +1686,9 @@ function modalEditarPedido(p) {
    NOVO PEDIDO (pedido feito por WhatsApp, telefone ou balcão)
 ========================================================= */
 let cardapioAtivo = null;
+/** Finalização do bolo (colorido, glitter…): produto do cardápio com slug "finalizacao-…", cobrado à parte. */
+const ehFinalizacao = p => /^finalizacao-/.test(p?.slug || '');
+const rotuloFinalizacao = p => p.rotulo || String(p.nome).replace(/^finaliza[çc][ãa]o\s*/i, '').replace(/^./, c => c.toUpperCase());
 async function carregarCardapioAtivo(forcar = false) {
   if (!cardapioAtivo || forcar) cardapioAtivo = await api.cardapio.obter();
   return cardapioAtivo;
@@ -1663,7 +1706,10 @@ async function modalNovoPedido() {
     .filter(g => g.itens.length);
   grupos.forEach(g => g.itens.forEach(p => { prods[p.slug] = p; }));
   const bolos = Object.values(prods).filter(p => p.tipo === 'bolo');
-  const opcoesProd = `<option value="">Escolha um produto</option>` + grupos.map(g => `<optgroup label="${esc(g.nome)}">${g.itens.map(p =>
+  // Finalização do bolo (colorido, glitter…): produtos "finalizacao-*" do cardápio, escolhidos junto do bolo e cobrados como item à parte
+  const finalizacoes = Object.values(prods).filter(ehFinalizacao);
+  const opcoesProd = `<option value="">Escolha um produto</option>` + grupos.map(g => ({ ...g, itens: g.itens.filter(p => !ehFinalizacao(p)) })).filter(g => g.itens.length)
+    .map(g => `<optgroup label="${esc(g.nome)}">${g.itens.map(p =>
     `<option value="${esc(p.slug)}">${esc(p.nome)} — ${esc(R(p.preco))}${p.unidade_preco === 'kg' ? '/kg' : ''}</option>`).join('')}</optgroup>`).join('');
   let n = 0;
   const linha = () => {
@@ -1677,6 +1723,8 @@ async function modalNovoPedido() {
         ${campo('npM' + k, 'Massa', `<select class="sel" id="npM${k}" data-np="massa">${c.bolo.massas.map(mm => `<option value="${esc(mm.slug)}">${esc(mm.nome)}</option>`).join('')}</select>`)}
         ${(c.bolo.formatos || []).length ? campo('npF' + k, 'Formato', `<select class="sel" id="npF${k}" data-np="formato">${c.bolo.formatos.map(ff => `<option value="${esc(ff.slug)}">${esc(ff.nome)}</option>`).join('')}</select>`) : ''}
         ${campo('npS' + k, '2º recheio', `<select class="sel" id="npS${k}" data-np="seg"><option value="">Sem 2º recheio</option>${bolos.map(b => `<option value="${esc(b.slug)}">${esc(b.rotulo)} — ${esc(R(b.preco))}/kg</option>`).join('')}</select>`)}
+        ${finalizacoes.length ? campo('npFin' + k, 'Finalização', `<select class="sel" id="npFin${k}" data-np="fin"><option value="">Tradicional (sem taxa)</option>${finalizacoes.map(f =>
+          `<option value="${esc(f.slug)}">${esc(rotuloFinalizacao(f))} (+${esc(R(f.preco))})</option>`).join('')}</select>`) : ''}
       </div>
       <div class="obs-l">${campo('npO' + k, 'Observação do item', `<input class="in" id="npO${k}" data-np="obs" maxlength="1000" placeholder="Sabores, escrita no bolo, tema…">`)}</div>
       <div class="sub" data-np="sub"></div>
@@ -1685,7 +1733,11 @@ async function modalNovoPedido() {
   const m = abrirModal({
     titulo: 'Novo pedido',
     largo: true,
-    corpo: `<div class="grid2">${inTxt('npNome', 'Cliente', '', { attrs: 'maxlength="120" autocomplete="off"' })}${inTxt('npTel', 'Telefone', '', { attrs: 'type="tel" maxlength="30" autocomplete="off"' })}</div>
+    corpo: `<div class="np-concl">
+        ${inChk('npConcl', '<span><strong>Pedido já concluído</strong><small>Para lançar um pedido que já foi retirado e pago: ele entra como retirado e 100% pago.</small></span>')}
+        <div class="np-concl-op" hidden>${inSel('npForma', 'Como foi pago', Object.entries(FORMAS), 'pix')}</div>
+      </div>
+      <div class="grid2">${inTxt('npNome', 'Cliente', '', { attrs: 'maxlength="120" autocomplete="off"' })}${inTxt('npTel', 'Telefone (DDD + número)', '', { attrs: ATTR_TEL })}</div>
       <div class="grid3">${inSel('npOrig', 'Pedido feito por', [['whatsapp', 'WhatsApp'], ['balcao', 'Balcão'], ['backoffice', 'Outro']], 'whatsapp')}
         ${campo('npData', 'Data da retirada', `<input class="in" id="npData" type="date" value="${hojeISO(Number(c.configuracoes?.dias_retirada_sugerida ?? 2))}">`)}
         ${campo('npHora', 'Horário', `<input class="in" id="npHora" type="time" value="${esc(hora(c.configuracoes?.hora_retirada_sugerida || '10:00'))}">`)}</div>
@@ -1703,7 +1755,8 @@ async function modalNovoPedido() {
     if (p.tipo === 'bolo') {
       const seg = prods[box.querySelector('[data-np="seg"]').value];
       const kg = Math.max(p.preco, seg ? seg.preco : 0);
-      return Math.round(kg * Number(box.querySelector('[data-np="peso"]').value) * 100) / 100 * q;
+      const fin = prods[box.querySelector('[data-np="fin"]')?.value];
+      return (Math.round(kg * Number(box.querySelector('[data-np="peso"]').value) * 100) / 100 + (fin ? Number(fin.preco) : 0)) * q;
     }
     const f = (p.faixas_preco || []).filter(x => q >= x.quantidade_minima && (x.quantidade_maxima == null || q <= x.quantidade_maxima)).sort((a, b) => b.quantidade_minima - a.quantidade_minima)[0];
     return (f ? f.preco : p.preco) * q;
@@ -1722,6 +1775,16 @@ async function modalNovoPedido() {
   };
   m.el.addEventListener('change', atualizar);
   m.el.addEventListener('input', e => { if (e.target.dataset.np === 'qtd') atualizar(); });
+  // Pedido já concluído: pede a forma de pagamento e a data vira "quando foi retirado" (não pode ser no futuro)
+  m.$('#npConcl').addEventListener('change', e => {
+    const on = e.target.checked;
+    m.$('.np-concl').classList.toggle('on', on);
+    m.$('.np-concl-op').hidden = !on;
+    m.$('label[for="npData"]').textContent = on ? 'Data em que foi retirado' : 'Data da retirada';
+    m.$('#npData').max = on ? hojeISO() : '';
+    if (on && valDe(m, 'npData') > hojeISO()) m.$('#npData').value = hojeISO();
+    m.$('[data-ok]').textContent = on ? 'Lançar pedido concluído' : 'Criar pedido';
+  });
   m.el.addEventListener('click', e => {
     const b = e.target.closest('[data-np]'); if (!b) return;
     if (b.dataset.np === 'add') { m.$('#npItens').insertAdjacentHTML('beforeend', linha()); m.$('#npItens .np-item:last-child select').focus(); }
@@ -1729,23 +1792,41 @@ async function modalNovoPedido() {
   });
   m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
     exigir(m, 'npNome', 'Informe o nome do cliente.');
+    if (!telOk(valDe(m, 'npTel'))) throw new Error('Telefone incompleto: informe DDD + número, ex.: (19) 99999-9999.');
     exigir(m, 'npData', 'Informe a data da retirada.');
-    const itens = m.$$('.np-item').map(box => {
-      const slug = box.querySelector('[data-np="prod"]').value; if (!slug) return null;
+    const concluido = chkDe(m, 'npConcl');
+    if (concluido && valDe(m, 'npData') > hojeISO()) throw new Error('Um pedido já concluído não pode ter a retirada no futuro.');
+    const itens = m.$$('.np-item').flatMap(box => {
+      const slug = box.querySelector('[data-np="prod"]').value; if (!slug) return [];
       const p = prods[slug];
       const it = { produto_slug: slug, quantidade: parseInt(box.querySelector('[data-np="qtd"]').value, 10) || 1, observacao: box.querySelector('[data-np="obs"]').value.trim() || null, nome: p.nome };
-      if (p.tipo === 'bolo') {
-        it.peso_kg = Number(box.querySelector('[data-np="peso"]').value); it.massa = box.querySelector('[data-np="massa"]').value;
-        const f = box.querySelector('[data-np="formato"]'); if (f) it.formato = f.value;
-        const s = box.querySelector('[data-np="seg"]').value; if (s) it.segundo_recheio_slug = s;
-      }
-      return it;
-    }).filter(Boolean);
+      if (p.tipo !== 'bolo') return [it];
+      it.peso_kg = Number(box.querySelector('[data-np="peso"]').value); it.massa = box.querySelector('[data-np="massa"]').value;
+      const f = box.querySelector('[data-np="formato"]'); if (f) it.formato = f.value;
+      const s = box.querySelector('[data-np="seg"]').value; if (s) it.segundo_recheio_slug = s;
+      // a finalização entra como item logo abaixo do bolo, na mesma quantidade
+      const fin = prods[box.querySelector('[data-np="fin"]')?.value];
+      return fin ? [it, { produto_slug: fin.slug, quantidade: it.quantidade, observacao: `Bolo: ${p.nome} ${formatarPeso(it.peso_kg)}`, nome: fin.nome }] : [it];
+    });
     if (!itens.length) throw new Error('Adicione pelo menos um item.');
-    const r = await api.admin.pedidos.criar({ origem: valDe(m, 'npOrig'), cliente_nome: valDe(m, 'npNome'), cliente_telefone: valDe(m, 'npTel') || null,
-      data_retirada: valDe(m, 'npData'), hora_retirada: valDe(m, 'npHora') || null, observacao: valDe(m, 'npObs') || null, itens });
+    const data = valDe(m, 'npData'), horaRet = valDe(m, 'npHora');
+    const r = await api.admin.pedidos.criar({ origem: valDe(m, 'npOrig'), cliente_nome: valDe(m, 'npNome'), cliente_telefone: formatarTel(valDe(m, 'npTel')) || null,
+      data_retirada: data, hora_retirada: horaRet || null, observacao: valDe(m, 'npObs') || null, itens });
     m.fechar();
-    toast(`Pedido ${r.codigo} criado.`);
+    if (concluido) {
+      // já nasce pago (100%) e retirado
+      try {
+        const falta = Math.round((Number(r.total) - Number(r.valor_pago || 0)) * 100) / 100;
+        if (falta > 0) await api.admin.pedidos.registrarPagamento(r.id, { valor: falta, forma: valDe(m, 'npForma') || 'pix', tipo: 'outro',
+          observacao: 'Pagamento integral (pedido lançado depois de concluído)', pagoEm: `${data}T${horaRet || '12:00'}:00-03:00` });
+        const st = statusRetirado();
+        if (st) await api.admin.pedidos.alterarStatus(r.id, st.codigo, 'Pedido lançado depois de concluído');
+        toast(`Pedido ${r.codigo} lançado como retirado e pago.`);
+      } catch (e) {
+        console.error(e);
+        toast(`Pedido ${r.codigo} criado, mas faltou concluir: ${e?.message || 'erro'}. Registre o pagamento e o status no pedido.`, { tipo: 'erro', tempo: 9000 });
+      }
+    } else toast(`Pedido ${r.codigo} criado.`);
     precisaRecarregar = true;
     if (telaAtual === 'painel' || telaAtual === 'pedidos') recarregarTela();
     atualizarBadge();
@@ -2070,7 +2151,7 @@ async function ajLoja(box) {
     <div class="card">
       ${inTa('lPausa', 'Mensagem quando os pedidos estiverem pausados', c.mensagem_pausa || '', { attrs: 'maxlength="300" style="min-height:60px" placeholder="Ex.: Estamos de férias até 10/01. Voltamos logo!"' })}
       <div class="grid2">${inTxt('lNome', 'Nome da loja', c.nome_loja, { attrs: 'maxlength="60"' })}${inTxt('lSlogan', 'Slogan', c.slogan || '', { attrs: 'maxlength="80"' })}</div>
-      <div class="grid2">${inTxt('lWa', 'WhatsApp (só números, com 55 e DDD)', c.whatsapp_numero, { attrs: 'inputmode="numeric" maxlength="15"', dica: 'Ex.: 551938451550' })}${inTxt('lWaEx', 'WhatsApp como aparece no site', c.whatsapp_exibicao || '', { attrs: 'maxlength="30"', dica: 'Ex.: (19) 3845-1550' })}</div>
+      <div class="grid2">${inTxt('lWa', 'WhatsApp da loja (DDD + número)', formatarTel(c.whatsapp_numero), { attrs: ATTR_TEL.replace('99999-9999', '3845-1550'), dica: 'É o número que recebe os pedidos do site.' })}${inTxt('lWaEx', 'WhatsApp como aparece no site', formatarTel(c.whatsapp_exibicao) || c.whatsapp_exibicao || '', { attrs: ATTR_TEL.replace('99999-9999', '3845-1550'), dica: 'Em branco, usa o mesmo número de cima.' })}</div>
       <div class="grid3">${inNum('lSinal', 'Sinal (%)', c.percentual_sinal, { attrs: 'min="0" max="100" step="1"' })}${inNum('lAnt', 'Antecedência mínima (dias)', c.antecedencia_minima_dias, { attrs: 'min="0"' })}${inNum('lTol', 'Tolerância de peso do bolo (g)', c.tolerancia_peso_bolo_g, { attrs: 'min="0" step="50"' })}</div>
       <div class="grid2">${inNum('lDias', 'Retirada sugerida (dias depois do pedido)', c.dias_retirada_sugerida, { attrs: 'min="0"', dica: 'Só para pedidos lançados aqui pela equipe. No site, o cliente escolhe o dia.' })}${campo('lHora', 'Horário sugerido', `<input class="in" id="lHora" type="time" value="${esc(hora(c.hora_retirada_sugerida))}">`, 'Idem: no site, o cliente escolhe o horário.')}</div>
       ${inTxt('lUrl', 'Endereço do site', c.url_site || '', { attrs: 'type="url" placeholder="https://ritabolos.com.br/"', dica: 'Usado no link do recibo que vai no WhatsApp.' })}
@@ -2087,14 +2168,15 @@ async function ajLoja(box) {
     } catch (err) { erroToast(err); e.target.checked = !on; }
   });
   box.querySelector('#lSalvar').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
-    const wa = valDe(fake, 'lWa').replace(/\D/g, '');
-    if (!/^\d{10,15}$/.test(wa)) throw new Error('O WhatsApp precisa ter só números, com 55 e DDD (ex.: 551938451550).');
+    const waDig = digitosTel(valDe(fake, 'lWa'));
+    if (waDig.length < 10) throw new Error('Informe o WhatsApp da loja com DDD, ex.: (19) 3845-1550.');
+    const wa = '55' + waDig;   // o link do WhatsApp precisa do 55 do Brasil
     const sinal = numDe(fake, 'lSinal');
     if (!(sinal >= 0 && sinal <= 100)) throw new Error('O sinal precisa ficar entre 0 e 100%.');
     exigir(fake, 'lNome', 'Informe o nome da loja.');
     await api.admin.configuracoes.salvar({
       mensagem_pausa: valDe(fake, 'lPausa') || null, nome_loja: valDe(fake, 'lNome'), slogan: valDe(fake, 'lSlogan') || null,
-      whatsapp_numero: wa, whatsapp_exibicao: valDe(fake, 'lWaEx') || null, percentual_sinal: sinal,
+      whatsapp_numero: wa, whatsapp_exibicao: valDe(fake, 'lWaEx') || formatarTel(waDig), percentual_sinal: sinal,
       antecedencia_minima_dias: numDe(fake, 'lAnt') || 0, tolerancia_peso_bolo_g: numDe(fake, 'lTol') || 0,
       dias_retirada_sugerida: numDe(fake, 'lDias') || 0, hora_retirada_sugerida: valDe(fake, 'lHora') || '10:00',
       url_site: valDe(fake, 'lUrl') || null, logo_path: fotoDe(fake, 'lLogo')
