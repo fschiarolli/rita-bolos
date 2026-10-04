@@ -288,6 +288,20 @@ body.ocioso .controles { opacity: 0; transform: translateY(.5rem); pointer-event
 </svg>
 <div id="app"><div class="carregando"><div><div class="spin" aria-hidden="true"></div>Abrindo o quadro…</div></div></div>
 <noscript><p style="padding:20px">O quadro precisa do JavaScript ligado.</p></noscript>
-<script type="module" src="quadro.js"></script>
+<script>
+  /* Sempre a versão mais nova do quadro e da API (a TV fica aberta por dias: sem isso, seguiria com uma cópia antiga) */
+  (() => {
+    const v = Date.now(), abs = p => new URL(p, location.href).href;
+    const mapa = document.createElement('script');
+    mapa.type = 'importmap';
+    mapa.textContent = JSON.stringify({ imports: Object.fromEntries(['../js/rita-api.js', '../js/config.js', '../demo/supabase-demo.js', '../demo/dados-demo.js']
+      .map(p => [abs(p), abs(p) + '?v=' + v])) });
+    document.head.appendChild(mapa);
+    const app = document.createElement('script');
+    app.type = 'module';
+    app.src = 'quadro.js?v=' + v;
+    document.body.appendChild(app);
+  })();
+</script>
 </body>
 </html>

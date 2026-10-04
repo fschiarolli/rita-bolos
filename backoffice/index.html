@@ -10,6 +10,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#4A2A1C">
 <title>Backoffice — Rita Bolos</title>
+<link rel="icon" href="../icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -736,6 +737,21 @@ a.chip { text-decoration: none; }
 <div id="app"><div class="carregando"><div><div class="spin" aria-hidden="true"></div>Carregando…</div></div></div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <noscript><p style="padding:20px">O backoffice precisa do JavaScript ligado.</p></noscript>
-<script type="module" src="app.js"></script>
+<script>
+  /* Carrega sempre a versão mais nova do backoffice e da API: depois de publicar uma atualização,
+     o navegador não reaproveita uma cópia antiga guardada (que deixava opções novas sem aparecer). */
+  (() => {
+    const v = Date.now(), abs = p => new URL(p, location.href).href;
+    const mapa = document.createElement('script');
+    mapa.type = 'importmap';
+    mapa.textContent = JSON.stringify({ imports: Object.fromEntries(['../js/rita-api.js', '../js/config.js', '../demo/supabase-demo.js', '../demo/dados-demo.js']
+      .map(p => [abs(p), abs(p) + '?v=' + v])) });
+    document.head.appendChild(mapa);
+    const app = document.createElement('script');
+    app.type = 'module';
+    app.src = 'app.js?v=' + v;
+    document.body.appendChild(app);
+  })();
+</script>
 </body>
 </html>
