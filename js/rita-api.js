@@ -334,9 +334,9 @@ export function criarApi(supabase, opcoes = {}) {
         criar: (pedido) => rpc('criar_pedido', { p_pedido: { origem: 'backoffice', chave_idempotencia: novaChave(), ...pedido } }),
         alterarStatus: (id, status, comentario) =>
           rpc('alterar_status_pedido', { p_pedido_id: id, p_status: status, p_comentario: comentario ?? null }),
-        /** Corrige dados do pedido (cliente, retirada, desconto). Status: use alterarStatus. */
+        /** Corrige dados do pedido (cliente, origem, retirada, desconto). Itens: admin.pedidos.itens. Status: use alterarStatus. */
         async atualizar(id, campos) {
-          const permitidos = ['cliente_nome', 'cliente_telefone', 'data_retirada', 'hora_retirada', 'observacao_cliente', 'desconto'];
+          const permitidos = ['cliente_nome', 'cliente_telefone', 'origem', 'data_retirada', 'hora_retirada', 'observacao_cliente', 'desconto'];
           const dados = Object.fromEntries(Object.entries(campos).filter(([k]) => permitidos.includes(k)));
           conferir(await supabase.from('pedidos').update(dados).eq('id', id), 'pedido');
           return rpc('recibo_pedido', { p_pedido_id: id });

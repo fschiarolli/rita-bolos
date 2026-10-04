@@ -1659,26 +1659,168 @@ function modalPagamento(p) {
   }));
 }
 
-function modalEditarPedido(p) {
+/* Editar tudo do pedido: cliente, origem, retirada, desconto, observação e os itens (trocar, mudar, incluir, tirar).
+   Pagamentos e status continuam nos botões próprios da gaveta. */
+async function modalEditarPedido(p) {
+  let c;
+  try { c = await carregarCardapioAtivo(true); } catch (e) { erroToast(e); return; }
+  const { prods, bolos, finalizacoes, opcoesProd, precoUnitario } = catalogoPedido(c);
+  const porId = {}; Object.values(prods).forEach(x => { porId[x.id] = x; });
+  // o item gravado guarda os nomes (massa, formato, 2º recheio); os campos usam o slug
+  const massaSlug = nome => c.bolo.massas.find(x => x.nome === nome)?.slug || '';
+  const formatoSlug = nome => (c.bolo.formatos || []).find(x => x.nome === nome)?.slug || '';
+  const segSlug = nome => (nome && bolos.find(b => (b.rotulo || b.nome) === nome || b.nome === nome)?.slug) || '';
+  const pesos = c.bolo.pesos.map(Number);
+  const itensOrig = p.itens || [];
+  let n = 0;
+  const linha = (it = null) => {
+    const k = ++n, prod = it ? porId[it.produto_id] : null;
+    const fora = !!it && !prod;   // produto saiu do cardápio: o item fica, mas só muda quantidade, valor e observação
+    const peso = it?.peso_kg ? Number(it.peso_kg) : pesos[0];
+    const opPesos = [...new Set([...pesos, peso])].sort((a, b) => a - b);
+    const sel = (lista, val) => lista.map(([v, t]) => `<option value="${esc(v)}" ${String(v) === String(val) ? 'selected' : ''}>${esc(t)}</option>`).join('');
+    return `<div class="np-item" data-k="${k}" ${it ? `data-id="${esc(it.id)}"` : ''}>
+      ${campo('edP' + k, 'Produto', `<select class="sel" id="edP${k}" data-np="prod">${fora ? `<option value="">${esc(it.nome)} (fora do cardápio)</option>` : opcoesProd}</select>`)}
+      ${campo('edQ' + k, 'Qtd.', `<input class="in" id="edQ${k}" data-np="qtd" type="number" min="1" max="999" value="${it ? it.quantidade : 1}" inputmode="numeric">`)}
+      <button type="button" class="btn icon ghost" data-np="tirar" aria-label="Tirar item" style="align-self:end">${ic('lixo')}</button>
+      <div class="bolo" hidden>
+        ${campo('edW' + k, 'Peso', `<select class="sel" id="edW${k}" data-np="peso">${sel(opPesos.map(w => [w, formatarPeso(w)]), peso)}</select>`)}
+        ${campo('edM' + k, 'Massa', `<select class="sel" id="edM${k}" data-np="massa">${sel(c.bolo.massas.map(mm => [mm.slug, mm.nome]), massaSlug(it?.massa))}</select>`)}
+        ${(c.bolo.formatos || []).length ? campo('edF' + k, 'Formato', `<select class="sel" id="edF${k}" data-np="formato">${sel([...(it && !it.formato ? [['', 'Não informado']] : []), ...c.bolo.formatos.map(ff => [ff.slug, ff.nome])], formatoSlug(it?.formato))}</select>`) : ''}
+        ${campo('edS' + k, '2º recheio', `<select class="sel" id="edS${k}" data-np="seg"><option value="">Sem 2º recheio</option>${sel(bolos.map(b => [b.slug, `${b.rotulo || b.nome} — ${R(b.preco)}/kg`]), segSlug(it?.segundo_recheio))}</select>`)}
+        ${!it && finalizacoes.length ? campo('edFin' + k, 'Finalização', `<select class="sel" id="edFin${k}" data-np="fin"><option value="">Tradicional (sem taxa)</option>${finalizacoes.map(f =>
+          `<option value="${esc(f.slug)}">${esc(rotuloFinalizacao(f))} (+${esc(R(f.preco))})</option>`).join('')}</select>`) : ''}
+      </div>
+      <div class="obs-l">${campo('edO' + k, 'Observação do item', `<input class="in" id="edO${k}" data-np="obs" maxlength="1000" value="${esc(it?.observacao || '')}" placeholder="Sabores, escrita no bolo, tema…">`)}</div>
+      <div class="ed-preco">${campo('edV' + k, 'Valor de cada', `<div class="money"><input class="in" id="edV${k}" data-np="preco" inputmode="decimal" value="${it ? esc(valorTxt(it.preco_unitario)) : ''}"></div>`)}
+        <div class="sub" data-np="sub"></div></div>
+    </div>`;
+  };
   const m = abrirModal({
     titulo: `Editar ${p.codigo}`,
+    largo: true,
     corpo: `<div class="grid2">${inTxt('edNome', 'Cliente', p.cliente_nome, { attrs: 'maxlength="120"' })}${inTxt('edTel', 'Telefone (DDD + número)', formatarTel(p.cliente_telefone) || p.cliente_telefone || '', { attrs: ATTR_TEL })}</div>
-      <div class="grid2">${campo('edData', 'Data da retirada', `<input class="in" id="edData" type="date" value="${esc(p.data_retirada)}">`)}${campo('edHora', 'Horário', `<input class="in" id="edHora" type="time" value="${esc(hora(p.hora_retirada))}">`)}</div>
-      ${inDin('edDesc', 'Desconto', p.desconto || '', { dica: `Subtotal de ${R(p.subtotal)}. O total e o sinal são recalculados.` })}
-      ${inTa('edObs', 'Observação do cliente', p.observacao_cliente || '', { attrs: 'maxlength="1000"' })}
-      <p class="dica" style="margin:0">Para trocar itens, crie um pedido novo e cancele este.</p>`,
-    rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>Salvar</button>`
+      <div class="grid3">${inSel('edOrig', 'Pedido feito por', Object.entries(ORIGENS), p.origem || 'backoffice')}
+        ${campo('edData', 'Data da retirada', `<input class="in" id="edData" type="date" value="${esc(p.data_retirada)}">`)}
+        ${campo('edHora', 'Horário', `<input class="in" id="edHora" type="time" value="${esc(hora(p.hora_retirada))}">`)}</div>
+      ${inTa('edObs', 'Observação do cliente', p.observacao_cliente || '', { attrs: 'maxlength="1000" style="min-height:60px"' })}
+      <p class="secao-t">Itens</p>
+      <div id="edItens">${itensOrig.length ? itensOrig.map(linha).join('') : linha()}</div>
+      <button type="button" class="btn ghost sm" data-np="add">${ic('mais')}Adicionar item</button>
+      <div class="grid2" style="margin-top:14px;align-items:end">
+        ${inDin('edDesc', 'Desconto', p.desconto || '')}
+        <div class="np-total" style="margin:0 0 14px"><span>Novo total</span><span id="edTotal"></span></div>
+      </div>
+      <p class="dica" style="margin:0">Ao mudar produto, peso ou 2º recheio, o valor é recalculado pelo cardápio; você pode ajustar o valor de cada item à mão. O total, o sinal e o saldo são atualizados ao salvar. Pagamentos e status continuam nos botões do pedido.</p>`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>Salvar alterações</button>`
   });
+  const campoDe = (box, nome) => box.querySelector(`[data-np="${nome}"]`);
+  // seleciona o produto de cada item já gravado (as opções são as mesmas para todas as linhas)
+  m.$$('.np-item[data-id]').forEach(box => { const it = itensOrig.find(i => i.id === box.dataset.id), prod = porId[it?.produto_id]; if (prod) campoDe(box, 'prod').value = prod.slug; });
+  const sugerido = box => {
+    const prod = prods[campoDe(box, 'prod').value]; if (!prod) return null;
+    const qtd = Math.max(1, parseInt(campoDe(box, 'qtd').value, 10) || 1);
+    return precoUnitario(prod, { qtd, peso: campoDe(box, 'peso').value, seg: prods[campoDe(box, 'seg').value] });
+  };
+  const atualizar = () => {
+    let sub = 0;
+    m.$$('.np-item').forEach(box => {
+      const prod = prods[campoDe(box, 'prod').value];
+      box.querySelector('.bolo').hidden = !(prod && prod.tipo === 'bolo');
+      const q = Math.max(1, parseInt(campoDe(box, 'qtd').value, 10) || 1), v = lerValor(campoDe(box, 'preco').value) || 0;
+      const fin = prods[campoDe(box, 'fin')?.value];
+      const linhaTot = q * v + (fin ? q * Number(fin.preco) : 0);
+      const vazio = !prod && !box.dataset.id;
+      box.querySelector('[data-np="sub"]').innerHTML = vazio ? '' : `${q} × ${R(v)}${fin ? ` + finalização ${R(q * Number(fin.preco))}` : ''} = <strong>${R(linhaTot)}</strong>`;
+      if (!vazio) sub += linhaTot;
+    });
+    const desc = Math.max(0, lerValor(valDe(m, 'edDesc')) || 0);
+    m.$('#edTotal').textContent = R(Math.max(0, Math.round((sub - desc) * 100) / 100));
+  };
+  // muda o produto, o peso ou o 2º recheio: valor pelo cardápio; quantidade só muda o valor quando o produto tem faixa de preço e o valor não foi digitado
+  m.el.addEventListener('change', e => {
+    const box = e.target.closest('.np-item'), np = e.target.dataset.np;
+    if (box && ['prod', 'peso', 'seg'].includes(np)) { const s = sugerido(box); if (s != null) { campoDe(box, 'preco').value = valorTxt(s); delete campoDe(box, 'preco').dataset.manual; } }
+    atualizar();
+  });
+  m.el.addEventListener('input', e => {
+    const box = e.target.closest('.np-item'), np = e.target.dataset.np;
+    if (np === 'preco') campoDe(box, 'preco').dataset.manual = '1';
+    if (np === 'qtd') {
+      const prod = prods[campoDe(box, 'prod').value], pr = campoDe(box, 'preco');
+      if (prod && (prod.faixas_preco || []).length && !pr.dataset.manual) { const s = sugerido(box); if (s != null) pr.value = valorTxt(s); }
+    }
+    if (['qtd', 'preco'].includes(np) || e.target.id === 'edDesc') atualizar();
+  });
+  m.el.addEventListener('click', e => {
+    const b = e.target.closest('[data-np]'); if (!b) return;
+    if (b.dataset.np === 'add') { m.$('#edItens').insertAdjacentHTML('beforeend', linha()); m.$('#edItens .np-item:last-child select').focus(); atualizar(); }
+    if (b.dataset.np === 'tirar') { b.closest('.np-item').remove(); atualizar(); }
+  });
+  atualizar();
+
   m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
     exigir(m, 'edNome', 'Informe o nome do cliente.');
-    exigir(m, 'edData', 'Informe a data da retirada.');
     if (!telOk(valDe(m, 'edTel'))) throw new Error('Telefone incompleto: informe DDD + número, ex.: (19) 99999-9999.');
+    exigir(m, 'edData', 'Informe a data da retirada.');
     const desc = lerValor(valDe(m, 'edDesc')) || 0;
     if (Number.isNaN(desc) || desc < 0) throw new Error('Desconto inválido.');
-    const dados = { cliente_nome: valDe(m, 'edNome'), cliente_telefone: formatarTel(valDe(m, 'edTel')) || null, data_retirada: valDe(m, 'edData'),
-      hora_retirada: valDe(m, 'edHora') || null, desconto: desc, observacao_cliente: valDe(m, 'edObs') || null };
+    // monta os itens como vão para o banco (pedido_itens)
+    const linhas = [];
+    m.$$('.np-item').forEach(box => {
+      const id = box.dataset.id || null, prod = prods[campoDe(box, 'prod').value];
+      if (!id && !prod) return;   // linha nova sem produto escolhido
+      const quantidade = parseInt(campoDe(box, 'qtd').value, 10);
+      const nomeItem = prod?.nome || itensOrig.find(i => i.id === id)?.nome || 'item';
+      if (!(quantidade >= 1 && quantidade <= 999)) throw new Error(`Quantidade inválida em "${nomeItem}".`);
+      const preco = lerValor(campoDe(box, 'preco').value);
+      if (preco == null || Number.isNaN(preco) || preco < 0) throw new Error(`Informe o valor de "${nomeItem}".`);
+      const d = { quantidade, preco_unitario: Math.round(preco * 100) / 100, observacao: campoDe(box, 'obs').value.trim() || null };
+      if (prod) {
+        Object.assign(d, { produto_id: prod.id, categoria: prod.categoria, nome: prod.nome, peso_kg: null, preco_kg: null, massa: null, formato: null,
+          segundo_recheio_id: null, segundo_recheio: null, faixa_preco: null });
+        if (prod.tipo === 'bolo') {
+          const peso = Number(campoDe(box, 'peso').value), seg = prods[campoDe(box, 'seg').value];
+          if (seg && seg.id === prod.id) throw new Error(`O 2º recheio precisa ser diferente do sabor principal em "${prod.nome}".`);
+          Object.assign(d, { peso_kg: peso, preco_kg: peso ? Math.round(d.preco_unitario / peso * 100) / 100 : null,
+            massa: c.bolo.massas.find(x => x.slug === campoDe(box, 'massa').value)?.nome || null,
+            formato: (c.bolo.formatos || []).find(x => x.slug === campoDe(box, 'formato')?.value)?.nome || null,
+            segundo_recheio_id: seg?.id || null, segundo_recheio: seg ? (seg.rotulo || seg.nome) : null });
+        } else {
+          const f = (prod.faixas_preco || []).filter(x => quantidade >= x.quantidade_minima && (x.quantidade_maxima == null || quantidade <= x.quantidade_maxima)).sort((a, b) => b.quantidade_minima - a.quantidade_minima)[0];
+          if (f && Number(f.preco) === d.preco_unitario) d.faixa_preco = f.nome;
+        }
+      }
+      linhas.push({ id, d });
+      const fin = prods[campoDe(box, 'fin')?.value];
+      if (fin && prod) linhas.push({ id: null, d: { quantidade, preco_unitario: Number(fin.preco), observacao: `Bolo: ${prod.nome} ${formatarPeso(d.peso_kg)}`,
+        produto_id: fin.id, categoria: fin.categoria, nome: fin.nome, peso_kg: null, preco_kg: null, massa: null, formato: null,
+        segundo_recheio_id: null, segundo_recheio: null, faixa_preco: null } });
+    });
+    if (!linhas.length) throw new Error('O pedido precisa ter pelo menos um item.');
+    linhas.forEach((l, i) => { l.d.ordem = i + 1; });
+    // só grava o que mudou
+    const mesmo = (a, b) => String(a ?? '') === String(b ?? '') || (a != null && b != null && a !== '' && b !== '' && Number(a) === Number(b));
+    const mudou = l => {
+      const o = itensOrig.find(i => i.id === l.id), pos = itensOrig.indexOf(o) + 1;
+      return pos !== l.d.ordem || Object.keys(l.d).some(k => !['ordem', 'segundo_recheio_id'].includes(k) && !mesmo(o[k], l.d[k]));
+    };
+    const ficam = new Set(linhas.filter(l => l.id).map(l => l.id));
+    const removidos = itensOrig.filter(i => !ficam.has(i.id));
+    const alterados = linhas.filter(l => l.id && mudou(l)), novos = linhas.filter(l => !l.id);
+    const dados = { cliente_nome: valDe(m, 'edNome'), cliente_telefone: formatarTel(valDe(m, 'edTel')) || null, origem: valDe(m, 'edOrig'),
+      data_retirada: valDe(m, 'edData'), hora_retirada: valDe(m, 'edHora') || null, desconto: desc, observacao_cliente: valDe(m, 'edObs') || null };
     m.fechar();
-    await acaoGaveta(null, async () => { const r = await api.admin.pedidos.atualizar(p.id, dados); toast('Pedido atualizado.'); return r; });
+    await acaoGaveta(null, async () => {
+      const itensApi = api.admin.pedidos.itens;
+      for (const i of removidos) await itensApi.remover(i.id);
+      for (const l of alterados) await itensApi.atualizar(l.id, l.d);
+      for (const l of novos) await itensApi.criar({ ...l.d, pedido_id: p.id });
+      const r = await api.admin.pedidos.atualizar(p.id, dados);   // por último: o total, o sinal e o saldo são recalculados com os itens novos
+      const nItens = removidos.length + alterados.length + novos.length;
+      toast(nItens ? `Pedido atualizado (${nItens} ${nItens === 1 ? 'item alterado' : 'itens alterados'}).` : 'Pedido atualizado.');
+      return r;
+    });
   }));
 }
 
@@ -1690,6 +1832,27 @@ let cardapioAtivo = null;
 const ehFinalizacao = p => /^finalizacao-/.test(p?.slug || '')
   || /^finaliza/.test(String(p?.grupo || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim());
 const rotuloFinalizacao = p => p.rotulo || String(p.nome).replace(/^finaliza[çc][ãa]o\s*/i, '').replace(/^./, c => c.toUpperCase());
+/** Produtos do cardápio para montar itens de pedido (Novo pedido e Editar pedido). */
+function catalogoPedido(c) {
+  const prods = {};
+  const grupos = c.categorias.map(cat => ({ nome: cat.nome + (cat.aceita_pedido_online === false && cat.layout !== 'pagina' ? ' (só backoffice)' : ''),
+    itens: [...cat.grupos.flatMap(g => g.produtos.map(p => ({ ...p, grupo: g.nome, categoria: cat.nome }))), ...cat.produtos.map(p => ({ ...p, categoria: cat.nome }))] }))
+    .filter(g => g.itens.length);
+  grupos.forEach(g => g.itens.forEach(p => { prods[p.slug] = p; }));
+  const bolos = Object.values(prods).filter(p => p.tipo === 'bolo');
+  // Finalização do bolo (colorido, glitter…): opção dentro do bolo (vira item à parte) e também item avulso na lista de produtos
+  const finalizacoes = Object.values(prods).filter(ehFinalizacao);
+  const opcoesProd = `<option value="">Escolha um produto</option>` + grupos.map(g => `<optgroup label="${esc(g.nome)}">${g.itens.map(p =>
+    `<option value="${esc(p.slug)}">${esc(p.nome)} — ${esc(R(p.preco))}${p.unidade_preco === 'kg' ? '/kg' : ''}</option>`).join('')}</optgroup>`).join('');
+  /** Preço de uma unidade pelo cardápio: bolo = R$/kg (o maior entre os dois recheios) × peso; demais = faixa de quantidade ou preço base. */
+  const precoUnitario = (p, { qtd = 1, peso, seg } = {}) => {
+    if (!p) return 0;
+    if (p.tipo === 'bolo') return Math.round(Math.max(Number(p.preco), seg ? Number(seg.preco) : 0) * Number(peso || 0) * 100) / 100;
+    const f = (p.faixas_preco || []).filter(x => qtd >= x.quantidade_minima && (x.quantidade_maxima == null || qtd <= x.quantidade_maxima)).sort((a, b) => b.quantidade_minima - a.quantidade_minima)[0];
+    return Number(f ? f.preco : p.preco);
+  };
+  return { prods, bolos, finalizacoes, opcoesProd, precoUnitario };
+}
 async function carregarCardapioAtivo(forcar = false) {
   if (!cardapioAtivo || forcar) cardapioAtivo = await api.cardapio.obter();
   return cardapioAtivo;
@@ -1702,15 +1865,7 @@ async function configLoja(forcar = false) {
 async function modalNovoPedido() {
   let c;
   try { c = await carregarCardapioAtivo(true); } catch (e) { erroToast(e); return; }
-  const prods = {};
-  const grupos = c.categorias.map(cat => ({ nome: cat.nome + (cat.aceita_pedido_online === false && cat.layout !== 'pagina' ? ' (só backoffice)' : ''), itens: [...cat.grupos.flatMap(g => g.produtos.map(p => ({ ...p, grupo: g.nome }))), ...cat.produtos] }))
-    .filter(g => g.itens.length);
-  grupos.forEach(g => g.itens.forEach(p => { prods[p.slug] = p; }));
-  const bolos = Object.values(prods).filter(p => p.tipo === 'bolo');
-  // Finalização do bolo (colorido, glitter…): opção dentro do bolo (vira item à parte) e também item avulso na lista de produtos
-  const finalizacoes = Object.values(prods).filter(ehFinalizacao);
-  const opcoesProd = `<option value="">Escolha um produto</option>` + grupos.map(g => `<optgroup label="${esc(g.nome)}">${g.itens.map(p =>
-    `<option value="${esc(p.slug)}">${esc(p.nome)} — ${esc(R(p.preco))}${p.unidade_preco === 'kg' ? '/kg' : ''}</option>`).join('')}</optgroup>`).join('');
+  const { prods, bolos, finalizacoes, opcoesProd } = catalogoPedido(c);
   let n = 0;
   const linha = () => {
     const k = ++n;
