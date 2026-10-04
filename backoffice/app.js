@@ -1686,8 +1686,9 @@ function modalEditarPedido(p) {
    NOVO PEDIDO (pedido feito por WhatsApp, telefone ou balcão)
 ========================================================= */
 let cardapioAtivo = null;
-/** Finalização do bolo (colorido, glitter…): produto do cardápio com slug "finalizacao-…", cobrado à parte. */
-const ehFinalizacao = p => /^finalizacao-/.test(p?.slug || '');
+/** Finalização do bolo (colorido, glitter…): produto do grupo "Finalização" (ou com slug "finalizacao-…"), cobrado à parte. */
+const ehFinalizacao = p => /^finalizacao-/.test(p?.slug || '')
+  || /^finaliza/.test(String(p?.grupo || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim());
 const rotuloFinalizacao = p => p.rotulo || String(p.nome).replace(/^finaliza[çc][ãa]o\s*/i, '').replace(/^./, c => c.toUpperCase());
 async function carregarCardapioAtivo(forcar = false) {
   if (!cardapioAtivo || forcar) cardapioAtivo = await api.cardapio.obter();
@@ -1702,7 +1703,7 @@ async function modalNovoPedido() {
   let c;
   try { c = await carregarCardapioAtivo(true); } catch (e) { erroToast(e); return; }
   const prods = {};
-  const grupos = c.categorias.map(cat => ({ nome: cat.nome, itens: [...cat.grupos.flatMap(g => g.produtos.map(p => ({ ...p, grupo: g.nome }))), ...cat.produtos] }))
+  const grupos = c.categorias.map(cat => ({ nome: cat.nome + (cat.aceita_pedido_online === false && cat.layout !== 'pagina' ? ' (só backoffice)' : ''), itens: [...cat.grupos.flatMap(g => g.produtos.map(p => ({ ...p, grupo: g.nome }))), ...cat.produtos] }))
     .filter(g => g.itens.length);
   grupos.forEach(g => g.itens.forEach(p => { prods[p.slug] = p; }));
   const bolos = Object.values(prods).filter(p => p.tipo === 'bolo');
@@ -1897,7 +1898,7 @@ function desenharCardapio() {
       <button type="button" class="btn sm ghost" data-nova-cat>${ic('mais')}Categoria</button></div>
     ${c ? `<div class="card" style="margin-bottom:16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
         <div style="flex:1;min-width:200px"><strong style="font-size:17px">${esc(c.nome)}</strong>
-          <div class="dica" style="color:var(--ink-3);font-weight:400;font-size:13px">${esc(LAYOUTS.find(l => l[0] === c.layout)?.[1] || c.layout)}${c.antecedencia_minima_dias ? ` · ${c.antecedencia_minima_dias} dias de antecedência` : ''}${c.aceita_pedido_online ? '' : ' · só orçamento (sem pedido pelo site)'}${c.precos_validos_ate ? ` · preços até ${esc(formatarData(c.precos_validos_ate))}` : ''}</div>
+          <div class="dica" style="color:var(--ink-3);font-weight:400;font-size:13px">${esc(LAYOUTS.find(l => l[0] === c.layout)?.[1] || c.layout)}${c.antecedencia_minima_dias ? ` · ${c.antecedencia_minima_dias} dias de antecedência` : ''}${c.aceita_pedido_online ? '' : c.layout === 'pagina' ? ' · sem pedido pelo site' : ' · só no backoffice (não aparece no site)'}${c.precos_validos_ate ? ` · preços até ${esc(formatarData(c.precos_validos_ate))}` : ''}</div>
           ${c.precos_validos_ate && c.precos_validos_ate < hojeISO() ? `<div class="tag pend" style="margin-top:6px">A validade dos preços já passou</div>` : ''}</div>
         <label class="chk"><input type="checkbox" class="switch" data-ativo-cat="${esc(c.id)}" ${c.ativo ? 'checked' : ''}> No site</label>
         <button type="button" class="btn sm ghost" data-ed-cat="${esc(c.id)}">${ic('editar')}Editar categoria</button>
@@ -2084,7 +2085,8 @@ function modalCategoria(c) {
         ${inTa('cDesc', 'Descrição', c.descricao || '', { attrs: 'maxlength="800" style="min-height:64px"' })}
         <div class="grid2">${inTxt('cLink', 'Link da página', c.link_externo || '', { attrs: 'placeholder="sacolinhas.html"' })}${inTxt('cParc', 'Parceria', c.parceiro || '', { attrs: 'maxlength="60"' })}</div>
       </div>
-      <div style="display:flex;gap:18px;flex-wrap:wrap">${inChk('cOnline', 'Aceita pedido pelo site', c.aceita_pedido_online)}${inChk('cAtivo', 'Aparece no site', c.ativo)}</div>`,
+      <div style="display:flex;gap:18px;flex-wrap:wrap">${inChk('cOnline', 'Vende pelo site', c.aceita_pedido_online)}${inChk('cAtivo', 'Ativa', c.ativo)}</div>
+      <p class="dica" style="margin:4px 0 0">Desmarque <strong>Vende pelo site</strong> para itens só do backoffice (ex.: pedidos personalizados para algumas clientes): a categoria some do site e os itens só podem ser lançados em <strong>Novo pedido</strong>. Desmarque <strong>Ativa</strong> para tirar a categoria de tudo.</p>`,
     rodape: `${novo ? '' : `<button type="button" class="btn danger esq" data-del>${ic('lixo')}Excluir</button>`}<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>Salvar</button>`
   });
   let slugManual = !novo;

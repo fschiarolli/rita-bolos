@@ -1039,6 +1039,10 @@ let KITS_CAT = null;     // categoria exibida na aba Kits
 let WEIGHT_OPTIONS = [1.5];
 let MASSAS = [];
 let FORMATOS = [];
+let FINALIZACOES = [];   // finalização do bolo (colorido, glitter…): produtos do grupo "Finalização" (ou slug "finalizacao-…"), cobrados à parte
+const ehFinalizacao = p => /^finalizacao-/.test(p?.slug || '');
+const grupoFinalizacao = nome => /^finaliza/.test(String(nome || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim());
+const finDe = slug => (slug && FINALIZACOES.find(f => f.slug === slug)) || null;
 const CAT_ALIAS = { pote: 'bolo-no-pote' };   // links antigos
 
 /* Carrega a API (ou o banco de demonstração) */
@@ -1290,13 +1294,18 @@ function buildCatalog(d) {
   MASSAS = (d.bolo?.massas || []).map(m => ({ v: m.slug, label: m.nome, desc: m.descricao || '', cor: m.cor || '#EBC78F',
     short: m.nome.replace(/^massa\s+/i, '').replace(/^./, c => c.toUpperCase()) }));
   FORMATOS = (d.bolo?.formatos || []).map(f => ({ v: f.slug, label: f.nome, desc: f.descricao || '' }));
-  CATS = d.categorias || [];
+  // Categoria com "Vende pelo site" desmarcado é só do backoffice: some do site (páginas, como Sacolinhas, continuam como link)
+  CATS = (d.categorias || []).filter(c => c.layout === 'pagina' || c.aceita_pedido_online !== false);
+  FINALIZACOES = (d.categorias || []).flatMap(c => [...(c.grupos || []).flatMap(g => (g.produtos || []).filter(p => grupoFinalizacao(g.nome) || ehFinalizacao(p))),
+    ...(c.produtos || []).filter(ehFinalizacao)])
+    .map(p => ({ slug: p.slug, nome: p.nome, preco: Number(p.preco), desc: p.descricao || '',
+      rotulo: p.rotulo || p.nome.replace(/^finaliza[çc][ãa]o\s*/i, '').replace(/^./, c => c.toUpperCase()) }));
   CAT_ORDER = CATS.filter(c => c.layout === 'lista').map(c => c.slug);
   KITS_CAT = CATS.find(c => c.layout === 'grade') || null;
   for (const c of CATS) {
     const grupos = (c.grupos || []).map(g => ({ id: `${c.slug}-${g.id}`, title: g.nome, info: g.info, flavors: g.sabores, produtos: g.produtos || [] }));
     if ((c.produtos || []).length) grupos.push({ id: `${c.slug}-itens`, title: null, info: null, produtos: c.produtos });
-    CATALOG[c.slug] = grupos.map(g => ({ ...g, items: g.produtos.map(p => register(itemDe(p, c, g))) })).filter(g => g.items.length);
+    CATALOG[c.slug] = grupos.map(g => ({ ...g, items: g.produtos.filter(p => !ehFinalizacao(p) && !grupoFinalizacao(g.title)).map(p => register(itemDe(p, c, g))) })).filter(g => g.items.length);
   }
 }
 const catDe = slug => CATS.find(c => c.slug === slug);
@@ -1348,7 +1357,7 @@ function precoLinha(l) {
   if (it.kind === 'cake') {
     const sec = l.segundo ? ITEMS[l.segundo] : null;
     const base = sec ? Math.max(it.price, sec.price) : it.price;
-    return Math.round(base * (l.peso || WEIGHT_OPTIONS[0]) * 100) / 100;
+    return Math.round(base * (l.peso || WEIGHT_OPTIONS[0]) * 100) / 100 + (finDe(l.fin)?.preco || 0);
   }
   if (it.faixas && it.faixas.length) {
     const f = [...it.faixas].sort((a, b) => b.quantidade_minima - a.quantidade_minima)
@@ -1363,6 +1372,7 @@ function lineMeta(l) {
   const m = MASSAS.find(x => x.v === l.massa); if (m) parts.push(m.label.toLowerCase());
   const f = FORMATOS.find(x => x.v === l.formato); if (f) parts.push(f.label.toLowerCase());
   if (l.segundo && ITEMS[l.segundo]) parts.push('2º recheio: ' + ITEMS[l.segundo].label);
+  const fz = finDe(l.fin); if (fz) parts.push(`finalização: ${fz.rotulo.toLowerCase()} (+${fmt(fz.preco)})`);
   return parts.join(', ');
 }
 const cartCount = () => cart.reduce((s, l) => s + l.qty, 0);
@@ -1378,6 +1388,7 @@ function syncCart() {
       if (!MASSAS.some(m => m.v === l.massa)) l.massa = MASSAS[0]?.v || null;
       if (!FORMATOS.some(f => f.v === l.formato)) l.formato = FORMATOS[0]?.v || null;
       if (l.segundo && !ITEMS[l.segundo]) l.segundo = null;
+      if (l.fin && !finDe(l.fin)) l.fin = null;
     }
     return l;
   });
@@ -1401,7 +1412,7 @@ function decSimple(id) {
 function addLine(line) {
   // Itens iguais (mesmas escolhas e observação) são somados
   const same = cart.find(l => l.id === line.id && (l.peso || 0) === (line.peso || 0) && (l.massa || '') === (line.massa || '') && (l.formato || '') === (line.formato || '') &&
-    (l.segundo || '') === (line.segundo || '') && (l.notes || '') === (line.notes || ''));
+    (l.segundo || '') === (line.segundo || '') && (l.fin || '') === (line.fin || '') && (l.notes || '') === (line.notes || ''));
   if (same) same.qty += line.qty; else cart.push(line);
   cartChanged(true);
 }
@@ -1752,10 +1763,10 @@ function formaSvg(slug) {
   return `<span class="forma" aria-hidden="true"><svg viewBox="0 0 30 30">${forma}</svg></span>`;
 }
 function cakeBase() { const s = sheetState; return s.secondOn && s.second ? Math.max(s.item.price, s.second.price) : s.item.price; }
-function cakeUnit() { return Math.round(cakeBase() * sheetState.weight * 100) / 100; }
+function cakeUnit() { return Math.round(cakeBase() * sheetState.weight * 100) / 100 + (finDe(sheetState.fin)?.preco || 0); }
 function openCake(it, opener) {
   const w0 = WEIGHT_OPTIONS[0], m0 = MASSAS[0]?.v || null, f0 = FORMATOS[0]?.v || null;
-  sheetState = { type: 'cake', item: it, weight: w0, massa: m0, formato: f0, secondOn: false, second: null, qty: 1 };
+  sheetState = { type: 'cake', item: it, weight: w0, massa: m0, formato: f0, secondOn: false, second: null, fin: '', qty: 1 };
   const cakeGroups = (CATALOG[it.cat] || []).map(g => ({ title: g.title || catDe(it.cat)?.nome || 'Sabores', items: g.items.filter(x => x.kind === 'cake' && x.id !== it.id) })).filter(g => g.items.length);
   const others = cakeGroups.map(g => `<optgroup label="${esc(g.title)}">${g.items.map(x => `<option value="${x.id}">${esc(x.label)} — ${fmt(x.price)}/kg</option>`).join('')}</optgroup>`).join('');
   const tol = Number(CFG.tolerancia_peso_bolo_g || 0);
@@ -1773,6 +1784,11 @@ function openCake(it, opener) {
       ${FORMATOS.length ? `<fieldset class="field"><legend>Formato</legend>
         <div class="massas">${FORMATOS.map(f => `<div class="radio-card"><input type="radio" name="f" id="f-${esc(f.v)}" value="${esc(f.v)}" ${f.v === f0 ? 'checked' : ''}>
           <label for="f-${esc(f.v)}">${formaSvg(f.v)}<span><strong>${esc(f.label)}</strong>${f.desc ? `<small>${esc(f.desc)}</small>` : ''}</span></label></div>`).join('')}</div>
+      </fieldset>` : ''}
+      ${FINALIZACOES.length ? `<fieldset class="field"><legend>Finalização</legend>
+        <div class="massas">${[{ slug: '', rotulo: 'Tradicional', desc: 'Sem taxa' }, ...FINALIZACOES.map(f => ({ ...f, desc: `+${fmt(f.preco)}${f.desc ? ' · ' + f.desc : ''}` }))].map(f =>
+          `<div class="radio-card"><input type="radio" name="fin" id="fin-${esc(f.slug || 'trad')}" value="${esc(f.slug)}" ${f.slug ? '' : 'checked'}>
+          <label for="fin-${esc(f.slug || 'trad')}"><span><strong>${esc(f.rotulo)}</strong><small>${esc(f.desc)}</small></span></label></div>`).join('')}</div>
       </fieldset>` : ''}
       ${others ? `<div class="field">
         <label class="switch-row" for="secOn"><span><strong>Adicionar 2º recheio</strong><small>Vale o preço do recheio mais caro</small></span>
@@ -2050,10 +2066,13 @@ async function sendOrder() {
   store(NAME_KEY, name); store(PHONE_KEY, phone);
   const payload = {
     chave_idempotencia: sheetState.chave, cliente_nome: name, cliente_telefone: phone || null, data_retirada: pd, hora_retirada: pt,
-    itens: cart.map(l => {
+    itens: cart.flatMap(l => {
       const it = ITEMS[l.id], o = { produto_slug: l.id, quantidade: l.qty, observacao: (l.notes || '').trim() || null, nome: it?.name };
-      if (it?.kind === 'cake') { o.peso_kg = l.peso; o.massa = l.massa; if (l.formato) o.formato = l.formato; if (l.segundo) o.segundo_recheio_slug = l.segundo; }
-      return o;
+      if (it?.kind !== 'cake') return [o];
+      o.peso_kg = l.peso; o.massa = l.massa; if (l.formato) o.formato = l.formato; if (l.segundo) o.segundo_recheio_slug = l.segundo;
+      // finalização (colorido, glitter…) vai como item logo abaixo do bolo: o preço é conferido no servidor
+      const fz = finDe(l.fin);
+      return fz ? [o, { produto_slug: fz.slug, quantidade: l.qty, observacao: `Bolo: ${it.name} ${kg(l.peso)}`, nome: fz.nome }] : [o];
     })
   };
   const btn = $('[data-act="send"]'); enviando = true;
@@ -2199,7 +2218,7 @@ document.addEventListener('click', e => {
     case 'cake-add': {
       const s = sheetState;
       addLine({ key: s.item.id + '-' + Date.now(), id: s.item.id, qty: s.qty, peso: s.weight, massa: s.massa, formato: s.formato,
-        segundo: s.secondOn && s.second ? s.second.id : null, notes: $('#cakeNotes').value.trim() });
+        segundo: s.secondOn && s.second ? s.second.id : null, fin: s.fin || null, notes: $('#cakeNotes').value.trim() });
       requestCloseSheet(); toast(`Adicionado: ${s.item.name} (${kg(s.weight)})`, 'Ver sacola', () => { location.hash = '#sacola'; });
       break;
     }
@@ -2227,6 +2246,7 @@ document.addEventListener('change', e => {
     if (t.name === 'w') { s.weight = parseFloat(t.value); refreshCake(); }
     if (t.name === 'm') s.massa = t.value;
     if (t.name === 'f') s.formato = t.value;
+    if (t.name === 'fin') { s.fin = t.value; refreshCake(); }
     if (t.id === 'secOn') { s.secondOn = t.checked; $('#secWrap').hidden = !t.checked; if (!t.checked) { s.second = null; $('#secSel').value = ''; } else $('#secSel').focus(); refreshCake(); }
     if (t.id === 'secSel') { s.second = ITEMS[t.value] || null; refreshCake(); }
   }

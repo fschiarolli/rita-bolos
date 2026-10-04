@@ -36,15 +36,29 @@ export function criarSupabaseDemo(opcoes = {}) {
   let db = null;  // carregado no fim (depois de todas as funções existirem)
 
   function carregar() {
-    try { const s = localStorage.getItem(CHAVE); if (s) { const salvo = JSON.parse(s); salvo.prejuizos = salvo.prejuizos || []; return salvo; } } catch (e) {}
-    db = clone(DADOS_DEMO);
-    db.prejuizos = db.prejuizos || [];
+    try { const s = localStorage.getItem(CHAVE); if (s) return migrar(JSON.parse(s)); } catch (e) {}
+    db = migrar(clone(DADOS_DEMO));
     db.bolo_formatos = db.bolo_formatos || [
       { id: novoId(), slug: 'redondo', nome: 'Redondo', descricao: null, ordem: 1, ativo: true, criado_em: agora(), atualizado_em: agora() },
       { id: novoId(), slug: 'quadrado', nome: 'Quadrado', descricao: null, ordem: 2, ativo: true, criado_em: agora(), atualizado_em: agora() }];
     db._seq = 1000;
     pedidosExemplo();
     return db;
+  }
+  /** Acrescenta ao banco (novo ou salvo) o que veio depois: prejuízos e finalização do bolo (igual a sql/finalizacao-bolo.sql). */
+  function migrar(b) {
+    b.prejuizos = b.prejuizos || [];
+    const adic = (b.categorias || []).find(c => c.slug === 'adicionais');
+    if (adic) {
+      [['finalizacao-colorida', 'Finalização colorida', 'Colorido', 'Cobertura ou decoração colorida.', 90],
+       ['finalizacao-glitter', 'Finalização com glitter', 'Com glitter', 'Brilho comestível na decoração.', 91]].forEach(([slug, nome, rotulo, descricao, ordem]) => {
+        if (b.produtos.some(p => p.slug === slug)) return;
+        b.produtos.push({ id: novoId(), categoria_id: adic.id, grupo_id: null, slug, nome, preco: 15, rotulo, descricao, tipo: 'simples', unidade_preco: 'unidade',
+          quantidade_por_unidade: null, pede_observacao: false, observacao_obrigatoria: false, rotulo_observacao: null, exemplo_observacao: null, selo: null, selo_estilo: null,
+          imagem_path: null, ilustracao: null, destaque: false, destaque_ordem: null, antecedencia_minima_dias: 0, ordem, ativo: true, criado_em: agora(), atualizado_em: agora() });
+      });
+    }
+    return b;
   }
   function salvar() { try { localStorage.setItem(CHAVE, JSON.stringify(db)); } catch (e) {} }
 
