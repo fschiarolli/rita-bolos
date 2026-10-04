@@ -5,7 +5,7 @@
  * Usa a mesma API do site (../js/rita-api.js).
  * Modo demonstração, sem banco: abra com ?demo
  */
-import { criarApi, conectar, formatarPreco as R, formatarPeso, formatarData, linkRecibo } from '../js/rita-api.js';
+import { criarApi, conectar, formatarPreco as R, formatarPeso, formatarData, linkRecibo, linkWhatsApp, montarMensagemStatus, prepararAba } from '../js/rita-api.js';
 
 const DEMO = new URLSearchParams(location.search).has('demo');
 const FUSO = 'America/Sao_Paulo';
@@ -691,10 +691,11 @@ async function carregarDetalheHoje(id) {
 }
 carregarDetalheHoje.emCurso = new Set();
 
-function modalRetirar(id) {
+async function modalRetirar(id) {
   const p = hojeDetalhes.get(id); const ret = statusRetirado();
   if (!p || !ret) return;
   const pg = situacaoPagamento(p);
+  const aviso = await campoAvisoWa(p, ret);
   const m = abrirModal({
     titulo: `Marcar como ${ret.nome.toLowerCase()}`,
     corpo: `<p style="margin:0 0 12px;font-weight:500;font-size:16px">${esc(p.cliente_nome)} <span style="color:var(--ink-3);font-size:13px">${esc(p.codigo)}</span></p>
@@ -705,21 +706,26 @@ function modalRetirar(id) {
       </div>
       ${pg.falta ? `${inChk('rtPagar', `Recebi agora os ${R(pg.falta)} que faltavam`, true)}
         <div id="rtFormaBox" style="margin-top:10px">${inSel('rtForma', 'Forma de pagamento', Object.entries(FORMAS), 'pix')}</div>
-        <p class="dica" style="margin:4px 0 0">Desmarque se o cliente vai pagar depois. O valor continua em “a receber”.</p>` : ''}`,
+        <p class="dica" style="margin:4px 0 0">Desmarque se o cliente vai pagar depois. O valor continua em “a receber”.</p>` : ''}
+      ${aviso}`,
     rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn teal" data-ok>${ic('ok')}Confirmar</button>`
   });
+  ligarAvisoWa(m, 'Confirmar');
   setTimeout(() => m.$('[data-ok]').focus(), 60);
   m.$('#rtPagar')?.addEventListener('change', e => { m.$('#rtFormaBox').hidden = !e.target.checked; });
   m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    const wa = avisoWa(m, p);   // abre a aba do WhatsApp ainda no clique (nada foi aguardado até aqui)
+    const falhou = e => { wa.cancelar(); throw e; };
     const antes = p.status, idsAntes = new Set((p.pagamentos || []).map(g => g.id));
     let pgtoId = null, forma = null;
     if (pg.falta && chkDe(m, 'rtPagar')) {
       forma = valDe(m, 'rtForma');
-      const r1 = await api.admin.pedidos.registrarPagamento(id, { valor: pg.falta, forma, tipo: Number(p.valor_pago) > 0 ? 'restante' : 'outro', observacao: 'Recebido na retirada' });
+      const r1 = await api.admin.pedidos.registrarPagamento(id, { valor: pg.falta, forma, tipo: Number(p.valor_pago) > 0 ? 'restante' : 'outro', observacao: 'Recebido na retirada' }).catch(falhou);
       pgtoId = (r1.pagamentos || []).find(g => !idsAntes.has(g.id))?.id || null;
     }
     const comentario = pgtoId ? `Retirado. Restante de ${R(pg.falta).replace(/\u00a0/g, ' ')} recebido (${FORMAS[forma] || forma}).` : (pg.falta ? `Retirado com ${R(pg.falta).replace(/\u00a0/g, ' ')} ainda a receber.` : 'Retirado.');
-    const r2 = await api.admin.pedidos.alterarStatus(id, ret.codigo, comentario);
+    const r2 = await api.admin.pedidos.alterarStatus(id, ret.codigo, comentario).catch(falhou);
+    wa.enviar();
     m.fechar();
     hojeDetalhes.set(id, r2); hojeAberto = null;
     toast(`${p.cliente_nome} (${p.codigo}): ${ret.nome.toLowerCase()}${pgtoId ? ' e pago' : ''}.`, { acao: { rotulo: 'Desfazer', fn: () => desfazerRetirada(id, antes, pgtoId) } });
@@ -980,7 +986,7 @@ document.addEventListener('click', async e => {
     case 'editar': modalEditarPedido(p); break;
     case 'pagar': modalPagamento(p); break;
     case 'link': {
-      const url = linkRecibo(p.token, (await configLoja())?.url_site || RAIZ_SITE) + (DEMO ? '&demo' : '');
+      const url = await urlReciboCliente(p);
       try { await navigator.clipboard.writeText(url); toast('Link do recibo copiado. É o mesmo que o cliente recebe.'); }
       catch (err) { abrirModal({ titulo: 'Link do recibo', corpo: `<p class="dica" style="margin:0 0 8px">Copie o endereço abaixo:</p><input class="in" readonly value="${esc(url)}" onfocus="this.select()" autofocus>` }); }
       break;
@@ -1002,21 +1008,61 @@ document.addEventListener('click', async e => {
   }
 });
 
-function modalStatus(p, codigo) {
+/* =========================================================
+   AVISO DE STATUS PELO WHATSAPP
+   Ao mudar o status, abre o WhatsApp no número do cliente com a
+   mensagem pronta; a equipe confere e aperta Enviar.
+========================================================= */
+async function urlReciboCliente(p) {
+  return linkRecibo(p.token, (await configLoja())?.url_site || RAIZ_SITE) + (DEMO ? '&demo' : '');
+}
+/** Campo do modal de status: "Avisar no WhatsApp" + mensagem editável. */
+async function campoAvisoWa(p, status) {
+  if (!telefoneWa(p.cliente_telefone)) return `<p class="dica" style="margin:14px 0 0">Este pedido não tem o WhatsApp do cliente, então ninguém será avisado. Para avisar, inclua o telefone editando o pedido.</p>`;
+  const nome = String(p.cliente_nome || '').trim().split(/\s+/)[0] || 'o cliente';
+  const msg = montarMensagemStatus(p, status, await urlReciboCliente(p));
+  return `<div style="margin-top:14px">${inChk('avWa', `Avisar ${esc(nome)} no WhatsApp`, true)}
+    <div id="avWaBox" style="margin-top:6px">${inTa('avWaMsg', 'Mensagem <span style="font-weight:400;color:var(--ink-3)">(pode editar antes de enviar)</span>', msg, { attrs: 'maxlength="2000" style="min-height:170px"' })}</div></div>`;
+}
+function ligarAvisoWa(m, rotulo) {
+  const chk = m.$('#avWa'), bt = m.$('[data-ok]'); if (!chk || !bt) return;
+  const original = bt.innerHTML;
+  const atualizar = () => { m.$('#avWaBox').hidden = !chk.checked; bt.innerHTML = chk.checked ? `${ic('wa')}${esc(rotulo)} e avisar` : original; };
+  chk.addEventListener('change', atualizar); atualizar();
+}
+/** Chamar direto no clique, antes de qualquer await: já deixa a aba do WhatsApp aberta. */
+function avisoWa(m, p) {
+  const wa = telefoneWa(p.cliente_telefone), msg = valDe(m, 'avWaMsg');
+  if (!wa || !chkDe(m, 'avWa') || !msg) return { enviar() {}, cancelar() {} };
+  const aba = prepararAba(), url = linkWhatsApp(wa, msg);
+  return {
+    enviar() {
+      if (!aba.ir(url)) toast(`O navegador bloqueou o WhatsApp. Avise ${p.cliente_nome} por aqui:`, { acao: { rotulo: 'Abrir WhatsApp', fn: () => window.open(url, '_blank', 'noopener') } });
+    },
+    cancelar() { aba.fechar(); }
+  };
+}
+
+async function modalStatus(p, codigo) {
   const s = statusDe(codigo);
   if (codigo === p.status) { toast(`O pedido já está como “${s.nome}”.`); return; }
+  const aviso = await campoAvisoWa(p, s);
   const m = abrirModal({
     titulo: `Mudar para “${s.nome}”`,
     corpo: `<p style="margin:0 0 12px;font-weight:400">${esc(p.codigo)} · ${esc(p.cliente_nome)}: de ${pill(p.status_nome, p.status_cor)} para ${pill(s.nome, s.cor)}</p>
-      ${inTa('stCom', 'Comentário <span style="font-weight:400;color:var(--ink-3)">(opcional, fica no histórico)</span>', '', { attrs: `maxlength="500" placeholder="${codigo === 'cancelado' ? 'Motivo do cancelamento' : 'Ex.: sinal recebido por Pix'}" style="min-height:64px"` })}`,
+      ${inTa('stCom', 'Comentário <span style="font-weight:400;color:var(--ink-3)">(opcional, fica no histórico)</span>', '', { attrs: `maxlength="500" placeholder="${codigo === 'cancelado' ? 'Motivo do cancelamento' : 'Ex.: sinal recebido por Pix'}" style="min-height:64px"` })}
+      ${aviso}`,
     rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn ${codigo === 'cancelado' ? 'danger' : 'primary'}" data-ok>Mudar status</button>`
   });
+  ligarAvisoWa(m, 'Mudar status');
   setTimeout(() => m.$('[data-ok]').focus(), 60);
   m.$('[data-ok]').addEventListener('click', ev => {
     const com = valDe(m, 'stCom');
+    const wa = avisoWa(m, p);   // abre a aba do WhatsApp ainda no clique
     m.fechar();
     acaoGaveta(null, async () => {
-      const r = await api.admin.pedidos.alterarStatus(p.id, codigo, com || null);
+      const r = await api.admin.pedidos.alterarStatus(p.id, codigo, com || null).catch(e => { wa.cancelar(); throw e; });
+      wa.enviar();
       toast(`${p.codigo}: ${s.nome}`);
       return r;
     });

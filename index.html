@@ -1790,8 +1790,10 @@ function openCheckout(opener) {
       <div class="field" style="margin-top:6px"><label class="lbl" for="cName">Seu nome</label>
         <input class="input" id="cName" autocomplete="name" maxlength="120" placeholder="Como podemos te chamar?" value="${esc(store(NAME_KEY) || '')}" aria-describedby="eName">
         <p class="err" id="eName">Informe seu nome para a Rita saber de quem é o pedido.</p></div>
-      <div class="field"><label class="lbl" for="cPhone">Seu WhatsApp <span class="opt">(opcional)</span></label>
-        <input class="input" id="cPhone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="(19) 99999-9999" value="${esc(store(PHONE_KEY) || '')}"></div>
+      <div class="field"><label class="lbl" for="cPhone">Seu WhatsApp</label>
+        <input class="input" id="cPhone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="(19) 99999-9999" value="${esc(store(PHONE_KEY) || '')}" aria-describedby="hPhone ePhone">
+        <p class="hint" id="hPhone">É por ele que avisamos cada etapa do pedido.</p>
+        <p class="err" id="ePhone">Informe seu WhatsApp com DDD, por exemplo (19) 99999-9999.</p></div>
       <div class="field"><span class="lbl" id="lblPick">Retirada</span>
         <div class="two" role="group" aria-labelledby="lblPick">
           <div><label class="lbl" for="cDate">Data</label><input class="input" type="date" id="cDate" min="${minD}" value="${sug}" aria-describedby="ePick"></div>
@@ -1811,6 +1813,8 @@ function validateCheckout() {
   const name = $('#cName'), d = $('#cDate'), t = $('#cTime'), minD = sheetState.minDate || todayISO();
   let ok = true, first = null;
   const nOk = !!name.value.trim(); name.setAttribute('aria-invalid', String(!nOk)); $('#eName').classList.toggle('show', !nOk); if (!nOk) { ok = false; first = first || name; }
+  const ph = $('#cPhone'), dig = ph.value.replace(/\D/g, '');
+  const pOk = dig.length >= 10 && dig.length <= 13; ph.setAttribute('aria-invalid', String(!pOk)); $('#ePhone').classList.toggle('show', !pOk); if (!pOk) { ok = false; first = first || ph; }
   const dOk = !!d.value && d.value >= minD, tOk = !!t.value;
   d.setAttribute('aria-invalid', String(!dOk)); t.setAttribute('aria-invalid', String(!tOk));
   $('#ePick').textContent = d.value && d.value < todayISO() ? 'A data de retirada não pode ser no passado.'
@@ -1834,14 +1838,16 @@ async function sendOrder() {
     })
   };
   const btn = $('[data-act="send"]'); enviando = true;
+  const aba = U?.prepararAba ? U.prepararAba() : null;   // aberta ainda no clique; recebe o WhatsApp depois de gravar
   btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.querySelector('span').textContent = 'Registrando pedido…';
   $('#sendErr').innerHTML = '';
   try {
     await conectarApi();
     const pedido = await API.pedidos.criar(payload);
-    pedidoRegistrado(pedido, { name, pd, pt });
+    pedidoRegistrado(pedido, { name, pd, pt }, aba);
   } catch (e) {
     console.error(e);
+    aba?.fechar();
     btn.disabled = false; btn.removeAttribute('aria-busy'); btn.querySelector('span').textContent = 'Confirmar pedido';
     const regra = e && e.codigo === 'P0001';
     $('#sendErr').innerHTML = `<div class="notice rose send-err" role="alert" style="margin:0 0 10px">${icon('info')}<span><strong>Não deu para registrar o pedido.</strong> ${esc(e?.message || 'Tente novamente.')}
@@ -1850,10 +1856,11 @@ async function sendOrder() {
     if (regra && /sacola|disponível|cardápio/i.test(e.message || '')) atualizarCardapio(true);
   } finally { enviando = false; }
 }
-function pedidoRegistrado(pedido, ctx) {
+function pedidoRegistrado(pedido, ctx, aba) {
   const urlRecibo = U.linkRecibo(pedido.token, CFG.url_site || undefined) + (DEMO ? '&demo' : '');
   const msg = U.montarMensagemWhatsApp(pedido, urlRecibo);
   const waUrl = U.linkWhatsApp(pedido.loja?.whatsapp_numero || CFG.whatsapp_numero, msg);
+  const abriu = !!aba?.ir(waUrl);
   store(ULTIMO_KEY, JSON.stringify({ codigo: pedido.codigo, token: pedido.token, waUrl, recibo: urlRecibo, total: pedido.total,
     data: pedido.data_retirada, hora: pedido.hora_retirada || ctx.pt, em: Date.now() }));
   cart = []; cartChanged();
@@ -1861,10 +1868,10 @@ function pedidoRegistrado(pedido, ctx) {
     <div class="sheet-body" style="padding-top:16px"><div class="done">
       <span class="done-ic">${icon('check')}</span>
       <h2 class="sheet-title" id="sheetTitle" tabindex="-1">Pedido ${esc(pedido.codigo)} registrado!</h2>
-      <p>Agora envie a mensagem para a Rita pelo WhatsApp. Ela responde para combinar o sinal de ${fmt(pedido.valor_sinal)}.</p>
+      <p>${abriu ? 'Abrimos o WhatsApp com a mensagem pronta: é só tocar em <strong>Enviar</strong> para a Rita receber o pedido.' : 'Agora envie a mensagem para a Rita pelo WhatsApp.'} Ela responde para combinar o sinal de ${fmt(pedido.valor_sinal)}.</p>
       <div class="done-sum"><span>Total</span><strong>${fmt(pedido.total)}</strong><span>Retirada</span><strong>${esc(formatPickupDate(pedido.data_retirada, pedido.hora_retirada || ctx.pt))}</strong></div>
       <div class="stack">
-        <a class="btn btn-wa btn-block" href="${esc(waUrl)}" target="_blank" rel="noopener">${icon('wa')}Enviar pelo WhatsApp</a>
+        <a class="btn btn-wa btn-block" href="${esc(waUrl)}" target="_blank" rel="noopener">${icon('wa')}${abriu ? 'Abrir o WhatsApp de novo' : 'Enviar pelo WhatsApp'}</a>
         <a class="btn btn-ghost btn-block" href="${esc(urlRecibo)}" target="_blank" rel="noopener">Ver recibo do pedido</a>
         <button type="button" class="btn btn-ghost btn-block" data-act="new-order">Voltar ao início</button>
       </div></div></div>`;

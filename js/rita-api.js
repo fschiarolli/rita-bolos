@@ -122,6 +122,58 @@ export function montarMensagemWhatsApp(pedido, urlRecibo) {
   return l.join('\n').replace(/\u00a0/g, ' ');
 }
 
+/**
+ * Mensagem para o cliente quando o pedido muda de status (a equipe confere antes de enviar).
+ * status: { codigo, nome, descricao, finalizado } do cadastro. Os c\u00f3digos padr\u00e3o t\u00eam texto
+ * pr\u00f3prio; status criados no backoffice usam o nome e a descri\u00e7\u00e3o cadastrados.
+ */
+export function montarMensagemStatus(pedido, status, urlRecibo) {
+  const p = pedido, s = status || {};
+  const nome = String(p.cliente_nome || '').trim().split(/\s+/)[0];
+  const ped = `*${p.codigo}*`;
+  const retirada = `*Retirada:* ${formatarData(p.data_retirada)}${p.hora_retirada ? ' \u00e0s ' + String(p.hora_retirada).slice(0, 5) : ''}`;
+  const saldo = Number(p.saldo ?? 0);
+  const pct = Number(p.percentual_sinal ?? 50).toLocaleString('pt-BR');
+  const textos = {
+    recebido: [`Recebemos o seu pedido ${ped}.`, `Para confirmar, envie o comprovante do sinal de ${formatarPreco(p.valor_sinal)} (${pct}% do total).`],
+    confirmado: [`Seu pedido ${ped} est\u00e1 *confirmado*! Recebemos o sinal.`, retirada],
+    em_producao: [`Seu pedido ${ped} j\u00e1 est\u00e1 *em produ\u00e7\u00e3o*.`, retirada],
+    pronto: [`Seu pedido ${ped} est\u00e1 *pronto para retirada*!`, retirada, saldo > 0 ? `*Falta pagar:* ${formatarPreco(saldo)}` : 'Est\u00e1 tudo pago, \u00e9 s\u00f3 vir buscar.'],
+    retirado: [`Pedido ${ped} retirado. Agradecemos a prefer\u00eancia e bom apetite!`],
+    cancelado: [`Seu pedido ${ped} foi *cancelado*.`, 'Se tiver alguma d\u00favida, \u00e9 s\u00f3 responder esta mensagem.']
+  };
+  const corpo = textos[s.codigo] || [`Seu pedido ${ped} mudou para *${s.nome || s.codigo}*.`, s.descricao, s.finalizado ? '' : retirada];
+  const l = [`Ol\u00e1${nome ? ', ' + nome : ''}! Aqui \u00e9 da ${p.loja?.nome || 'Rita Bolos'}.`, '', ...corpo.filter(Boolean)];
+  if (urlRecibo && !['retirado', 'cancelado'].includes(s.codigo)) l.push('', `Acompanhe o pedido: ${urlRecibo}`);
+  return l.join('\n').replace(/\u00a0/g, ' ');
+}
+
+/**
+ * O navegador s\u00f3 deixa abrir aba nova no momento do clique. Como o WhatsApp s\u00f3
+ * deve abrir depois de gravar no banco (depois de um await), a aba \u00e9 aberta j\u00e1
+ * no clique e recebe o endere\u00e7o no fim: aba.ir(url), ou aba.fechar() se der erro.
+ * aba.ir devolve false quando o navegador bloqueou a aba.
+ */
+export function prepararAba() {
+  let w = null;
+  try { w = window.open('', '_blank'); } catch (e) { w = null; }
+  if (w) {
+    try {
+      w.opener = null;
+      w.document.title = 'Abrindo o WhatsApp\u2026';
+      w.document.body.innerHTML = '<p style="font:16px/1.5 system-ui,sans-serif;padding:24px;color:#555">Abrindo o WhatsApp\u2026</p>';
+    } catch (e) { /* s\u00f3 o aviso de carregando */ }
+  }
+  return {
+    ir(url) {
+      if (!w || w.closed) return false;
+      w.location.href = url;
+      return true;
+    },
+    fechar() { try { if (w && !w.closed) w.close(); } catch (e) { /* j\u00e1 fechada */ } }
+  };
+}
+
 /* ================================================================
    API
 ================================================================ */
@@ -400,7 +452,7 @@ export function criarApi(supabase, opcoes = {}) {
       }
     },
 
-    util: { formatarPreco, formatarPeso, formatarData, novaChave, linkWhatsApp, linkRecibo, montarMensagemWhatsApp }
+    util: { formatarPreco, formatarPeso, formatarData, novaChave, linkWhatsApp, linkRecibo, montarMensagemWhatsApp, montarMensagemStatus, prepararAba }
   };
 }
 
