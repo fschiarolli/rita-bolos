@@ -55,7 +55,15 @@ function corTexto(hex) {
   const n = parseInt(m[1], 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
   return (0.299 * r + 0.587 * g + 0.114 * b) > 165 ? '#2A1A12' : '#fff';
 }
-const pill = (nome, cor) => `<span class="pill" style="background:${esc(cor || '#6E4B3A')};color:${corTexto(cor)}">${esc(nome)}</span>`;
+/** "r, g, b" de uma cor #rrggbb (para tingir fundos com transparência). */
+function rgbDe(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return '110, 75, 58';
+  const n = parseInt(m[1], 16);
+  return `${n >> 16}, ${(n >> 8) & 255}, ${n & 255}`;
+}
+/** Cor do cadastro como variáveis CSS: --c (ponto/ícone) e --c-rgb (fundo tingido). */
+const corVars = cor => `--c:${esc(cor || '#6E4B3A')};--c-rgb:${rgbDe(cor)}`;
+const pill = (nome, cor) => `<span class="pill" style="${corVars(cor)}">${esc(nome)}</span>`;
 const statusDe = c => STATUS.find(s => s.codigo === c) || { codigo: c, nome: c, cor: '#6E4B3A' };
 function telefoneWa(tel) {
   let d = String(tel || '').replace(/\D/g, '');
@@ -330,43 +338,97 @@ const NAV = [
   { id: 'cardapio', rot: 'Cardápio', ic: 'bolo', admin: true },
   { id: 'ajustes', rot: 'Ajustes', ic: 'config', admin: true }
 ];
+const iniciais = nome => String(nome || '?').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0].toUpperCase()).join('') || '?';
+const papelTxt = () => (perfil.papel === 'admin' ? 'Administração' : 'Atendimento');
 function telaShell() {
   const itens = NAV.filter(n => !n.admin || isAdmin());
   const link = (n, cls) => `<a class="${cls}" href="#${n.id}" data-nav="${n.id}">${ic(n.ic)}<span>${n.rot}</span>${n.badge ? '<span class="nav-badge" data-badge hidden></span>' : ''}</a>`;
+  const principais = itens.filter(n => !n.admin), gestao = itens.filter(n => n.admin);
   app.innerHTML = `<div class="shell">
     <aside class="side" aria-label="Menu principal">
       <a class="brand" href="#painel"><img src="${esc(LOGO)}" alt=""><div><strong>Rita Bolos</strong><span>Backoffice${DEMO ? ' · demo' : ''}</span></div></a>
-      <nav style="display:grid;gap:4px">${itens.map(n => link(n, 'nav-a')).join('')}</nav>
+      <nav class="side-nav">
+        <p class="side-sec">Principal</p>${principais.map(n => link(n, 'nav-a')).join('')}
+        ${gestao.length ? `<p class="side-sec">Gestão</p>${gestao.map(n => link(n, 'nav-a')).join('')}` : ''}
+        <p class="side-sec">Atalhos</p>
+        <a class="nav-a" href="${esc(urlQuadro())}" target="_blank" rel="noopener">${ic('tv')}<span>Quadro da equipe</span>${ic('externo', 'ic ext')}</a>
+        <a class="nav-a" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}<span>Ver o site</span>${ic('externo', 'ic ext')}</a>
+      </nav>
       <div class="side-foot">
-        <div class="user-box"><strong>${esc(perfil.nome)}</strong><span>${perfil.papel === 'admin' ? 'Administração' : 'Atendimento'}${perfil.email ? ' · ' + esc(perfil.email) : ''}</span></div>
-        <a class="btn sm ghost block" href="${esc(urlQuadro())}" target="_blank" rel="noopener">${ic('painel')}Quadro da equipe (TV)</a>
-        <div class="row"><a class="btn sm ghost" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}Ver site</a>
-          <button type="button" class="btn sm ghost" data-act="conta">${ic('user')}Conta</button></div>
+        <button type="button" class="user-card" data-act="conta" aria-label="Minha conta"><span class="avatar" aria-hidden="true">${esc(iniciais(perfil.nome))}</span>
+          <span class="uc-t"><strong>${esc(perfil.nome)}</strong><small>${papelTxt()}${perfil.email ? ' · ' + esc(perfil.email) : ''}</small></span></button>
+        <button type="button" class="btn icon sm ghost" data-act="sair" aria-label="Sair da conta" title="Sair">${ic('sair')}</button>
       </div>
     </aside>
-    <div style="min-width:0">
-      <header class="topo"><img src="${esc(LOGO)}" alt=""><span class="t">Rita Bolos${DEMO ? ' <small style="font-size:12px;color:var(--ink-3)">demo</small>' : ''}</span>
-        <button type="button" class="btn icon sm ghost" data-act="conta" aria-label="Minha conta">${ic('user')}</button></header>
+    <div class="coluna">
+      <header class="topo">
+        <a class="topo-marca" href="#painel"><img src="${esc(LOGO)}" alt="">Rita Bolos${DEMO ? '<small>demo</small>' : ''}</a>
+        <form class="topo-busca" id="topoBusca" role="search">${ic('busca')}<label class="sr" for="topoBuscaIn">Buscar pedido</label>
+          <input id="topoBuscaIn" type="search" placeholder="Buscar pedido: nome, telefone ou código" autocomplete="off"><kbd aria-hidden="true">/</kbd></form>
+        <div class="topo-acts">
+          <button type="button" class="topo-bt" data-act="tema">${ic(temaAtual() === 'dark' ? 'sol' : 'lua')}</button>
+          <a class="topo-bt" data-tv href="${esc(urlQuadro())}" target="_blank" rel="noopener" aria-label="Abrir o quadro da equipe (TV)" title="Quadro da equipe (TV)">${ic('tv')}</a>
+          <button type="button" class="topo-av" data-act="conta" aria-label="Minha conta" title="${esc(perfil.nome)}"><span class="avatar">${esc(iniciais(perfil.nome))}</span></button>
+        </div>
+      </header>
       <main class="conteudo" id="conteudo" tabindex="-1"></main>
+      <footer class="rodape"><span>© ${new Date().getFullYear()} Rita Bolos · Backoffice${DEMO ? ' (demonstração)' : ''}</span>
+        <span><a href="${esc(urlSite())}" target="_blank" rel="noopener">Site</a><a href="${esc(urlQuadro())}" target="_blank" rel="noopener">Quadro da equipe</a></span></footer>
     </div>
     <nav class="nav-mob" aria-label="Menu principal">${itens.map(n => link(n, '')).join('')}</nav>
   </div>
   <div class="veu" id="veu"></div>
   <aside class="gaveta" id="gaveta" role="dialog" aria-modal="true" aria-labelledby="gavTitulo" inert></aside>`;
   $('#veu').addEventListener('click', () => fecharGaveta());
+  atualizarBotaoTema();
+  $('#topoBusca').addEventListener('submit', e => {
+    e.preventDefault();
+    const termo = $('#topoBuscaIn').value.trim(); if (!termo) return;
+    Object.assign(filtro, { busca: termo, status: 'todos', periodo: 'todas', extra: null });
+    $('#topoBuscaIn').value = ''; $('#topoBuscaIn').blur();
+    if (telaAtual === 'pedidos' && rotaAtual === 'pedidos') telaPedidos($('#conteudo')); else location.hash = '#pedidos';
+  });
 }
+
+/* Tema claro/escuro: sem escolha segue o sistema; a escolha fica salva neste aparelho */
+const temaAtual = () => document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+function atualizarBotaoTema() {
+  const b = $('[data-act="tema"]'); if (!b) return;
+  const escuro = temaAtual() === 'dark';
+  b.innerHTML = ic(escuro ? 'sol' : 'lua');
+  b.setAttribute('aria-label', escuro ? 'Usar tema claro' : 'Usar tema escuro');
+  b.title = escuro ? 'Tema claro' : 'Tema escuro';
+  $('meta[name="theme-color"]')?.setAttribute('content', escuro ? '#120B08' : '#F8F2EA');
+}
+function alternarTema() {
+  const novo = temaAtual() === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', novo);
+  try { localStorage.setItem('ritabolos.tema', novo === 'dark' ? 'escuro' : 'claro'); } catch (e) { /* só nesta visita */ }
+  atualizarBotaoTema();
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', atualizarBotaoTema);
+/* "/" leva para a busca da barra superior */
+document.addEventListener('keydown', e => {
+  if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.target.closest('input, textarea, select, [contenteditable]') || pilhaModais.length) return;
+  const b = $('#topoBuscaIn'); if (!b || !b.offsetParent) return;
+  e.preventDefault(); b.focus();
+});
 
 function modalConta() {
   const m = abrirModal({
     titulo: 'Minha conta',
-    corpo: `<div class="user-box" style="margin-bottom:16px"><strong>${esc(perfil.nome)}</strong><span>${perfil.papel === 'admin' ? 'Administração' : 'Atendimento'}${perfil.email ? ' · ' + esc(perfil.email) : ''}</span></div>
+    corpo: `<div class="user-box" style="display:flex;align-items:center;gap:12px;margin-bottom:18px"><span class="avatar" style="width:44px;height:44px;font-size:16px" aria-hidden="true">${esc(iniciais(perfil.nome))}</span>
+        <div style="min-width:0"><strong>${esc(perfil.nome)}</strong><small>${papelTxt()}${perfil.email ? ' · ' + esc(perfil.email) : ''}</small></div></div>
       <div style="display:grid;gap:10px">
+        <button type="button" class="btn ghost block" data-act="tema">${ic(temaAtual() === 'dark' ? 'sol' : 'lua')}${temaAtual() === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}</button>
         <a class="btn ghost block" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}Abrir o site</a>
-        <a class="btn ghost block" href="${esc(urlQuadro())}" target="_blank" rel="noopener">${ic('painel')}Quadro da equipe (TV)</a>
+        <a class="btn ghost block" href="${esc(urlQuadro())}" target="_blank" rel="noopener">${ic('tv')}Quadro da equipe (TV)</a>
         ${DEMO ? `<button type="button" class="btn ghost block" data-reiniciar>${ic('atualizar')}Recomeçar a demonstração</button>` : `<button type="button" class="btn ghost block" data-senha>Trocar senha</button>`}
         <button type="button" class="btn danger block" data-sair>${ic('sair')}Sair</button>
       </div>`
   });
+  m.$('[data-act="tema"]').addEventListener('click', () => m.fechar());
   m.$('[data-senha]')?.addEventListener('click', () => { m.fechar(); modalNovaSenha('Trocar senha'); });
   m.$('[data-reiniciar]')?.addEventListener('click', async () => {
     if (!await confirmar('Recomeçar a demonstração?', 'Os pedidos e mudanças feitos aqui serão apagados e os dados de exemplo voltam ao original.', { botao: 'Recomeçar', perigo: true })) return;
@@ -424,7 +486,15 @@ function recarregarTela() {
 }
 
 /* Cabeçalho padrão das telas */
-const cabecalho = (titulo, acoes = '') => `<div class="page-head"><h1>${esc(titulo)}</h1><div class="acts">${acoes}</div></div>`;
+function cabecalho(titulo, acoes = '', subtitulo = '') {
+  const secao = NAV.find(n => n.id === telaAtual)?.rot || titulo;
+  return `<div class="page-head"><div class="ph-txt">
+      <nav class="trilha" aria-label="Você está em"><a href="#painel" aria-label="Início">${ic('casa')}</a>${ic('seta', 'ic sep')}<span>${esc(secao)}</span></nav>
+      <h1>${esc(titulo)}</h1>${subtitulo ? `<p class="ph-sub">${subtitulo}</p>` : ''}</div>
+    <div class="acts">${acoes}</div></div>`;
+}
+/** Data por extenso em São Paulo, com inicial maiúscula: "Domingo, 4 de outubro". */
+const dataLonga = () => { const s = new Date().toLocaleDateString('pt-BR', { timeZone: FUSO, weekday: 'long', day: 'numeric', month: 'long' }); return s.charAt(0).toUpperCase() + s.slice(1); };
 
 /* Cliques globais */
 document.addEventListener('click', e => {
@@ -434,6 +504,11 @@ document.addEventListener('click', e => {
   switch (a.dataset.act) {
     case 'conta': modalConta(); break;
     case 'novo-pedido': modalNovoPedido(); break;
+    case 'tema': alternarTema(); break;
+    case 'sair':
+      confirmar('Sair da conta?', 'Você volta para a tela de entrada do backoffice.', { botao: 'Sair' })
+        .then(ok => { if (ok) api.auth.sair().catch(() => {}); });
+      break;
   }
 });
 
@@ -506,10 +581,15 @@ function linhaPedido(p) {
   </button>`;
 }
 
+/* Ícone de cada etapa na faixa de indicadores (status criados no cadastro usam o relógio) */
+const ICONE_STATUS = { recebido: 'sino', confirmado: 'ok', em_producao: 'bolo', pronto: 'pedidos' };
 async function telaPainel(el, _sub, silencioso = false) {
+  const nome = perfil.nome.split(' ')[0];
+  const acoes = `<a class="btn ghost" href="#hoje">${ic('hoje')}Tela Hoje</a><button type="button" class="btn primary" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`;
+  const cab = cabecalho('Painel', acoes, `${esc(dataLonga())} — como estão os pedidos da Rita Bolos.`);
   if (!silencioso) {
-    el.innerHTML = cabecalho(`Olá, ${perfil.nome.split(' ')[0]}!`, `<button type="button" class="btn primary" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`)
-      + `<div class="kpis">${'<div class="skel"></div>'.repeat(5)}</div><div class="skel" style="height:220px"></div>`;
+    el.innerHTML = cab + `<div class="hero-grid"><div class="skel" style="height:210px"></div><div class="skel" style="height:210px"></div></div>
+      <div class="skel" style="height:86px;margin-bottom:18px"></div><div class="skel" style="height:260px"></div>`;
   }
   try {
     const [r, hoje, novos] = await Promise.all([
@@ -519,30 +599,52 @@ async function telaPainel(el, _sub, silencioso = false) {
     ]);
     if (telaAtual !== 'painel') return;
     const abertos = r.por_status.filter(s => !s.finalizado);
-    const maior = Math.max(1, ...abertos.map(s => s.quantidade));
-    el.innerHTML = cabecalho(`Olá, ${perfil.nome.split(' ')[0]}!`, `<button type="button" class="btn primary" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`) + `
-      <div class="kpis">
-        <a class="kpi destaque" href="#hoje"><span>Retiradas hoje</span><strong>${r.retiradas_hoje}</strong></a>
-        <a class="kpi" href="#pedidos" data-filtro="amanha"><span>Retiradas amanhã</span><strong>${r.retiradas_amanha}</strong></a>
-        <a class="kpi" href="#pedidos" data-filtro="novos"><span>Pedidos novos hoje</span><strong>${r.novos_hoje}</strong></a>
-        <a class="kpi" href="#pedidos" data-filtro="sinal"><span>Aguardando sinal</span><strong>${r.sinais_pendentes}</strong></a>
-        <a class="kpi ok" href="#pedidos" data-filtro="saldo"><span>A receber</span><strong style="font-size:22px">${R(r.a_receber)}</strong></a>
+    const emAberto = abertos.reduce((s, x) => s + x.quantidade, 0);
+    const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+    const resumo = r.retiradas_hoje
+      ? `Hoje tem <b>${plural(r.retiradas_hoje, 'retirada', 'retiradas')}</b> marcadas${r.retiradas_amanha ? ` e amanhã mais <b>${r.retiradas_amanha}</b>` : ''}.`
+      : `Nenhuma retirada marcada para hoje${r.retiradas_amanha ? `; amanhã são <b>${r.retiradas_amanha}</b>` : ''}.`;
+    const sinal = r.sinais_pendentes ? ` <b>${plural(r.sinais_pendentes, 'pedido', 'pedidos')}</b> ainda ${r.sinais_pendentes === 1 ? 'aguarda' : 'aguardam'} o sinal.` : ' Todos os pedidos em aberto já têm sinal.';
+    const kpi = (href, filtro, cor, icone, rot, valor) => `<a class="kpi" href="${href}"${filtro ? ` data-filtro="${esc(filtro)}"` : ''} style="${corVars(cor)}">
+        <span class="kpi-ic">${ic(icone)}</span><span class="kpi-t"><span>${esc(rot)}</span><strong>${valor}</strong></span></a>`;
+    el.innerHTML = cab + `
+      <div class="hero-grid">
+        <section class="card hero">
+          <div style="position:relative;z-index:1">
+            <p class="eyebrow">Resumo do dia</p>
+            <h2 class="hero-t">Olá, ${esc(nome)}!</h2>
+            <p class="hero-txt">${resumo}${sinal}</p>
+            <div class="hero-acts"><button type="button" class="btn primary" data-act="novo-pedido">${ic('mais')}Novo pedido</button>
+              <a class="btn ghost" href="#pedidos" data-filtro="recebido">${ic('pedidos')}Pedidos para confirmar</a></div>
+          </div>
+          <div class="hero-stats">
+            <a href="#hoje"><span>Retiradas hoje</span><strong>${r.retiradas_hoje}</strong></a>
+            <a href="#pedidos" data-filtro="amanha"><span>Amanhã</span><strong>${r.retiradas_amanha}</strong></a>
+            <a href="#pedidos" data-filtro="novos"><span>Novos hoje</span><strong>${r.novos_hoje}</strong></a>
+          </div>
+        </section>
+        <section class="card destaque-card">
+          <p class="eyebrow">A receber</p>
+          <strong class="dc-val">${R(r.a_receber)}</strong>
+          <span class="dc-chip">${ic('pedidos')}${plural(emAberto, 'pedido em aberto', 'pedidos em aberto')}</span>
+          <p>Soma do que falta pagar nos pedidos em aberto (sinais e restantes).</p>
+          <a class="btn sm" href="#pedidos" data-filtro="saldo">Ver pedidos com saldo ${ic('seta')}</a>
+          <svg class="ic dc-art" aria-hidden="true"><use href="#i-moeda"/></svg>
+        </section>
+      </div>
+      <div class="card kpi-strip">
+        ${abertos.map(s => kpi('#pedidos', 'st:' + s.status, s.cor || '#2B7465', ICONE_STATUS[s.status] || 'relogio', s.nome, s.quantidade)).join('')}
+        ${kpi('#pedidos', 'sinal', '#B9476A', 'moeda', 'Aguardando sinal', r.sinais_pendentes)}
       </div>
       <div class="cols">
-        <div>
-          <section class="card"><div class="card-h"><h2>Retiradas de hoje</h2><a class="btn sm ghost" href="#hoje">Abrir a tela Hoje</a></div>
-            ${hoje.pedidos.length ? `<div class="lista-ped">${hoje.pedidos.map(linhaPedido).join('')}</div>` : '<p class="vazio" style="padding:18px">Nenhuma retirada marcada para hoje.</p>'}</section>
-          <section class="card"><div class="card-h"><h2>Pedidos para confirmar</h2><a class="btn sm ghost" href="#pedidos" data-filtro="recebido">Ver todos</a></div>
-            ${novos.pedidos.length ? `<div class="lista-ped">${novos.pedidos.map(linhaPedido).join('')}</div>` : '<p class="vazio" style="padding:18px">Nenhum pedido esperando confirmação.</p>'}</section>
-        </div>
-        <section class="card"><div class="card-h"><h2>Em andamento</h2></div>
-          <div class="status-bars">${abertos.map(s => `<a class="status-bar" href="#pedidos" data-filtro="st:${esc(s.status)}"><span>${esc(s.nome)}</span><span>${s.quantidade}</span>
-            <span class="bar"><i style="width:${Math.round(s.quantidade / maior * 100)}%;background:${esc(s.cor || '#2B7465')}"></i></span></a>`).join('')}</div>
-        </section>
+        <section class="card"><div class="card-h"><div><p class="eyebrow">Balcão</p><h2>Retiradas de hoje</h2></div><a class="btn sm ghost" href="#hoje">Abrir a tela Hoje</a></div>
+          ${hoje.pedidos.length ? `<div class="lista-ped">${hoje.pedidos.map(linhaPedido).join('')}</div>` : '<p class="vazio" style="padding:18px">Nenhuma retirada marcada para hoje.</p>'}</section>
+        <section class="card"><div class="card-h"><div><p class="eyebrow">Atendimento</p><h2>Para confirmar</h2></div><a class="btn sm ghost" href="#pedidos" data-filtro="recebido">Ver todos</a></div>
+          ${novos.pedidos.length ? `<div class="lista-ped">${novos.pedidos.map(linhaPedido).join('')}</div>` : '<p class="vazio" style="padding:18px">Nenhum pedido esperando confirmação.</p>'}</section>
       </div>`;
   } catch (e) {
     erroToast(e);
-    if (!silencioso) el.innerHTML = cabecalho('Painel') + `<div class="vazio"><h2>Não foi possível carregar</h2><p>${esc(e.message)}</p><button type="button" class="btn primary" onclick="location.reload()">Tentar de novo</button></div>`;
+    if (!silencioso) el.innerHTML = cab + `<div class="vazio"><h2>Não foi possível carregar</h2><p>${esc(e.message)}</p><button type="button" class="btn primary" onclick="location.reload()">Tentar de novo</button></div>`;
   }
 }
 /* Atalhos do painel para a lista já filtrada */
@@ -582,9 +684,8 @@ function situacaoPagamento(p) {
 }
 async function telaHoje(el) {
   hojeDia = hojeISO();
-  const dia = new Date().toLocaleDateString('pt-BR', { timeZone: FUSO, weekday: 'long', day: '2-digit', month: '2-digit' });
-  el.innerHTML = `<div class="page-head"><h1>Hoje <small class="hj-dia">${esc(dia)}</small></h1>
-      <div class="acts"><button type="button" class="btn ghost" data-act="novo-pedido">${ic('mais')}Novo pedido</button></div></div>
+  el.innerHTML = cabecalho('Hoje', `<button type="button" class="btn ghost" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`,
+      `${esc(dataLonga())} — retiradas do dia no balcão.`) + `
     <div class="hj-top"><div class="busca">${ic('busca')}<label class="sr" for="hjBusca">Buscar pelo nome</label>
       <input class="in" id="hjBusca" type="search" placeholder="Buscar pelo nome do cliente" value="${esc(hojeBusca)}" autocomplete="off"></div></div>
     <div class="hj-resumo" id="hjResumo" aria-live="polite"></div>
@@ -775,7 +876,8 @@ let listaPedidos = [], totalPedidos = 0, paginaPedidos = 1;
 
 function telaPedidos(el) {
   const chips = [['abertos', 'Em aberto'], ...STATUS.filter(s => s.ativo).sort((a, b) => a.ordem - b.ordem).map(s => [s.codigo, s.nome, s.cor]), ['todos', 'Todos']];
-  el.innerHTML = cabecalho('Pedidos', `<button type="button" class="btn primary" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`) + `
+  el.innerHTML = cabecalho('Pedidos', `<button type="button" class="btn primary" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`,
+      'Pedidos do site, do WhatsApp e do balcão. Toque em um pedido para ver tudo.') + `
     <div class="filtros">
       <div class="linha">
         <div class="busca">${ic('busca')}<label class="sr" for="fBusca">Buscar pedido</label>
@@ -786,9 +888,11 @@ function telaPedidos(el) {
       <div class="chips" role="group" aria-label="Filtrar por status">${chips.map(([v, t, cor]) => `<button type="button" class="chip" data-fst="${esc(v)}" aria-pressed="${v === filtro.status}">${cor ? `<span class="dot" style="background:${esc(cor)}"></span>` : ''}${esc(t)}</button>`).join('')}</div>
       ${filtro.extra ? `<div class="linha"><button type="button" class="chip" data-limpar-extra aria-pressed="true">${esc(EXTRAS[filtro.extra])} ${ic('x')}</button></div>` : ''}
     </div>
-    <p class="dica" id="pedResumo" style="margin:0 0 10px;color:var(--ink-3);font-weight:500;font-size:13px"></p>
-    <div class="lista-ped" id="listaPed">${'<div class="skel"></div>'.repeat(4)}</div>
-    <div class="mais" id="maisPed"></div>`;
+    <section class="card tabela" aria-label="Lista de pedidos">
+      <div class="tab-cab" aria-hidden="true"><span>Retirada</span><span>Cliente e itens</span><span>Status e total</span></div>
+      <div class="lista-ped" id="listaPed">${'<div class="skel"></div>'.repeat(4)}</div>
+      <div class="tab-pe"><span id="pedResumo"></span><div class="mais" id="maisPed"></div></div>
+    </section>`;
   let t;
   $('#fBusca').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => { filtro.busca = e.target.value; carregarPedidos(); }, 300); });
   $('#fPeriodo').addEventListener('change', e => { filtro.periodo = e.target.value; carregarPedidos(); });
@@ -834,7 +938,7 @@ async function carregarPedidos(mais = false, silencioso = false) {
     totalPedidos = r.total;
     lista.innerHTML = listaPedidos.length ? listaPedidos.map(linhaPedido).join('')
       : `<div class="vazio"><h2>Nenhum pedido aqui</h2><p>${filtro.busca ? 'Nada encontrado para essa busca.' : 'Tente outro filtro de data ou status.'}</p></div>`;
-    $('#pedResumo').textContent = totalPedidos ? `${totalPedidos} ${totalPedidos === 1 ? 'pedido' : 'pedidos'}${filtro.busca ? ' encontrados' : ''}` : '';
+    $('#pedResumo').textContent = totalPedidos ? `${totalPedidos} ${totalPedidos === 1 ? 'pedido' : 'pedidos'}${filtro.busca ? (totalPedidos === 1 ? ' encontrado' : ' encontrados') : ''}` : '';
     $('#maisPed').innerHTML = listaPedidos.length < totalPedidos ? `<button type="button" class="btn ghost" id="btnMais">Carregar mais (${totalPedidos - listaPedidos.length})</button>` : '';
     $('#btnMais')?.addEventListener('click', e => ocupado(e.currentTarget, () => carregarPedidos(true)));
   } catch (e) {
@@ -1263,8 +1367,8 @@ async function carregarCadastro() {
 }
 
 async function telaCardapio(el, sub) {
-  el.innerHTML = cabecalho('Cardápio') + '<div class="skel" style="height:46px"></div><div class="skel" style="height:300px;margin-top:14px"></div>';
-  try { await carregarCadastro(); } catch (e) { erroToast(e); el.innerHTML = cabecalho('Cardápio') + `<div class="vazio"><h2>Não foi possível carregar</h2><p>${esc(e.message)}</p></div>`; return; }
+  el.innerHTML = cabecalho('Cardápio', '', 'Categorias, produtos, preços e fotos que aparecem no site.') + '<div class="skel" style="height:46px"></div><div class="skel" style="height:300px;margin-top:14px"></div>';
+  try { await carregarCadastro(); } catch (e) { erroToast(e); el.innerHTML = cabecalho('Cardápio', '', 'Categorias, produtos, preços e fotos que aparecem no site.') + `<div class="vazio"><h2>Não foi possível carregar</h2><p>${esc(e.message)}</p></div>`; return; }
   catSel = CAD.categorias.find(c => c.slug === sub) || CAD.categorias.find(c => c.id === catSel?.id) || CAD.categorias[0] || null;
   desenharCardapio();
 }
@@ -1293,7 +1397,7 @@ function desenharCardapio() {
       ${prods.length ? `<div class="prods">${prods.map(linhaProd).join('')}</div>` : '<p class="dica" style="padding:6px 4px;margin:0;color:var(--ink-3)">Nenhum produto neste grupo.</p>'}
     </section>`;
   const semGrupo = c ? prodsDe(null) : [];
-  el.innerHTML = cabecalho('Cardápio', `<a class="btn ghost" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}Ver no site</a>`) + `
+  el.innerHTML = cabecalho('Cardápio', `<a class="btn ghost" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}Ver no site</a>`, 'Categorias, produtos, preços e fotos que aparecem no site.') + `
     <div class="cat-bar"><div class="chips" role="tablist" aria-label="Categorias">
       ${CAD.categorias.map(x => `<a class="chip ${x.ativo ? '' : 'off'}" role="tab" href="#cardapio/${esc(x.slug)}" aria-pressed="${x.id === c?.id}" aria-selected="${x.id === c?.id}">${esc(x.nome)}</a>`).join('')}</div>
       <button type="button" class="btn sm ghost" data-nova-cat>${ic('mais')}Categoria</button></div>
@@ -1518,7 +1622,7 @@ function modalCategoria(c) {
 const ABAS = [['loja', 'Loja'], ['banners', 'Banners'], ['textos', 'Textos'], ['bolos', 'Opções de bolo'], ['status', 'Status'], ['equipe', 'Equipe']];
 function telaAjustes(el, sub) {
   const aba = ABAS.some(a => a[0] === sub) ? sub : 'loja';
-  el.innerHTML = cabecalho('Ajustes') + `<nav class="sub-tabs" aria-label="Seções de ajustes">${ABAS.map(([id, t]) => `<a href="#ajustes/${id}" ${id === aba ? 'aria-current="page"' : ''}>${t}</a>`).join('')}</nav>
+  el.innerHTML = cabecalho('Ajustes', '', 'Loja, banners, textos do site, opções de bolo, status e equipe.') + `<nav class="sub-tabs" aria-label="Seções de ajustes">${ABAS.map(([id, t]) => `<a href="#ajustes/${id}" ${id === aba ? 'aria-current="page"' : ''}>${t}</a>`).join('')}</nav>
     <div id="ajConteudo"><div class="skel" style="height:240px"></div></div>`;
   ({ loja: ajLoja, banners: ajBanners, textos: ajTextos, bolos: ajBolos, status: ajStatus, equipe: ajEquipe })[aba]($('#ajConteudo'));
 }
