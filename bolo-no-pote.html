@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bolo no pote — Rita Bolos</title>
+<meta name="description" content="Bolo no pote da Rita Bolos: escolha os sabores, a quantidade e o horário de retirada. O pedido chega pronto no WhatsApp.">
+<meta property="og:title" content="Bolo no pote da Rita">
+<meta property="og:description" content="Escolha seus sabores e retire no dia e horário que preferir.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#FBF4EC" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1E130E" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+/* Mesmas cores e fontes do site (index.html) */
+:root {
+  --font-display: 'DM Serif Display', Georgia, 'Times New Roman', serif;
+  --font-ui: 'Nunito', ui-rounded, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --bg: #FBF4EC; --surface: #FFFFFF; --surface-2: #F5EBDF;
+  --ink: #3A1F14; --ink-2: #6E4B3A; --ink-3: #85675A;
+  --line: rgba(58, 31, 20, .11); --plate: #EADFD2;
+  --primary: #4A2A1C; --on-primary: #FBF4EC;
+  --mint-50: #E8F4EF; --mint-200: #BFE3D6; --mint-400: #7DC4B0; --teal: #2B7465; --on-teal: #FFFFFF;
+  --rose-50: #FDEEF1; --rose-200: #F7C6D2; --rose-400: #E890A8; --rose-600: #B9476A;
+  --warm-50: #FFF1DE; --gold: #C9A15A; --wa: #13803F; --error: #B3261E;
+  --shadow-1: 0 1px 2px rgba(58, 31, 20, .05), 0 3px 10px rgba(58, 31, 20, .06);
+  --shadow-2: 0 14px 40px rgba(58, 31, 20, .16);
+  --r: 20px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1E130E; --surface: #2A1B14; --surface-2: #352319;
+    --ink: #F7EBDD; --ink-2: #D9C4B1; --ink-3: #B8A08E;
+    --line: rgba(247, 235, 221, .12); --plate: #3E2C22;
+    --primary: #F2DCC4; --on-primary: #2A1B14;
+    --mint-50: #1D2E28; --mint-200: #2C4A41; --mint-400: #7DC4B0; --teal: #8FD3C0; --on-teal: #10241F;
+    --rose-50: #3A2129; --rose-200: #5C2F3E; --rose-400: #E890A8; --rose-600: #F2A3BA;
+    --warm-50: #3A2A1A; --wa: #2FB765; --error: #FF8A80;
+    --shadow-1: 0 1px 2px rgba(0,0,0,.3), 0 3px 10px rgba(0,0,0,.25);
+    --shadow-2: 0 14px 40px rgba(0,0,0,.5);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1E130E; --surface: #2A1B14; --surface-2: #352319;
+  --ink: #F7EBDD; --ink-2: #D9C4B1; --ink-3: #B8A08E;
+  --line: rgba(247, 235, 221, .12); --plate: #3E2C22;
+  --primary: #F2DCC4; --on-primary: #2A1B14;
+  --mint-50: #1D2E28; --mint-200: #2C4A41; --mint-400: #7DC4B0; --teal: #8FD3C0; --on-teal: #10241F;
+  --rose-50: #3A2129; --rose-200: #5C2F3E; --rose-400: #E890A8; --rose-600: #F2A3BA;
+  --warm-50: #3A2A1A; --wa: #2FB765; --error: #FF8A80;
+  --shadow-1: 0 1px 2px rgba(0,0,0,.3), 0 3px 10px rgba(0,0,0,.25);
+  --shadow-2: 0 14px 40px rgba(0,0,0,.5);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { animation: none !important; transition: none !important; } }
+body {
+  font-family: var(--font-ui); font-size: 16px; line-height: 1.5; color: var(--ink); background: var(--bg);
+  overflow-x: hidden; padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+  background-image: radial-gradient(circle at 8% 4%, color-mix(in srgb, var(--mint-400) 10%, transparent) 0, transparent 26%),
+                    radial-gradient(circle at 96% 30%, color-mix(in srgb, var(--rose-400) 8%, transparent) 0, transparent 24%);
+  background-repeat: no-repeat;
+}
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: 0; }
+a { color: inherit; }
+img { display: block; max-width: 100%; }
+[hidden] { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px; border-radius: 8px; }
+.ic { width: 22px; height: 22px; flex: none; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ic-fill { fill: currentColor; stroke: none; }
+.art { width: 100%; height: 100%; display: block; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+@media (min-width: 700px) { .wrap { padding: 0 28px; } }
+
+/* ---------- Topo ---------- */
+.topo { position: sticky; top: 0; z-index: 30; background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid transparent; transition: border-color .2s; }
+.topo.rolou { border-bottom-color: var(--line); }
+.topo .wrap { display: flex; align-items: center; gap: 10px; height: 64px; }
+.marca { display: flex; align-items: center; gap: 10px; text-decoration: none; min-width: 0; margin-right: auto; }
+.marca img { width: 46px; height: 42px; object-fit: contain; }
+.marca strong { font-family: var(--font-display); font-weight: 400; font-size: 21px; line-height: 1; display: block; }
+.marca small { display: block; font-size: 12px; font-weight: 700; color: var(--ink-3); letter-spacing: .02em; }
+.lnk { display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: 14px; text-decoration: none; color: var(--ink-2); padding: 8px 12px; border-radius: 999px; }
+.lnk:hover { background: var(--surface-2); }
+.ic-btn { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); box-shadow: var(--shadow-1); text-decoration: none; }
+.ic-btn.wa { color: var(--wa); }
+@media (max-width: 520px) { .lnk.so-pc { display: none; } }
+
+/* ---------- Botões ---------- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 52px; padding: 0 24px; border-radius: 999px; font-weight: 800; font-size: 16px; text-decoration: none; transition: transform .12s, box-shadow .2s, background .2s; white-space: nowrap; }
+.btn:active { transform: scale(.98); }
+.btn-pri { background: var(--primary); color: var(--on-primary); box-shadow: var(--shadow-2); }
+.btn-wa { background: var(--wa); color: #fff; }
+.btn-ghost { background: var(--surface); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--line); }
+.btn-block { width: 100%; }
+.btn[disabled] { opacity: .55; cursor: not-allowed; transform: none; }
+
+/* ---------- Abertura ---------- */
+.hero { padding: 18px 0 8px; }
+.hero .wrap { display: grid; gap: 8px; align-items: center; }
+@media (min-width: 820px) { .hero { padding: 40px 0 20px; } .hero .wrap { grid-template-columns: 1.05fr .95fr; gap: 32px; } }
+.selo { display: inline-flex; align-items: center; gap: 8px; padding: 6px 13px 6px 8px; border-radius: 999px; background: var(--mint-50); color: var(--teal); font-weight: 800; font-size: 13px; }
+.selo i { width: 8px; height: 8px; border-radius: 50%; background: var(--mint-400); box-shadow: 0 0 0 4px color-mix(in srgb, var(--mint-400) 30%, transparent); }
+.hero h1 { font-family: var(--font-display); font-weight: 400; font-size: clamp(46px, 13vw, 76px); line-height: .95; letter-spacing: -.02em; margin: 16px 0 14px; }
+.hero h1 em { color: var(--rose-600); font-style: italic; white-space: nowrap; }
+.hero p.lead { font-size: 17.5px; color: var(--ink-2); max-width: 30em; }
+.preco-chip { display: inline-flex; align-items: baseline; gap: 8px; margin: 20px 0 22px; padding: 10px 18px; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-1); }
+.preco-chip span { font-size: 14px; font-weight: 700; color: var(--ink-3); }
+.preco-chip strong { font-family: var(--font-display); font-weight: 400; font-size: 30px; line-height: 1; }
+.hero-acoes { display: flex; flex-wrap: wrap; gap: 10px; }
+@media (max-width: 480px) { .hero-acoes .btn { flex: 1 1 100%; } }
+
+.hero-arte { position: relative; aspect-ratio: 1.15; max-width: 480px; width: 100%; justify-self: center; order: -1; margin-top: 6px; }
+@media (min-width: 820px) { .hero-arte { order: 0; margin: 0; } }
+@media (max-width: 819px) { .hero-arte { max-width: 340px; } }
+.hero-arte .blob { position: absolute; inset: 8% 6% 4%; border-radius: 46% 54% 52% 48% / 52% 44% 56% 48%; background: linear-gradient(145deg, var(--mint-200), color-mix(in srgb, var(--mint-400) 70%, var(--mint-200))); }
+.hero-arte .blob::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: radial-gradient(circle at 30% 25%, rgba(255,255,255,.55), transparent 45%); }
+.hero-arte .pote { position: absolute; bottom: 6%; filter: drop-shadow(0 14px 16px rgba(30, 60, 52, .28)); }
+.hero-arte .p1 { width: 44%; left: 4%; transform: rotate(-8deg); }
+.hero-arte .p2 { width: 52%; left: 25%; bottom: 10%; z-index: 2; }
+.hero-arte .p3 { width: 42%; right: 2%; transform: rotate(9deg); }
+.hero-arte .estrela { position: absolute; z-index: 3; color: var(--gold); }
+.hero-arte .e1 { top: 6%; right: 16%; width: 30px; } .hero-arte .e2 { top: 22%; left: 6%; width: 20px; }
+.etiqueta { position: absolute; z-index: 4; top: 10%; left: 50%; transform: translateX(-50%) rotate(-3deg); background: var(--surface); padding: 8px 14px; border-radius: 14px; box-shadow: var(--shadow-2); font-weight: 900; font-size: 13.5px; white-space: nowrap; }
+.etiqueta b { color: var(--rose-600); }
+
+/* ---------- Vantagens ---------- */
+.vant { display: grid; gap: 10px; margin: 26px 0 8px; }
+@media (min-width: 700px) { .vant { grid-template-columns: repeat(3, 1fr); gap: 14px; } }
+.vant li { list-style: none; display: flex; gap: 13px; align-items: center; background: var(--surface); border-radius: 18px; padding: 14px 16px; box-shadow: var(--shadow-1); }
+.vant .v-ic { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; flex: none; background: var(--rose-50); color: var(--rose-600); }
+.vant li:nth-child(2) .v-ic { background: var(--mint-50); color: var(--teal); }
+.vant li:nth-child(3) .v-ic { background: var(--warm-50); color: var(--gold); }
+.vant strong { display: block; font-size: 15px; line-height: 1.25; }
+.vant li > span > span { font-size: 13.5px; color: var(--ink-3); line-height: 1.35; display: block; }
+
+/* ---------- Seções ---------- */
+.secao { padding: 34px 0 6px; scroll-margin-top: 64px; }
+.secao-cab { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.secao h2 { font-family: var(--font-display); font-weight: 400; font-size: clamp(30px, 7vw, 40px); line-height: 1.05; letter-spacing: -.01em; }
+.secao-cab p { color: var(--ink-3); font-size: 15px; margin-top: 4px; }
+.aviso { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; background: var(--rose-50); color: var(--ink); font-size: 14.5px; margin-bottom: 14px; }
+.aviso .ic { color: var(--rose-600); width: 20px; height: 20px; margin-top: 1px; }
+.aviso.mint { background: var(--mint-50); } .aviso.mint .ic { color: var(--teal); }
+
+/* ---------- Sabores ---------- */
+.sabores { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (min-width: 700px) { .sabores { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 16px; } }
+.sab { position: relative; display: flex; flex-direction: column; background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow-1); overflow: hidden; transition: box-shadow .2s, transform .2s; }
+.sab.tem { box-shadow: 0 0 0 2.5px var(--teal), var(--shadow-1); }
+.sab-arte { position: relative; height: 132px; display: grid; place-items: center; background: color-mix(in srgb, var(--flav) 22%, var(--surface)); }
+@media (min-width: 700px) { .sab-arte { height: 160px; } }
+.sab-arte::before { content: ''; position: absolute; width: 104px; height: 104px; border-radius: 50%; background: color-mix(in srgb, var(--flav) 18%, var(--surface)); }
+.sab-arte .art { position: relative; width: 104px; height: 104px; transition: transform .25s cubic-bezier(.3,1.6,.5,1); }
+@media (min-width: 700px) { .sab-arte .art, .sab-arte::before { width: 124px; height: 124px; } }
+.sab.pulo .sab-arte .art { transform: scale(1.1) rotate(-4deg); }
+.sab-qtd { position: absolute; top: 10px; right: 10px; min-width: 30px; height: 30px; padding: 0 9px; border-radius: 999px; background: var(--teal); color: var(--on-teal); font-weight: 900; font-size: 14px; display: grid; place-items: center; box-shadow: var(--shadow-1); }
+.sab-selo { position: absolute; top: 10px; left: 10px; padding: 3px 10px; border-radius: 999px; background: var(--surface); font-size: 11.5px; font-weight: 900; color: var(--rose-600); text-transform: uppercase; letter-spacing: .04em; }
+.sab-corpo { padding: 12px 13px 13px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.sab h3 { font-size: 15.5px; font-weight: 800; line-height: 1.25; }
+.sab p { font-size: 13px; color: var(--ink-3); line-height: 1.35; }
+.sab-preco { font-weight: 900; font-size: 15px; margin-top: auto; padding-top: 6px; }
+.sab-preco small { font-weight: 700; color: var(--ink-3); font-size: 12px; }
+.sab-acao { margin-top: 10px; }
+.add { width: 100%; height: 44px; border-radius: 999px; background: var(--surface-2); font-weight: 800; font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background .15s; }
+.add:hover { background: color-mix(in srgb, var(--flav) 26%, var(--surface-2)); }
+.add .ic { width: 19px; height: 19px; }
+.passo { display: flex; align-items: center; justify-content: space-between; height: 44px; border-radius: 999px; background: var(--mint-50); padding: 3px; }
+.passo button { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); box-shadow: var(--shadow-1); color: var(--teal); }
+.passo button .ic { width: 18px; height: 18px; stroke-width: 2.6; }
+.passo output { font-weight: 900; font-size: 17px; min-width: 2ch; text-align: center; }
+.sab-esq { height: 290px; border-radius: var(--r); background: linear-gradient(100deg, var(--surface) 30%, var(--surface-2) 50%, var(--surface) 70%); background-size: 300% 100%; animation: brilho 1.4s infinite linear; }
+@keyframes brilho { from { background-position: 100% 0; } to { background-position: 0 0; } }
+
+/* ---------- Pedido ---------- */
+.ped-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.ped-grid > *, fieldset { min-width: 0; }
+@media (min-width: 900px) { .ped-grid { grid-template-columns: minmax(0, 1fr) 380px; gap: 22px; } .resumo-card { position: sticky; top: 80px; order: 2; } }
+.card { background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow-1); padding: 18px; }
+@media (min-width: 700px) { .card { padding: 22px 24px; } }
+.card h3 { font-size: 17px; font-weight: 900; margin-bottom: 4px; }
+.resumo-vazio { display: flex; gap: 12px; align-items: center; color: var(--ink-3); font-size: 14.5px; padding: 6px 0; }
+.resumo-vazio .art { width: 54px; height: 54px; flex: none; opacity: .65; }
+.res-lin { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.res-lin:first-of-type { border-top: 0; }
+.res-lin .art { width: 42px; height: 42px; }
+.res-lin strong { display: block; font-size: 14.5px; line-height: 1.25; }
+.res-lin small { color: var(--ink-3); font-size: 13px; }
+.res-lin b { font-size: 14.5px; white-space: nowrap; }
+.res-tot { display: flex; justify-content: space-between; align-items: baseline; padding-top: 12px; margin-top: 4px; border-top: 1.5px dashed var(--line); }
+.res-tot span { font-weight: 800; }
+.res-tot strong { font-family: var(--font-display); font-weight: 400; font-size: 32px; line-height: 1; }
+.res-sinal { display: flex; justify-content: space-between; font-size: 14px; color: var(--ink-2); margin-top: 6px; }
+.res-sinal strong { color: var(--rose-600); }
+.res-nota { font-size: 13px; color: var(--ink-3); margin-top: 10px; line-height: 1.45; }
+
+.campo { margin-top: 18px; }
+.campo:first-of-type { margin-top: 12px; }
+.lbl { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 15px; margin-bottom: 7px; }
+.req { font-size: 11.5px; font-weight: 800; color: var(--rose-600); background: var(--rose-50); padding: 1px 8px; border-radius: 999px; }
+.opc { font-size: 12px; font-weight: 700; color: var(--ink-3); }
+.input { width: 100%; height: 52px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--bg); padding: 0 15px; font-size: 16px; transition: border-color .15s, box-shadow .15s; }
+textarea.input { height: auto; min-height: 76px; padding: 12px 15px; resize: vertical; }
+.input:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 4px color-mix(in srgb, var(--teal) 18%, transparent); }
+.input[aria-invalid="true"] { border-color: var(--error); }
+.dica { font-size: 13px; color: var(--ink-3); margin-top: 6px; }
+.erro { display: none; font-size: 13.5px; font-weight: 700; color: var(--error); margin-top: 6px; }
+.erro.mostra { display: block; }
+
+.sub { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 800; color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; margin: 14px 0 8px; }
+.sub .ic { width: 16px; height: 16px; }
+.dias { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 8px; margin: 0 -2px; scroll-snap-type: x proximity; scrollbar-width: thin; }
+.dia { flex: none; width: 66px; padding: 9px 0 8px; border-radius: 16px; background: var(--bg); box-shadow: inset 0 0 0 1.5px var(--line); display: flex; flex-direction: column; align-items: center; gap: 1px; scroll-snap-align: start; transition: background .15s, box-shadow .15s, color .15s; }
+.dia .d-sem { font-size: 12px; font-weight: 800; color: var(--ink-3); }
+.dia .d-num { font-family: var(--font-display); font-size: 25px; line-height: 1.05; }
+.dia .d-mes { font-size: 12px; font-weight: 700; color: var(--ink-3); }
+.dia .ic { width: 22px; height: 22px; margin: 4px 0 2px; color: var(--ink-3); }
+.dia[aria-checked="true"] { background: var(--teal); color: var(--on-teal); box-shadow: none; }
+.dia[aria-checked="true"] span { color: inherit; } .dia[aria-checked="true"] .ic { color: inherit; }
+.horas-grupo + .horas-grupo { margin-top: 10px; }
+.h-rot { display: block; font-size: 12.5px; font-weight: 800; color: var(--ink-3); margin-bottom: 6px; }
+.horas { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 8px; }
+.hora { height: 42px; border-radius: 12px; background: var(--bg); box-shadow: inset 0 0 0 1.5px var(--line); font-weight: 800; font-size: 15px; transition: background .15s, color .15s; }
+.hora.outra { grid-column: span 2; font-size: 14px; }
+.hora[aria-checked="true"] { background: var(--teal); color: var(--on-teal); box-shadow: none; }
+.hora:disabled { opacity: .35; text-decoration: line-through; cursor: not-allowed; }
+.invalido .dia, .invalido .hora:not(:disabled) { box-shadow: inset 0 0 0 1.5px var(--error); }
+.outra-caixa { margin-top: 10px; }
+.ret-resumo { display: flex; gap: 9px; align-items: center; margin-top: 14px; padding: 11px 14px; border-radius: 14px; background: var(--mint-50); font-size: 15px; }
+.ret-resumo .ic { color: var(--teal); width: 20px; height: 20px; }
+
+.enviar { margin-top: 22px; }
+.enviar .btn { min-height: 58px; font-size: 17px; }
+.enviar-nota { font-size: 13px; color: var(--ink-3); text-align: center; margin-top: 10px; }
+.lnk-btn { font-weight: 800; color: var(--teal); text-decoration: underline; text-underline-offset: 3px; padding: 4px 0; }
+
+/* Pedido feito */
+.feito { text-align: center; max-width: 520px; margin: 0 auto; padding: 28px 20px; }
+.feito-ic { width: 72px; height: 72px; border-radius: 50%; margin: 0 auto 14px; display: grid; place-items: center; background: var(--mint-50); color: var(--teal); animation: surge .5s cubic-bezier(.3,1.6,.5,1); }
+.feito-ic .ic { width: 36px; height: 36px; stroke-width: 2.6; }
+@keyframes surge { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+.feito h3 { font-family: var(--font-display); font-weight: 400; font-size: 32px; line-height: 1.1; margin-bottom: 8px; }
+.feito p { color: var(--ink-2); }
+.feito-res { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; text-align: left; background: var(--bg); border-radius: 16px; padding: 14px 16px; margin: 18px 0; font-size: 15px; }
+.feito-res span { color: var(--ink-3); } .feito-res strong { text-align: right; }
+.feito .pilha { display: grid; gap: 10px; }
+
+/* ---------- Como funciona ---------- */
+.passos { display: grid; gap: 12px; counter-reset: p; }
+@media (min-width: 700px) { .passos { grid-template-columns: repeat(3, 1fr); gap: 16px; } }
+.passos li { list-style: none; counter-increment: p; background: var(--surface); border-radius: 18px; padding: 16px 18px; box-shadow: var(--shadow-1); display: flex; gap: 14px; }
+.passos li::before { content: counter(p); flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--primary); color: var(--on-primary); font-family: var(--font-display); font-size: 19px; }
+.passos strong { display: block; font-size: 15.5px; }
+.passos li > span > span { font-size: 14px; color: var(--ink-3); }
+
+.rodape { text-align: center; padding: 40px 16px 20px; color: var(--ink-3); font-size: 14px; }
+[data-wa-txt] { white-space: nowrap; }
+.rodape a { font-weight: 800; color: var(--ink-2); }
+
+/* ---------- Barra fixa ---------- */
+.barra { position: fixed; z-index: 40; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); width: min(560px, calc(100% - 24px));
+  transform: translate(-50%, 140%); transition: transform .3s cubic-bezier(.3,1.3,.5,1); display: flex; align-items: center; gap: 12px;
+  background: var(--primary); color: var(--on-primary); border-radius: 999px; padding: 8px 8px 8px 20px; box-shadow: var(--shadow-2); }
+.barra.mostra { transform: translate(-50%, 0); }
+.barra-txt { flex: 1; min-width: 0; line-height: 1.15; }
+.barra-txt strong { display: block; font-size: 17px; font-weight: 900; }
+.barra-txt span { font-size: 13px; opacity: .78; font-weight: 700; }
+.barra .btn { min-height: 48px; padding: 0 20px; background: var(--rose-400); color: #2A1B14; font-size: 15.5px; }
+.barra .btn .ic { width: 18px; height: 18px; }
+
+.carga { text-align: center; padding: 30px 16px; color: var(--ink-3); }
+.carga .btn { margin-top: 14px; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.8h.01"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="i-bag" viewBox="0 0 24 24"><path d="M5.5 8h13l-1 12.5h-11z"/><path d="M9 10V6.5a3 3 0 0 1 6 0V10"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 4.5h11.5A3.5 3.5 0 0 1 19 8v11.5H7.5A3.5 3.5 0 0 1 4 16z"/><path d="M8 9h7M8 13h5"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.4 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M21 3 10.5 13.5M21 3l-6.5 18-4-7.5L3 9.5z"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path class="ic-fill" d="M12 1.5c.5 4.8 2.7 7.5 8.5 8.5-5.8 1-8 3.7-8.5 8.5-.5-4.8-2.7-7.5-8.5-8.5 5.8-1 8-3.7 8.5-8.5z"/></symbol>
+  <symbol id="i-wa" viewBox="0 0 24 24"><path class="ic-fill" d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></symbol>
+</svg>
+
+<header class="topo" id="topo">
+  <div class="wrap">
+    <a class="marca" href="#inicio" aria-label="Rita Bolos, bolo no pote">
+      <img src="imagens/marca/rita-bolos.png" alt="" width="46" height="42">
+      <span><strong>Rita Bolos</strong><small>Bolo no pote</small></span>
+    </a>
+    <a class="lnk so-pc" data-cardapio href="index.html"><svg class="ic"><use href="#i-menu"/></svg>Cardápio completo</a>
+    <a class="ic-btn wa" data-wa href="https://wa.me/551938451550" target="_blank" rel="noopener" aria-label="Conversar com a Rita no WhatsApp"><svg class="ic"><use href="#i-wa"/></svg></a>
+  </div>
+</header>
+
+<main id="inicio">
+  <section class="hero" aria-labelledby="hTitulo">
+    <div class="wrap">
+      <div>
+        <span class="selo"><i></i>Porção individual, feita pela Rita</span>
+        <h1 id="hTitulo">Bolo<br>no pote <em>da Rita</em></h1>
+        <p class="lead" id="intro">Camadas de massa fofinha e recheio cremoso, do jeito que você já conhece. Escolha os sabores, quantos quiser, e retire no horário que preferir.</p>
+        <div class="preco-chip" id="precoChip" hidden><span id="precoRot">cada</span><strong id="precoVal"></strong></div>
+        <div class="hero-acoes">
+          <a class="btn btn-pri" href="#sabores">Escolher sabores<svg class="ic"><use href="#i-chev"/></svg></a>
+          <a class="btn btn-ghost" data-wa href="https://wa.me/551938451550" target="_blank" rel="noopener"><svg class="ic" style="color:var(--wa)"><use href="#i-wa"/></svg>Tirar dúvidas</a>
+        </div>
+      </div>
+      <div class="hero-arte" id="heroArte" aria-hidden="true">
+        <div class="blob"></div>
+        <svg class="ic estrela e1"><use href="#i-star"/></svg>
+        <svg class="ic estrela e2"><use href="#i-star"/></svg>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <ul class="vant">
+      <li><span class="v-ic"><svg class="ic"><use href="#i-heart"/></svg></span><span><strong>Misture à vontade</strong><span>Um de cada ou vários do mesmo sabor.</span></span></li>
+      <li><span class="v-ic"><svg class="ic"><use href="#i-cal"/></svg></span><span><strong>Você escolhe a retirada</strong><span>Dia e horário que ficarem melhor.</span></span></li>
+      <li><span class="v-ic"><svg class="ic"><use href="#i-wa"/></svg></span><span><strong>Pedido direto no WhatsApp</strong><span>A mensagem chega pronta para a Rita.</span></span></li>
+    </ul>
+  </div>
+
+  <section class="secao" id="sabores" aria-labelledby="hSabores">
+    <div class="wrap">
+      <div class="secao-cab">
+        <div><h2 id="hSabores">Escolha seus sabores</h2><p id="saboresSub">Toque em adicionar e ajuste a quantidade de cada um.</p></div>
+      </div>
+      <div class="aviso" id="pausa" hidden><svg class="ic"><use href="#i-info"/></svg><span id="pausaTxt"></span></div>
+      <div class="sabores" id="listaSabores" aria-live="polite">
+        <div class="sab-esq"></div><div class="sab-esq"></div><div class="sab-esq"></div><div class="sab-esq"></div>
+      </div>
+      <p class="dica" id="avisoCat" hidden style="margin-top:12px"></p>
+    </div>
+  </section>
+
+  <section class="secao" id="pedido" aria-labelledby="hPedido">
+    <div class="wrap">
+      <div class="secao-cab"><div><h2 id="hPedido">Seu pedido</h2><p>Confira, diga quando vem buscar e envie.</p></div></div>
+      <div id="pedidoCorpo">
+        <div class="ped-grid">
+          <aside class="card resumo-card" aria-labelledby="hResumo">
+            <h3 id="hResumo">Resumo</h3>
+            <div id="resumo" aria-live="polite"></div>
+          </aside>
+          <form class="card" id="form" novalidate>
+            <h3>Seus dados</h3>
+            <div id="envioErro"></div>
+            <div class="campo">
+              <label class="lbl" for="cNome">Seu nome <span class="req">obrigatório</span></label>
+              <input class="input" id="cNome" autocomplete="name" maxlength="120" placeholder="Como podemos te chamar?" aria-describedby="eNome">
+              <p class="erro" id="eNome">Informe seu nome para a Rita saber de quem é o pedido.</p>
+            </div>
+            <div class="campo">
+              <label class="lbl" for="cFone">Seu WhatsApp <span class="req">obrigatório</span></label>
+              <input class="input" id="cFone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="(19) 99999-9999" aria-describedby="hFone eFone">
+              <p class="dica" id="hFone">É por ele que avisamos cada etapa do pedido.</p>
+              <p class="erro" id="eFone">Informe seu WhatsApp com DDD, por exemplo (19) 99999-9999.</p>
+            </div>
+            <fieldset class="campo" id="fsRet" style="border:0">
+              <legend class="lbl">Quando você vem buscar? <span class="req">obrigatório</span></legend>
+              <p class="dica" id="retDica" style="margin-top:0"></p>
+              <p class="erro" id="eRet" role="alert">Escolha o dia e o horário da retirada.</p>
+              <div id="retirada"></div>
+            </fieldset>
+            <div class="campo">
+              <label class="lbl" for="cObs">Alguma observação? <span class="opc">opcional</span></label>
+              <textarea class="input" id="cObs" maxlength="500" placeholder="Ex.: é para presente, pode separar em sacolinhas?"></textarea>
+            </div>
+            <div class="enviar">
+              <button type="submit" class="btn btn-wa btn-block" id="btnEnviar"><svg class="ic"><use href="#i-send"/></svg><span>Confirmar pedido</span></button>
+              <p class="enviar-nota" id="enviarNota">O pedido fica registrado e abrimos a mensagem pronta para o WhatsApp da Rita.</p>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="secao" aria-labelledby="hComo">
+    <div class="wrap">
+      <div class="secao-cab"><h2 id="hComo">Como funciona</h2></div>
+      <ol class="passos">
+        <li><span><strong>Escolha os sabores</strong><span>Adicione quantos potes quiser de cada sabor.</span></span></li>
+        <li><span><strong>Diga quando vem buscar</strong><span>Escolha o dia e o horário da retirada.</span></span></li>
+        <li><span><strong>Envie e pague o sinal</strong><span id="passoSinal">O pedido chega no WhatsApp da Rita e é confirmado com o sinal de 50%.</span></span></li>
+      </ol>
+    </div>
+  </section>
+
+  <footer class="rodape">
+    <p>Rita Bolos, bolos e sobremesas · WhatsApp <span data-wa-txt>(19) 3845-1550</span></p>
+    <p style="margin-top:6px"><a data-cardapio href="index.html">Ver o cardápio completo</a> (bolos, docinhos, salgados e kits)</p>
+  </footer>
+</main>
+
+<div class="barra" id="barra" role="region" aria-label="Seu pedido">
+  <div class="barra-txt"><strong id="barraQtd">0 potes</strong><span id="barraTot">R$ 0,00</span></div>
+  <a class="btn" href="#pedido" id="barraBtn">Finalizar<svg class="ic"><use href="#i-chev"/></svg></a>
+</div>
+
+<script type="module">
+/* =========================================================
+   Página só de bolo no pote. Usa o mesmo cardápio e o mesmo
+   fluxo de pedido do site (js/rita-api.js): o pedido é gravado
+   no banco (aparece no backoffice) e o WhatsApp abre pronto.
+   Modo demonstração (sem banco): bolo-no-pote.html?demo
+========================================================= */
+const DEMO = new URLSearchParams(location.search).has('demo');
+const CARRINHO_KEY = 'ritabolos.pote.v1';
+const NAME_KEY = 'ritabolos.nome';           // mesmas chaves do site: nome e telefone já vêm preenchidos
+const PHONE_KEY = 'ritabolos.telefone';
+const ULTIMO_KEY = 'ritabolos.ultimo-pedido';
+const CACHE_KEY = 'ritabolos.cardapio.v1' + (DEMO ? '.demo' : '');
+const CAT_SLUGS = ['bolo-no-pote', 'pote'];
+/* Horários de retirada: mesmos do site (index.html, const RETIRADA) */
+const RETIRADA = { dias: 14, inicio: '08:00', fim: '18:00', passoMin: 30, tardeDesde: '12:00' };
+
+const CFG_PADRAO = { nome_loja: 'Rita Bolos', whatsapp_numero: '551938451550', whatsapp_exibicao: '(19) 3845-1550',
+  percentual_sinal: 50, antecedencia_minima_dias: 0, aceitando_pedidos: true, mensagem_pausa: null, url_site: null };
+let API = null, U = null, CFG = { ...CFG_PADRAO }, CAT = null, ITENS = [];
+let qtd = lerCarrinho();
+const ret = { dia: '', hora: '' };
+let chave = null, enviando = false, minData = '';
+
+/* ---------- utilidades ---------- */
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const fmt = v => 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const norm = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+const icon = id => `<svg class="ic" aria-hidden="true"><use href="#i-${id}"/></svg>`;
+function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+function lerCarrinho() { try { const o = JSON.parse(store(CARRINHO_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
+const pct = () => Number(CFG.percentual_sinal ?? 50);
+const sinalDe = v => Math.round(v * pct()) / 100;
+const potes = n => `${n} ${n === 1 ? 'pote' : 'potes'}`;
+
+/* ---------- desenho do pote (o mesmo do site), colorido pelo sabor ---------- */
+const OUT = 'rgba(58,31,20,.28)';
+function tone(hex, p) {
+  const n = parseInt(hex.slice(1), 16); const c = [n >> 16, (n >> 8) & 255, n & 255];
+  return '#' + c.map(x => Math.round(p < 0 ? x * (1 + p) : x + (255 - x) * p)).map(x => x.toString(16).padStart(2, '0')).join('');
+}
+const FLAVORS = [
+  ['frutas vermelhas', '#B5354F'], ['geleia de morango', '#D63E5C'], ['red velvet', '#A3243B'], ['morango', '#E8657F'],
+  ['nutella', '#5E3220'], ['trufa branca', '#F3E4C6'], ['trufa preta', '#3B2015'], ['trufado', '#55301F'], ['trufa', '#55301F'],
+  ['brigadeiro', '#4A2A1C'], ['beijinho', '#FFF6E6'], ['ninho', '#FBEFD9'], ['doce de leite', '#C98A4B'], ['leite condensado', '#F8EBC8'],
+  ['ameixa', '#6B3253'], ['abacaxi', '#F1CF55'], ['pessego', '#F4A877'], ['coco', '#FFFCF4'], ['nozes', '#8B5E3C'],
+  ['amendoim', '#C8955A'], ['pacoca', '#C8955A'], ['maracuja', '#F0B035'], ['limao', '#B7D67A'], ['creme', '#F5E2A2'],
+  ['prestigio', '#FFFCF4', '#4A2A1C'], ['floresta negra', '#7A1E2E', '#3B2015'], ['sonho de valsa', '#8A5434', '#F3E3C2'],
+  ['ouro branco', '#F3E4C6', '#C99A4E'], ['flocos', '#FBEFD9'], ['sensacao', '#4A2A1C', '#E8657F'], ['oreo', '#2E2522', '#F6F1E8'],
+  ['cafe', '#6F4630'], ['bicho de pe', '#F3A3B8']
+].sort((a, b) => b[0].length - a[0].length);
+function palette(name) {
+  let s = norm(name); const found = [];
+  for (const [k, ...cols] of FLAVORS) {
+    let i = s.indexOf(k);
+    while (i > -1) { found.push({ i, cols }); s = s.slice(0, i) + '#'.repeat(k.length) + s.slice(i + k.length); i = s.indexOf(k); }
+  }
+  found.sort((a, b) => a.i - b.i);
+  const out = found.flatMap(f => f.cols);
+  return out.length ? out : ['#F5E2A2'];
+}
+function artPote(name, cls = 'art') {
+  const cols = palette(name); const a = cols[0], b = cols[1] || cols[0];
+  const L = y => 16 + (y - 16) * 0.1, R = y => 64 - L(y);
+  const band = (y1, y2, f) => `<path d="M${L(y1)} ${y1}H${R(y1)}L${R(y2)} ${y2}H${L(y2)}z" fill="${f}"/>`;
+  return `<svg viewBox="0 0 64 64" class="${cls}" aria-hidden="true" focusable="false"><ellipse cx="32" cy="56" rx="15" ry="3" fill="var(--plate)"/>` +
+    band(16, 56, '#EBC78F') + band(46, 50, a) + band(36, 40, b) + band(22, 30, a) + band(16, 22, tone(a, .25)) +
+    `<path d="M${L(16)} 16H${R(16)}L${R(56)} 56H${L(56)}z" fill="none" stroke="${OUT}" stroke-width="1.1" stroke-linejoin="round"/>
+     <rect x="13.5" y="12" width="37" height="5" rx="2.5" fill="#FFFFFF" stroke="${OUT}" stroke-width="1"/>
+     <rect x="21" y="41" width="22" height="9" rx="4.5" fill="#BFE3D6" opacity=".9"/></svg>`;
+}
+/** Cor de fundo do cartão: a cor principal do sabor (clara demais vira dourado suave) */
+function corSabor(name) {
+  const c = palette(name)[0];
+  const n = parseInt(c.slice(1), 16), lum = (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return lum > .88 ? '#E9C98F' : c;
+}
+
+/* ---------- preços (faixas e mínimo iguais ao site) ---------- */
+function precoUnit(it, q) {
+  if (it.faixas.length) {
+    const f = [...it.faixas].sort((a, b) => b.quantidade_minima - a.quantidade_minima)
+      .find(f => q >= f.quantidade_minima && (f.quantidade_maxima == null || q <= f.quantidade_maxima));
+    if (f) return Number(f.preco);
+  }
+  return it.preco;
+}
+function minimoDe(p) {
+  const m = (p.faixas_preco || []).map(f => Number(f.quantidade_minima) || 1);
+  const min = m.length ? Math.max(1, Math.min(...m)) : 1;
+  return { min, passo: min >= 10 ? 10 : 1 };
+}
+const linhas = () => ITENS.filter(it => qtd[it.slug] > 0).map(it => ({ it, q: qtd[it.slug], unit: precoUnit(it, qtd[it.slug]) }));
+const totalPotes = () => linhas().reduce((s, l) => s + l.q, 0);
+const totalValor = () => Math.round(linhas().reduce((s, l) => s + l.q * l.unit, 0) * 100) / 100;
+
+/* ---------- API ---------- */
+async function conectarApi() {
+  if (API) return API;
+  const m = await import('./js/rita-api.js');
+  U = m;
+  if (DEMO) {
+    const { criarSupabaseDemo } = await import('./demo/supabase-demo.js');
+    API = m.criarApi(criarSupabaseDemo({ anonimo: true }));
+  } else {
+    const cfg = await import('./js/config.js');
+    API = await m.conectar(cfg.SUPABASE_URL, cfg.SUPABASE_PUBLISHABLE_KEY || cfg.SUPABASE_ANON_KEY, { anonimo: true });
+  }
+  return API;
+}
+
+function aplicarDados(d) {
+  CFG = { ...CFG_PADRAO, ...(d.configuracoes || {}) };
+  CAT = (d.categorias || []).find(c => CAT_SLUGS.includes(c.slug)) || (d.categorias || []).find(c => c.icone === 'pote') || null;
+  const prods = CAT ? [...(CAT.grupos || []).flatMap(g => g.produtos || []), ...(CAT.produtos || [])] : [];
+  ITENS = prods.map(p => ({
+    slug: p.slug, nome: p.nome, rotulo: p.rotulo || p.nome.replace(/^bolo no pote\s*/i, '') || p.nome,
+    desc: p.descricao || '', preco: Number(p.preco), faixas: p.faixas_preco || [], selo: p.selo || null,
+    antecedencia: p.antecedencia_minima_dias || 0, ...minimoDe(p)
+  }));
+  // tira do carrinho o que saiu do cardápio
+  for (const s of Object.keys(qtd)) if (!ITENS.some(it => it.slug === s)) delete qtd[s];
+  salvar();
+  render();
+}
+
+/* ---------- desenho da página ---------- */
+function render() {
+  // links de WhatsApp e do cardápio completo
+  $$('[data-wa]').forEach(a => { a.href = `https://wa.me/${String(CFG.whatsapp_numero).replace(/\D/g, '')}`; });
+  $$('[data-wa-txt]').forEach(s => { s.textContent = CFG.whatsapp_exibicao || ''; });
+  $$('[data-cardapio]').forEach(a => { a.href = 'index.html' + (DEMO ? '?demo' : '') + (CAT ? `#cardapio/${CAT.slug}` : ''); });
+  $('#passoSinal').textContent = `O pedido chega no WhatsApp da Rita e é confirmado com o sinal de ${pct().toLocaleString('pt-BR')}%.`;
+
+  if (CAT?.introducao) $('#intro').textContent = CAT.introducao;
+  const precos = ITENS.map(it => Math.min(it.preco, ...it.faixas.map(f => Number(f.preco))));
+  if (precos.length) {
+    const min = Math.min(...precos), igual = precos.every(p => p === min);
+    $('#precoRot').textContent = igual ? 'cada pote' : 'a partir de';
+    $('#precoVal').textContent = fmt(min);
+    $('#precoChip').hidden = false;
+  }
+  // três potes de sabores diferentes na abertura
+  const tres = [ITENS[0], ITENS[2] || ITENS[1], ITENS[1]].filter(Boolean).map(it => it.rotulo);
+  while (tres.length < 3) tres.push(['Ninho e Maracujá', 'Red velvet com geleia de morango', 'Brigadeiro'][tres.length]);
+  $$('#heroArte .pote').forEach(e => e.remove());
+  $('#heroArte').insertAdjacentHTML('beforeend', tres.map((n, i) => artPote(n, `art pote p${i + 1}`)).join('') +
+    (precos.length ? `<span class="etiqueta">${ITENS.length} sabores · <b>${esc($('#precoVal').textContent)}</b></span>` : ''));
+
+  const pausado = !CFG.aceitando_pedidos || CAT?.aceita_pedido_online === false;
+  $('#pausa').hidden = !pausado;
+  $('#pausaTxt').textContent = !CFG.aceitando_pedidos ? (CFG.mensagem_pausa || 'No momento não estamos recebendo pedidos pelo site.')
+    : 'O bolo no pote não está recebendo pedidos pelo site agora. Chame a Rita no WhatsApp para combinar.';
+  $('#avisoCat').hidden = !CAT?.aviso; $('#avisoCat').textContent = CAT?.aviso || '';
+
+  if (!ITENS.length) {
+    $('#listaSabores').outerHTML = `<div class="carga" id="listaSabores"><p>${CAT ? 'Nenhum sabor disponível no momento.' : 'O bolo no pote não está no cardápio agora.'}</p>
+      <a class="btn btn-wa" href="https://wa.me/${esc(CFG.whatsapp_numero)}" target="_blank" rel="noopener">${icon('wa')}Falar com a Rita</a></div>`;
+  } else {
+    $('#listaSabores').className = 'sabores';
+    $('#listaSabores').innerHTML = ITENS.map(cartao).join('');
+  }
+  atualizar();
+}
+function cartao(it) {
+  const q = qtd[it.slug] || 0;
+  const unit = precoUnit(it, Math.max(q, it.min));
+  return `<article class="sab${q ? ' tem' : ''}" data-sab="${esc(it.slug)}" style="--flav:${corSabor(it.rotulo)}">
+    <div class="sab-arte">${artPote(it.rotulo)}${it.selo ? `<span class="sab-selo">${esc(it.selo)}</span>` : ''}
+      ${q ? `<span class="sab-qtd" aria-hidden="true">${q}</span>` : ''}</div>
+    <div class="sab-corpo">
+      <h3>${esc(it.rotulo)}</h3>
+      ${it.desc ? `<p>${esc(it.desc)}</p>` : ''}
+      <div class="sab-preco">${fmt(unit)} <small>${it.min > 1 ? `· mín. ${it.min}` : 'cada'}</small></div>
+      <div class="sab-acao">${q
+        ? `<div class="passo" role="group" aria-label="Quantidade de ${esc(it.rotulo)}">
+            <button type="button" data-menos="${esc(it.slug)}" aria-label="Tirar um ${esc(it.rotulo)}">${icon('minus')}</button>
+            <output aria-live="polite">${q}</output>
+            <button type="button" data-mais="${esc(it.slug)}" aria-label="Mais um ${esc(it.rotulo)}">${icon('plus')}</button></div>`
+        : `<button type="button" class="add" data-mais="${esc(it.slug)}" aria-label="Adicionar ${esc(it.rotulo)}">${icon('plus')}Adicionar</button>`}</div>
+    </div></article>`;
+}
+function mudar(slug, dir) {
+  const it = ITENS.find(i => i.slug === slug); if (!it) return;
+  const atual = qtd[slug] || 0;
+  let novo = dir > 0 ? (atual ? atual + it.passo : it.min) : (atual - it.passo < it.min ? 0 : atual - it.passo);
+  novo = Math.min(novo, 999);
+  if (novo) qtd[slug] = novo; else delete qtd[slug];
+  salvar();
+  const el = $(`[data-sab="${CSS.escape(slug)}"]`);
+  if (el) {
+    el.outerHTML = cartao(it);
+    const novoEl = $(`[data-sab="${CSS.escape(slug)}"]`);
+    if (dir > 0) { novoEl.classList.add('pulo'); setTimeout(() => novoEl.classList.remove('pulo'), 260); }
+    // mantém o foco no controle que a pessoa estava usando
+    (novoEl.querySelector(dir > 0 ? '[data-mais]' : '[data-menos]') || novoEl.querySelector('[data-mais]'))?.focus({ preventScroll: true });
+  }
+  atualizar();
+}
+function salvar() { store(CARRINHO_KEY, JSON.stringify(qtd)); }
+
+function atualizar() {
+  const ls = linhas(), n = totalPotes(), tot = totalValor();
+  $('#resumo').innerHTML = ls.length
+    ? ls.map(l => `<div class="res-lin">${artPote(l.it.rotulo)}<span><strong>${esc(l.it.rotulo)}</strong><small>${l.q} × ${fmt(l.unit)}</small></span><b>${fmt(l.q * l.unit)}</b></div>`).join('') +
+      `<div class="res-tot"><span>Total · ${potes(n)}</span><strong>${fmt(tot)}</strong></div>
+       <div class="res-sinal"><span>Sinal para confirmar (${pct().toLocaleString('pt-BR')}%)</span><strong>${fmt(sinalDe(tot))}</strong></div>
+       <p class="res-nota">O pedido só é confirmado depois do envio do comprovante do sinal. O restante você paga na retirada.</p>`
+    : `<div class="resumo-vazio">${artPote('Ninho')}<span>Nenhum pote ainda. <a class="lnk-btn" href="#sabores">Escolha os sabores</a> e eles aparecem aqui.</span></div>`;
+  $('#barraQtd').textContent = potes(n);
+  $('#barraTot').textContent = `${fmt(tot)} · ${ls.length} ${ls.length === 1 ? 'sabor' : 'sabores'}`;
+  montarRetirada();
+  barraVisivel();
+  const pausado = !CFG.aceitando_pedidos || CAT?.aceita_pedido_online === false;
+  const btn = $('#btnEnviar');
+  if (btn && !enviando) btn.disabled = pausado;
+  if ($('#enviarNota')) $('#enviarNota').textContent = pausado ? 'Os pedidos pelo site estão pausados agora. Chame a Rita no WhatsApp.'
+    : 'O pedido fica registrado e abrimos a mensagem pronta para o WhatsApp da Rita.';
+}
+/* A barra fixa some quando o pedido já está na tela */
+let pedidoNaTela = false;
+function barraVisivel() { $('#barra').classList.toggle('mostra', totalPotes() > 0 && !pedidoNaTela && !$('.feito')); }
+new IntersectionObserver(([e]) => { pedidoNaTela = e.isIntersecting; barraVisivel(); }, { rootMargin: '0px 0px -35% 0px' }).observe($('#pedido'));
+addEventListener('scroll', () => $('#topo').classList.toggle('rolou', scrollY > 8), { passive: true });
+
+/* ---------- retirada (mesma regra do site: nada vem marcado) ---------- */
+const SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const SEMANA_LONGA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const p2 = n => String(n).padStart(2, '0');
+const isoDe = d => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+const hojeISO = (mais = 0) => { const d = new Date(); d.setDate(d.getDate() + mais); return isoDe(d); };
+const dataLocal = iso => { const [a, m, d] = iso.split('-').map(Number); return new Date(a, m - 1, d); };
+const minutosDe = hm => { const [h, m] = String(hm).split(':').map(Number); return h * 60 + m; };
+const hmDe = m => `${p2(Math.floor(m / 60))}:${p2(m % 60)}`;
+const antecedencia = () => Math.max(Number(CFG.antecedencia_minima_dias || 0), Number(CAT?.antecedencia_minima_dias || 0),
+  ...linhas().map(l => l.it.antecedencia), 0);
+
+function montarRetirada() {
+  if (!$("#retirada")) return;
+  const ant = antecedencia(), min = hojeISO(ant);
+  if (min === minData && $('#retirada').childElementCount) return;
+  minData = min;
+  if (ret.dia && ret.dia < min) ret.dia = '';
+  $('#retDica').textContent = 'Escolha o dia e o horário em que você vem buscar.' + (ant ? ` Este pedido precisa de ${ant} ${ant === 1 ? 'dia' : 'dias'} de antecedência.` : '');
+  const hoje = hojeISO(), amanha = hojeISO(1), dias = [];
+  for (let i = 0, d = dataLocal(min); i < RETIRADA.dias; i++, d.setDate(d.getDate() + 1)) {
+    const iso = isoDe(d), rot = iso === hoje ? 'Hoje' : iso === amanha ? 'Amanhã' : SEMANA[d.getDay()];
+    dias.push(`<button type="button" class="dia" role="radio" aria-checked="false" data-dia="${iso}" aria-label="${rot === 'Hoje' || rot === 'Amanhã' ? rot + ', ' : ''}${SEMANA_LONGA[d.getDay()]}, ${d.getDate()} de ${MESES[d.getMonth()]}">
+      <span class="d-sem">${rot}</span><span class="d-num">${d.getDate()}</span><span class="d-mes">${MESES[d.getMonth()]}</span></button>`);
+  }
+  const slots = [];
+  for (let m = minutosDe(RETIRADA.inicio); m <= minutosDe(RETIRADA.fim); m += RETIRADA.passoMin) slots.push(hmDe(m));
+  const tarde = minutosDe(RETIRADA.tardeDesde);
+  const botao = h => `<button type="button" class="hora" role="radio" aria-checked="false" data-hora="${h}">${h.replace(/^0/, '')}</button>`;
+  const manha = slots.filter(h => minutosDe(h) < tarde), aTarde = slots.filter(h => minutosDe(h) >= tarde);
+  $('#retirada').innerHTML = `
+    <div class="sub" id="lblDia">${icon('cal')} Dia</div>
+    <div class="dias" role="radiogroup" aria-labelledby="lblDia" aria-describedby="eRet">${dias.join('')}
+      <button type="button" class="dia" data-dia-outra aria-expanded="false" aria-controls="caixaData"><span class="d-sem">Outra</span>${icon('cal')}<span class="d-mes">data</span></button></div>
+    <div class="outra-caixa" id="caixaData" hidden><label class="lbl" for="cDataOutra" style="font-size:14px">Outra data</label><input class="input" type="date" id="cDataOutra" min="${min}"></div>
+    <div class="sub" id="lblHora">${icon('clock')} Horário</div>
+    <div class="horas-wrap" role="radiogroup" aria-labelledby="lblHora" aria-describedby="eRet">
+      ${manha.length ? `<div class="horas-grupo"><span class="h-rot">Manhã</span><div class="horas">${manha.map(botao).join('')}</div></div>` : ''}
+      <div class="horas-grupo"><span class="h-rot">Tarde</span><div class="horas">${aTarde.map(botao).join('')}
+        <button type="button" class="hora outra" data-hora-outra aria-expanded="false" aria-controls="caixaHora">Outro horário</button></div></div>
+    </div>
+    <div class="outra-caixa" id="caixaHora" hidden><label class="lbl" for="cHoraOutra" style="font-size:14px">Outro horário</label><input class="input" type="time" id="cHoraOutra"></div>
+    <div class="ret-resumo" id="retResumo" aria-live="polite" hidden></div>`;
+  // reaplica o que já estava escolhido
+  if (ret.dia) escolherDia(ret.dia, $(`[data-dia="${ret.dia}"]`) ? null : 'outra');
+  if (ret.hora) escolherHora(ret.hora, $(`[data-hora="${ret.hora}"]`) ? null : 'outra');
+  atualizarHorarios();
+}
+function escolherDia(iso, origem) {
+  ret.dia = iso || '';
+  $$('[data-dia]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.dia === iso && origem !== 'outra')));
+  $('[data-dia-outra]').setAttribute('aria-checked', String(origem === 'outra' && !!iso));
+  if (origem === 'outra') { $('#caixaData').hidden = false; $('#cDataOutra').value = iso; }
+  else { $('#caixaData').hidden = true; $('#cDataOutra').value = ''; $('[data-dia-outra]').setAttribute('aria-expanded', 'false'); }
+  atualizarHorarios(); resumoRetirada();
+}
+function escolherHora(hm, origem) {
+  ret.hora = hm || '';
+  $$('[data-hora]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.hora === hm && origem !== 'outra')));
+  $('[data-hora-outra]').setAttribute('aria-checked', String(origem === 'outra' && !!hm));
+  if (origem === 'outra') { $('#caixaHora').hidden = false; $('#cHoraOutra').value = hm; }
+  else { $('#caixaHora').hidden = true; $('#cHoraOutra').value = ''; $('[data-hora-outra]').setAttribute('aria-expanded', 'false'); }
+  resumoRetirada();
+}
+/** Retirada hoje: horários que já passaram (ou em menos de 30 min) ficam indisponíveis. */
+function atualizarHorarios() {
+  const ehHoje = ret.dia === hojeISO();
+  const agora = new Date(), limite = agora.getHours() * 60 + agora.getMinutes() + 30;
+  $$('[data-hora]').forEach(b => {
+    const passou = ehHoje && minutosDe(b.dataset.hora) < limite;
+    b.disabled = passou;
+    if (passou && ret.hora === b.dataset.hora) escolherHora('');
+  });
+}
+function resumoRetirada() {
+  const box = $('#retResumo'); if (!box) return;
+  if (ret.dia && ret.hora) {
+    const dt = dataLocal(ret.dia);
+    const dia = ret.dia === hojeISO() ? 'hoje' : ret.dia === hojeISO(1) ? 'amanhã' : SEMANA_LONGA[dt.getDay()];
+    box.innerHTML = `${icon('check')}<span>Retirada: <strong>${dia}, ${p2(dt.getDate())}/${p2(dt.getMonth() + 1)} às ${ret.hora}</strong></span>`;
+    box.hidden = false;
+    $('#eRet').classList.remove('mostra');
+  } else box.hidden = true;
+  if (ret.dia) $('.dias')?.classList.remove('invalido');
+  if (ret.hora) $$('.horas').forEach(h => h.classList.remove('invalido'));
+}
+
+/* ---------- eventos ---------- */
+document.addEventListener('click', e => {
+  const mais = e.target.closest('[data-mais]'); if (mais) { mudar(mais.dataset.mais, 1); return; }
+  const menos = e.target.closest('[data-menos]'); if (menos) { mudar(menos.dataset.menos, -1); return; }
+  const dia = e.target.closest('[data-dia]'); if (dia) { escolherDia(dia.dataset.dia); return; }
+  const hora = e.target.closest('[data-hora]'); if (hora && !hora.disabled) { escolherHora(hora.dataset.hora); return; }
+  const outraD = e.target.closest('[data-dia-outra]');
+  if (outraD) { $('#caixaData').hidden = false; outraD.setAttribute('aria-expanded', 'true'); const i = $('#cDataOutra'); i.focus(); try { i.showPicker?.(); } catch (err) { /* nem todo navegador abre por código */ } return; }
+  const outraH = e.target.closest('[data-hora-outra]');
+  if (outraH) { $('#caixaHora').hidden = false; outraH.setAttribute('aria-expanded', 'true'); const i = $('#cHoraOutra'); i.focus(); try { i.showPicker?.(); } catch (err) { /* idem */ } return; }
+  if (e.target.closest('[data-act="direto"]')) { enviarDireto(); return; }
+  if (e.target.closest('[data-act="novo"]')) { location.hash = ''; location.reload(); }
+});
+document.addEventListener('change', e => {
+  if (e.target.id === 'cDataOutra') {
+    const v = e.target.value;
+    if (v && v < minData) { e.target.value = ''; escolherDia('', 'outra'); $('#eRet').textContent = `Para este pedido, a retirada precisa ser a partir de ${minData.split('-').reverse().join('/')}.`; $('#eRet').classList.add('mostra'); return; }
+    if (v && $(`[data-dia="${v}"]`)) escolherDia(v); else escolherDia(v, 'outra');
+  }
+  if (e.target.id === 'cHoraOutra') {
+    const v = e.target.value, b = v && $(`[data-hora="${v}"]`);
+    if (b && !b.disabled) escolherHora(v); else escolherHora(v, 'outra');
+  }
+});
+$('#form').addEventListener('submit', e => { e.preventDefault(); enviar(); });
+$('#barraBtn').addEventListener('click', () => setTimeout(() => {
+  const vazio = ['#cNome', '#cFone'].map(s => $(s)).find(i => !i.value.trim());
+  (vazio || $('#btnEnviar')).focus({ preventScroll: true });
+}, 450));
+
+/* ---------- envio ---------- */
+function validar() {
+  let ok = true, primeiro = null;
+  const nome = $('#cNome'), fone = $('#cFone');
+  const nOk = !!nome.value.trim(); nome.setAttribute('aria-invalid', String(!nOk)); $('#eNome').classList.toggle('mostra', !nOk); if (!nOk) { ok = false; primeiro = nome; }
+  const dig = fone.value.replace(/\D/g, ''), fOk = dig.length >= 10 && dig.length <= 13;
+  fone.setAttribute('aria-invalid', String(!fOk)); $('#eFone').classList.toggle('mostra', !fOk); if (!fOk) { ok = false; primeiro = primeiro || fone; }
+  const agora = new Date(), passou = ret.dia === hojeISO() && ret.hora && minutosDe(ret.hora) <= agora.getHours() * 60 + agora.getMinutes();
+  const dOk = !!ret.dia && ret.dia >= minData, hOk = !!ret.hora && !passou;
+  $('#eRet').textContent = ret.dia && ret.dia < minData ? `Para este pedido, a retirada precisa ser a partir de ${minData.split('-').reverse().join('/')}.`
+    : passou ? 'Esse horário de hoje já passou. Escolha outro.'
+    : !ret.dia && !ret.hora ? 'Escolha o dia e o horário da retirada.' : !ret.dia ? 'Escolha o dia da retirada.' : 'Escolha o horário da retirada.';
+  $('.dias').classList.toggle('invalido', !dOk);
+  $$('.horas').forEach(h => h.classList.toggle('invalido', !hOk));
+  $('#eRet').classList.toggle('mostra', !(dOk && hOk));
+  if (!(dOk && hOk)) { ok = false; primeiro = primeiro || (!dOk ? $('[data-dia]') : $('[data-hora]:not(:disabled)') || $('[data-hora-outra]')); }
+  if (primeiro) { primeiro.focus({ preventScroll: true }); primeiro.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+  return ok;
+}
+async function enviar() {
+  if (enviando) return;
+  if (!totalPotes()) {
+    $('#envioErro').innerHTML = `<div class="aviso" role="alert">${icon('info')}<span>Escolha pelo menos um sabor antes de enviar.</span></div>`;
+    $('#sabores').scrollIntoView({ behavior: 'smooth' });
+    return;
+  }
+  if (!validar()) return;
+  const nome = $('#cNome').value.trim(), fone = $('#cFone').value.trim(), obs = $('#cObs').value.trim();
+  store(NAME_KEY, nome); store(PHONE_KEY, fone);
+  chave = chave || (U?.novaChave ? U.novaChave() : String(Date.now()));
+  const payload = {
+    chave_idempotencia: chave, cliente_nome: nome, cliente_telefone: fone, data_retirada: ret.dia, hora_retirada: ret.hora,
+    observacao: obs || null,
+    itens: linhas().map(l => ({ produto_slug: l.it.slug, quantidade: l.q, observacao: null, nome: l.it.nome }))
+  };
+  const btn = $('#btnEnviar'); enviando = true;
+  const aba = U?.prepararAba ? U.prepararAba() : null;   // aberta ainda no clique; recebe o WhatsApp depois de gravar
+  btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.querySelector('span').textContent = 'Registrando pedido…';
+  $('#envioErro').innerHTML = '';
+  try {
+    await conectarApi();
+    const pedido = await API.pedidos.criar(payload);
+    registrado(pedido, aba);
+  } catch (e) {
+    console.error(e);
+    aba?.fechar();
+    btn.disabled = false; btn.removeAttribute('aria-busy'); btn.querySelector('span').textContent = 'Confirmar pedido';
+    const regra = e && e.codigo === 'P0001';
+    $('#envioErro').innerHTML = `<div class="aviso" role="alert">${icon('info')}<span><strong>Não deu para registrar o pedido.</strong> ${esc(e?.message || 'Tente novamente.')}
+      ${regra ? '' : `<br><button type="button" class="lnk-btn" data-act="direto">Enviar mesmo assim pelo WhatsApp</button>`}</span></div>`;
+    $('#envioErro').scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (regra) atualizarCardapio().catch(() => {});
+  } finally { enviando = false; }
+}
+function registrado(pedido, aba) {
+  const recibo = U.linkRecibo(pedido.token, CFG.url_site || undefined) + (DEMO ? '&demo' : '');
+  const waUrl = U.linkWhatsApp(pedido.loja?.whatsapp_numero || CFG.whatsapp_numero, U.montarMensagemWhatsApp(pedido, recibo));
+  const abriu = !!aba?.ir(waUrl);
+  const hora = String(pedido.hora_retirada || ret.hora).slice(0, 5);
+  store(ULTIMO_KEY, JSON.stringify({ codigo: pedido.codigo, token: pedido.token, waUrl, recibo, total: pedido.total, data: pedido.data_retirada, hora, em: Date.now() }));
+  qtd = {}; salvar(); chave = null;
+  $$('[data-sab]').forEach(el => { const it = ITENS.find(i => i.slug === el.dataset.sab); if (it) el.outerHTML = cartao(it); });
+  $('#pedidoCorpo').innerHTML = `<div class="card feito">
+    <div class="feito-ic">${icon('check')}</div>
+    <h3 id="feitoTit" tabindex="-1">Pedido ${esc(pedido.codigo)} registrado!</h3>
+    <p>${abriu ? 'Abrimos o WhatsApp com a mensagem pronta: é só tocar em <strong>Enviar</strong> para a Rita receber.' : 'Agora envie a mensagem para a Rita pelo WhatsApp.'}
+      Ela responde para combinar o sinal de ${fmt(pedido.valor_sinal)}.</p>
+    <div class="feito-res"><span>Total</span><strong>${fmt(pedido.total)}</strong>
+      <span>Retirada</span><strong>${String(pedido.data_retirada).split('-').reverse().join('/')} às ${esc(hora)}</strong></div>
+    <div class="pilha">
+      <a class="btn btn-wa btn-block" href="${esc(waUrl)}" target="_blank" rel="noopener">${icon('wa')}${abriu ? 'Abrir o WhatsApp de novo' : 'Enviar pelo WhatsApp'}</a>
+      <a class="btn btn-ghost btn-block" href="${esc(recibo)}" target="_blank" rel="noopener">Ver recibo do pedido</a>
+      <button type="button" class="btn btn-ghost btn-block" data-act="novo">Fazer outro pedido</button>
+    </div></div>`;
+  barraVisivel();
+  $('.feito').scrollIntoView({ block: 'center', behavior: 'instant' });   // sem animação: a aba do WhatsApp fica na frente e a animação não roda
+  setTimeout(() => $('#feitoTit')?.focus({ preventScroll: true }), 50);
+}
+/* Plano B: servidor fora do ar, a mensagem segue direto pelo WhatsApp */
+function enviarDireto() {
+  const nome = $('#cNome').value.trim(), obs = $('#cObs').value.trim(), tot = totalValor();
+  let m = `*NOVO PEDIDO — ${(CFG.nome_loja || 'Rita Bolos').toUpperCase()}*\n_(não registrado no sistema)_\n\n*Cliente:* ${nome}\n*Retirada:* ${ret.dia.split('-').reverse().join('/')} às ${ret.hora}\n\n*Bolo no pote:*\n`;
+  linhas().forEach((l, i) => { m += `\n${i + 1}. *${l.it.nome}*\n   Qtd: ${l.q} x ${fmt(l.unit)} = ${fmt(l.q * l.unit)}\n`; });
+  if (obs) m += `\n*Observação:* ${obs}\n`;
+  m += `\n----------------------------\n*Total:* ${fmt(tot)}\n*Sinal mínimo (${pct().toLocaleString('pt-BR')}%):* ${fmt(sinalDe(tot))}`;
+  window.open(`https://wa.me/${String(CFG.whatsapp_numero).replace(/\D/g, '')}?text=${encodeURIComponent(m.replace(/ /g, ' '))}`, '_blank', 'noopener');
+}
+
+/* ---------- início ---------- */
+async function atualizarCardapio() {
+  await conectarApi();
+  const d = await API.cardapio.obter();
+  store(CACHE_KEY, JSON.stringify(d));
+  aplicarDados(d);
+}
+$('#cNome').value = store(NAME_KEY) || '';
+$('#cFone').value = store(PHONE_KEY) || '';
+(async () => {
+  try { const c = JSON.parse(store(CACHE_KEY) || 'null'); if (c) aplicarDados(c); } catch (e) { /* cache inválido */ }
+  try { await atualizarCardapio(); }
+  catch (e) {
+    console.error('Cardápio:', e);
+    if (!ITENS.length) $('#listaSabores').outerHTML = `<div class="carga" id="listaSabores"><p>Não deu para carregar os sabores agora.</p>
+      <button type="button" class="btn btn-ghost" onclick="location.reload()">Tentar de novo</button></div>`;
+  }
+})();
+</script>
+</body>
+</html>
