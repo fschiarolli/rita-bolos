@@ -371,14 +371,15 @@ export function criarApi(supabase, opcoes = {}) {
         /**
          * Avisa quando um pedido é criado ou alterado (tempo real).
          * callback({ tipo: 'INSERT' | 'UPDATE' | 'DELETE', pedido })
+         * aoEstado (opcional) recebe 'SUBSCRIBED', 'CHANNEL_ERROR', 'TIMED_OUT' ou 'CLOSED'.
          * Devolve uma função para parar de ouvir.
          */
-        aoMudar(callback) {
+        aoMudar(callback, aoEstado) {
           const canal = supabase
             .channel('pedidos-backoffice')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos' },
                 (m) => callback({ tipo: m.eventType, pedido: m.new && Object.keys(m.new).length ? m.new : m.old }))
-            .subscribe();
+            .subscribe((estado) => aoEstado?.(estado));
           return () => supabase.removeChannel(canal);
         }
       },

@@ -68,6 +68,7 @@ const FORMAS = { pix: 'Pix', dinheiro: 'Dinheiro', cartao_debito: 'Cartão de d�
 const TIPOS_PGTO = { sinal: 'Sinal', restante: 'Restante', outro: 'Outro' };
 const urlReciboInterno = (id, imprimir) => `${RAIZ_SITE}recibo.html?id=${encodeURIComponent(id)}${imprimir ? '&imprimir' : ''}${DEMO ? '&demo' : ''}`;
 const urlSite = () => `${RAIZ_SITE}index.html${DEMO ? '?demo' : ''}`;
+const urlQuadro = () => `quadro.html${DEMO ? '?demo' : ''}`;
 
 /* =========================================================
    AVISOS (toasts), MODAIS E CONFIRMAÇÃO
@@ -338,6 +339,7 @@ function telaShell() {
       <nav style="display:grid;gap:4px">${itens.map(n => link(n, 'nav-a')).join('')}</nav>
       <div class="side-foot">
         <div class="user-box"><strong>${esc(perfil.nome)}</strong><span>${perfil.papel === 'admin' ? 'Administração' : 'Atendimento'}${perfil.email ? ' · ' + esc(perfil.email) : ''}</span></div>
+        <a class="btn sm ghost block" href="${esc(urlQuadro())}" target="_blank" rel="noopener">${ic('painel')}Quadro da equipe (TV)</a>
         <div class="row"><a class="btn sm ghost" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}Ver site</a>
           <button type="button" class="btn sm ghost" data-act="conta">${ic('user')}Conta</button></div>
       </div>
@@ -360,6 +362,7 @@ function modalConta() {
     corpo: `<div class="user-box" style="margin-bottom:16px"><strong>${esc(perfil.nome)}</strong><span>${perfil.papel === 'admin' ? 'Administração' : 'Atendimento'}${perfil.email ? ' · ' + esc(perfil.email) : ''}</span></div>
       <div style="display:grid;gap:10px">
         <a class="btn ghost block" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}Abrir o site</a>
+        <a class="btn ghost block" href="${esc(urlQuadro())}" target="_blank" rel="noopener">${ic('painel')}Quadro da equipe (TV)</a>
         ${DEMO ? `<button type="button" class="btn ghost block" data-reiniciar>${ic('atualizar')}Recomeçar a demonstração</button>` : `<button type="button" class="btn ghost block" data-senha>Trocar senha</button>`}
         <button type="button" class="btn danger block" data-sair>${ic('sair')}Sair</button>
       </div>`
