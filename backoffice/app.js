@@ -1707,10 +1707,9 @@ async function modalNovoPedido() {
     .filter(g => g.itens.length);
   grupos.forEach(g => g.itens.forEach(p => { prods[p.slug] = p; }));
   const bolos = Object.values(prods).filter(p => p.tipo === 'bolo');
-  // Finalização do bolo (colorido, glitter…): produtos "finalizacao-*" do cardápio, escolhidos junto do bolo e cobrados como item à parte
+  // Finalização do bolo (colorido, glitter…): opção dentro do bolo (vira item à parte) e também item avulso na lista de produtos
   const finalizacoes = Object.values(prods).filter(ehFinalizacao);
-  const opcoesProd = `<option value="">Escolha um produto</option>` + grupos.map(g => ({ ...g, itens: g.itens.filter(p => !ehFinalizacao(p)) })).filter(g => g.itens.length)
-    .map(g => `<optgroup label="${esc(g.nome)}">${g.itens.map(p =>
+  const opcoesProd = `<option value="">Escolha um produto</option>` + grupos.map(g => `<optgroup label="${esc(g.nome)}">${g.itens.map(p =>
     `<option value="${esc(p.slug)}">${esc(p.nome)} — ${esc(R(p.preco))}${p.unidade_preco === 'kg' ? '/kg' : ''}</option>`).join('')}</optgroup>`).join('');
   let n = 0;
   const linha = () => {

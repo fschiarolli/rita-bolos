@@ -1039,7 +1039,7 @@ let KITS_CAT = null;     // categoria exibida na aba Kits
 let WEIGHT_OPTIONS = [1.5];
 let MASSAS = [];
 let FORMATOS = [];
-let FINALIZACOES = [];   // finalização do bolo (colorido, glitter…): produtos do grupo "Finalização" (ou slug "finalizacao-…"), cobrados à parte
+let FINALIZACOES = [];   // finalização do bolo (colorido, glitter…): produtos do grupo "Finalização" (ou slug "finalizacao-…"); opção ao montar o bolo e também item avulso em Adicionais
 const ehFinalizacao = p => /^finalizacao-/.test(p?.slug || '');
 const grupoFinalizacao = nome => /^finaliza/.test(String(nome || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim());
 const finDe = slug => (slug && FINALIZACOES.find(f => f.slug === slug)) || null;
@@ -1305,7 +1305,7 @@ function buildCatalog(d) {
   for (const c of CATS) {
     const grupos = (c.grupos || []).map(g => ({ id: `${c.slug}-${g.id}`, title: g.nome, info: g.info, flavors: g.sabores, produtos: g.produtos || [] }));
     if ((c.produtos || []).length) grupos.push({ id: `${c.slug}-itens`, title: null, info: null, produtos: c.produtos });
-    CATALOG[c.slug] = grupos.map(g => ({ ...g, items: g.produtos.filter(p => !ehFinalizacao(p) && !grupoFinalizacao(g.title)).map(p => register(itemDe(p, c, g))) })).filter(g => g.items.length);
+    CATALOG[c.slug] = grupos.map(g => ({ ...g, items: g.produtos.map(p => register(itemDe(p, c, g))) })).filter(g => g.items.length);
   }
 }
 const catDe = slug => CATS.find(c => c.slug === slug);
