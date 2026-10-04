@@ -336,6 +336,7 @@ const NAV = [
   { id: 'hoje', rot: 'Hoje', ic: 'hoje' },
   { id: 'pedidos', rot: 'Pedidos', ic: 'pedidos', badge: true },
   { id: 'relatorio', rot: 'Relatório', ic: 'grafico', admin: true },
+  { id: 'prejuizos', rot: 'Prejuízos', ic: 'alerta', admin: true },
   { id: 'cardapio', rot: 'Cardápio', ic: 'bolo', admin: true },
   { id: 'ajustes', rot: 'Ajustes', ic: 'config', admin: true }
 ];
@@ -454,7 +455,7 @@ function rotear(forcar = false) {
     $$('[data-nav]').forEach(a => { if (a.dataset.nav === tela) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
     const el = $('#conteudo');
     document.title = `${NAV.find(n => n.id === tela)?.rot || 'Painel'} — Backoffice Rita Bolos`;
-    ({ painel: telaPainel, hoje: telaHoje, pedidos: telaPedidos, relatorio: telaRelatorio, cardapio: telaCardapio, ajustes: telaAjustes })[tela](el, sub);
+    ({ painel: telaPainel, hoje: telaHoje, pedidos: telaPedidos, relatorio: telaRelatorio, prejuizos: telaPrejuizos, cardapio: telaCardapio, ajustes: telaAjustes })[tela](el, sub);
     window.scrollTo(0, 0);
   }
   if (pedidoId) abrirGaveta(pedidoId); else fecharGaveta(true);
@@ -599,6 +600,8 @@ async function telaPainel(el, _sub, silencioso = false) {
       api.admin.pedidos.listar({ status: 'recebido', porPagina: 8, ordenarPor: 'criado_em', crescente: false })
     ]);
     if (telaAtual !== 'painel') return;
+    hoje.pedidos = hoje.pedidos.filter(confirmadoEmDiante);   // retiradas de hoje: só confirmados em diante
+    r.retiradas_hoje = hoje.pedidos.length;
     const abertos = r.por_status.filter(s => !s.finalizado);
     const emAberto = abertos.reduce((s, x) => s + x.quantidade, 0);
     const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
@@ -706,11 +709,12 @@ async function topProdutos(pedidos) {
 }
 
 /* Variação contra a semana anterior: sobe/desce com ícone e texto, nunca só cor */
-function variacao(atual, antes, { dinheiro = false, menorMelhor = false } = {}) {
-  if (!antes && !atual) return '<span class="delta neutro">igual à semana anterior</span>';
-  if (!antes) return `<span class="delta neutro">${dinheiro ? 'sem vendas' : 'nenhum'} na semana anterior</span>`;
+function variacao(atual, antes, { dinheiro = false, menorMelhor = false, periodo = 'semana anterior', zero = null } = {}) {
+  const no = periodo.startsWith('mês') ? 'no' : 'na';
+  if (!antes && !atual) return `<span class="delta neutro">igual ${no === 'no' ? 'ao' : 'à'} ${periodo}</span>`;
+  if (!antes) return `<span class="delta neutro">${zero || (dinheiro ? 'sem vendas' : 'nenhum')} ${no} ${periodo}</span>`;
   const pct = Math.round((atual - antes) / antes * 100);
-  if (pct === 0) return '<span class="delta neutro">igual à semana anterior</span>';
+  if (pct === 0) return `<span class="delta neutro">igual ${no === 'no' ? 'ao' : 'à'} ${periodo}</span>`;
   const bom = menorMelhor ? pct < 0 : pct > 0;
   return `<span class="delta ${bom ? 'bom' : 'ruim'}">${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}%<span class="sr"> ${pct > 0 ? 'a mais' : 'a menos'}</span> <small>vs. ${dinheiro ? valorCurto(antes) : antes}</small></span>`;
 }
@@ -755,7 +759,8 @@ async function telaRelatorio(el, sub) {
     const [esta, anterior] = await Promise.all([carregarSemana(ini), carregarSemana(isoMais(ini, -7))]);
     if (telaAtual !== 'relatorio') return;
     const s = resumoSemana(esta, ini), a = resumoSemana(anterior, isoMais(ini, -7));
-    const top = await topProdutos(esta).catch(() => []);
+    const [top, prejS, prejA] = await Promise.all([topProdutos(esta).catch(() => []),
+      api.admin.prejuizos.doPeriodo(ini, fim).catch(() => null), api.admin.prejuizos.doPeriodo(isoMais(ini, -7), isoMais(ini, -1)).catch(() => null)]);
     if (telaAtual !== 'relatorio') return;
     const melhor = s.dias.reduce((m, d) => (d.valor > m.valor ? d : m), s.dias[0]);
     const tile = (cor, icone, rot, valor, delta) => `<div class="kpi" style="${corVars(cor)}"><span class="kpi-ic">${ic(icone)}</span>
@@ -785,6 +790,7 @@ async function telaRelatorio(el, sub) {
         ${tile('#7DC4B0', 'ok', 'Concluídos (retirados)', s.concluidos, variacao(s.concluidos, a.concluidos))}
         ${tile('#C9A15A', 'moeda', 'Ticket médio', R(s.ticket), variacao(s.ticket, a.ticket, { dinheiro: true }))}
         ${tile('#B9476A', 'x', 'Cancelados', s.cancelados, variacao(s.cancelados, a.cancelados, { menorMelhor: true }))}
+        ${prejS ? `<a class="kpi" href="#prejuizos/${ini.slice(0, 7)}" style="${corVars('#A8405F')}"><span class="kpi-ic">${ic('alerta')}</span><span class="kpi-t"><span>Prejuízos</span><strong>${R(totalPrej(prejS))}</strong>${variacao(totalPrej(prejS), totalPrej(prejA || []), { dinheiro: true, menorMelhor: true, zero: 'nenhum prejuízo' })}</span></a>` : ''}
       </div>
       <section class="card" style="margin-bottom:18px">
         <div class="card-h"><div><p class="eyebrow">Vendas por dia</p><h2>${melhor.valor ? `Melhor dia: ${DIAS_SEMANA_LONGOS[s.dias.indexOf(melhor)]}, ${ddmm(melhor.iso)}` : 'Sem vendas nesta semana'}</h2></div>
@@ -811,6 +817,178 @@ async function telaRelatorio(el, sub) {
   }
 }
 
+/* =========================================================
+   PREJUÍZOS: itens refeitos ou perdidos (sabor errado, item trocado, queda...)
+   #prejuizos  ·  #prejuizos/2026-10 (mês)
+========================================================= */
+const MOTIVOS = {
+  sabor_errado: 'Sabor errado', item_errado: 'Item errado ou trocado', danificado: 'Danificado (queda, transporte)',
+  qualidade: 'Problema de qualidade', atraso: 'Atraso ou esquecido', outro: 'Outro'
+};
+const MESES_LONGOS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const totalPrej = l => Math.round(l.reduce((s, x) => s + Number(x.quantidade) * Number(x.valor_unitario), 0) * 100) / 100;
+function limitesMes(ym) {
+  const [a, m] = ym.split('-').map(Number);
+  const ult = new Date(Date.UTC(a, m, 0)).getUTCDate();
+  return { de: `${ym}-01`, ate: `${ym}-${String(ult).padStart(2, '0')}`, rot: `${MESES_LONGOS[m - 1]} de ${a}` };
+}
+const mesMais = (ym, n) => { const [a, m] = ym.split('-').map(Number); const d = new Date(Date.UTC(a, m - 1 + n, 1)); return d.toISOString().slice(0, 7); };
+
+async function telaPrejuizos(el, sub) {
+  const atual = hojeISO().slice(0, 7);
+  const ym = /^\d{4}-\d{2}$/.test(sub || '') && sub <= atual ? sub : atual;
+  const { de, ate, rot } = limitesMes(ym);
+  const nav = `<div class="sem-nav" role="group" aria-label="Escolher mês">
+      <a class="btn icon ghost" href="#prejuizos/${mesMais(ym, -1)}" aria-label="Mês anterior">${ic('voltar')}</a>
+      <span class="sem-rot">${rot.charAt(0).toUpperCase() + rot.slice(1)}${ym === atual ? ' <small>este mês</small>' : ''}</span>
+      <a class="btn icon ghost" ${ym >= atual ? 'aria-disabled="true" tabindex="-1"' : ''} href="#prejuizos/${mesMais(ym, 1)}" aria-label="Próximo mês">${ic('seta')}</a>
+      <button type="button" class="btn primary" data-prej-novo>${ic('mais')}Lançar prejuízo</button></div>`;
+  const cab = cabecalho('Prejuízos', nav, 'Itens que precisaram ser refeitos ou foram perdidos, ligados ao pedido.');
+  el.innerHTML = cab + '<div class="skel" style="height:96px;margin-bottom:18px"></div><div class="skel" style="height:260px"></div>';
+  try {
+    const anterior = limitesMes(mesMais(ym, -1));
+    const [lista, antes] = await Promise.all([api.admin.prejuizos.doPeriodo(de, ate), api.admin.prejuizos.doPeriodo(anterior.de, anterior.ate)]);
+    if (telaAtual !== 'prejuizos') return;
+    const total = totalPrej(lista), unidades = lista.reduce((s, x) => s + Number(x.quantidade), 0);
+    const pedidos = new Set(lista.map(x => x.pedido_id || x.pedido_codigo).filter(Boolean)).size;
+    const porMotivo = Object.entries(lista.reduce((o, x) => { o[x.motivo] = (o[x.motivo] || 0) + Number(x.quantidade) * Number(x.valor_unitario); return o; }, {}))
+      .sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ rot: MOTIVOS[k] || k, v: Math.round(v * 100) / 100 }));
+    const porItem = Object.values(lista.reduce((o, x) => { const k = x.item_nome; o[k] = o[k] || { rot: k, v: 0, q: 0 }; o[k].v += Number(x.quantidade) * Number(x.valor_unitario); o[k].q += Number(x.quantidade); return o; }, {}))
+      .sort((a, b) => b.v - a.v).slice(0, 6).map(x => ({ ...x, sub: `${x.q} ${x.q === 1 ? 'unidade refeita' : 'unidades refeitas'}` }));
+    const tile = (cor, icone, r, valor, delta) => `<div class="kpi" style="${corVars(cor)}"><span class="kpi-ic">${ic(icone)}</span><span class="kpi-t"><span>${r}</span><strong>${valor}</strong>${delta || ''}</span></div>`;
+    const rs = v => R(v).replace(/ /g, ' ');
+    el.innerHTML = cab + (lista.length || antes.length ? `
+      <div class="card kpi-strip">
+        ${tile('#B9476A', 'alerta', 'Prejuízo no mês', R(total), variacao(total, totalPrej(antes), { dinheiro: true, menorMelhor: true, periodo: 'mês anterior', zero: 'nenhum prejuízo' }))}
+        ${tile('#C9A15A', 'pedidos', 'Pedidos afetados', pedidos)}
+        ${tile('#6E4B3A', 'bolo', 'Unidades refeitas', unidades)}
+        ${tile('#2B7465', 'moeda', 'Lançamentos', lista.length, variacao(lista.length, antes.length, { menorMelhor: true, periodo: 'mês anterior' }))}
+      </div>
+      ${lista.length ? `<div class="cols" style="margin-bottom:18px">
+        <section class="card"><div class="card-h"><div><p class="eyebrow">Por motivo</p><h2>O que mais deu errado</h2></div></div>${barrasH(porMotivo, rs)}</section>
+        <section class="card"><div class="card-h"><div><p class="eyebrow">Por produto</p><h2>Itens com mais prejuízo</h2></div></div>${barrasH(porItem, rs)}</section>
+      </div>` : ''}
+      <section class="card tabela" aria-label="Lançamentos do mês">
+        <div class="card-h" style="padding:18px 22px 0"><div><p class="eyebrow">Lançamentos</p><h2>${lista.length ? `${lista.length} ${lista.length === 1 ? 'lançamento' : 'lançamentos'} em ${rot}` : `Nenhum prejuízo em ${rot}`}</h2></div></div>
+        ${lista.length ? `<div class="sem-tab-wrap"><table class="sem-tab prej-tab">
+          <thead><tr><th scope="col">Data</th><th scope="col">Pedido</th><th scope="col">Item</th><th scope="col">Motivo</th><th scope="col">Qtd.</th><th scope="col">Total</th><th scope="col"><span class="sr">Ações</span></th></tr></thead>
+          <tbody>${lista.map(x => `<tr>
+            <td class="num">${esc(ddmm(x.data))}</td>
+            <td>${x.pedido_id ? `<a href="#" data-ped="${esc(x.pedido_id)}">${esc(x.pedido_codigo || 'pedido')}</a>` : esc(x.pedido_codigo || '—')}<small>${esc(x.cliente_nome || '')}</small></td>
+            <td>${esc(x.item_nome)}${x.descricao ? `<small>${esc(x.descricao)}</small>` : ''}</td>
+            <td><span class="tag pend">${esc(MOTIVOS[x.motivo] || x.motivo)}</span></td>
+            <td class="num">${x.quantidade} × ${R(x.valor_unitario)}</td>
+            <td class="num"><b>${R(Number(x.quantidade) * Number(x.valor_unitario))}</b></td>
+            <td class="num"><button type="button" class="btn icon sm ghost" data-prej-tirar="${esc(x.id)}" aria-label="Apagar lançamento de ${esc(x.item_nome)}">${ic('lixo')}</button></td></tr>`).join('')}</tbody>
+          <tfoot><tr><th scope="row" colspan="5">Total do mês</th><td class="num">${R(total)}</td><td></td></tr></tfoot>
+        </table></div>` : `<div class="vazio"><p>Nada lançado neste mês.</p></div>`}
+      </section>` : `<div class="card vazio" style="padding:48px 20px">${ic('alerta')}<h2>Nenhum prejuízo lançado</h2>
+        <p>Quando um item precisar ser refeito (por exemplo, bolo entregue com o sabor errado), lance aqui ou pelo botão “Prejuízo” dentro do pedido.</p>
+        <button type="button" class="btn primary" data-prej-novo style="margin-top:12px">${ic('mais')}Lançar prejuízo</button></div>`);
+  } catch (e) {
+    erroToast(e);
+    el.innerHTML = cab + `<div class="vazio"><h2>Não foi possível carregar</h2><p>${esc(/prejuizos|42P01|does not exist|não existe/i.test(e.message) ? 'A tabela de prejuízos ainda não existe no banco. Rode o arquivo sql/prejuizos.sql no Supabase.' : e.message)}</p></div>`;
+  }
+}
+document.addEventListener('click', async e => {
+  if (e.target.closest('[data-prej-novo]')) { modalPrejuizo(); return; }
+  const tirar = e.target.closest('[data-prej-tirar]');
+  if (tirar && telaAtual === 'prejuizos') {
+    if (!await confirmar('Apagar este lançamento?', 'O valor sai do total de prejuízos.', { botao: 'Apagar', perigo: true })) return;
+    await ocupado(tirar, async () => { await api.admin.prejuizos.remover(tirar.dataset.prejTirar); toast('Lançamento apagado.'); recarregarPrejuizos(); });
+  }
+});
+function recarregarPrejuizos() { if (telaAtual === 'prejuizos') telaPrejuizos($('#conteudo'), rotaAtual.split('/')[1]); }
+
+/** Lançar prejuízo: escolhe o pedido, marca quantos de cada item deram problema. pedido = já aberto (vindo da gaveta). */
+async function modalPrejuizo(pedido = null) {
+  const m = abrirModal({
+    titulo: 'Lançar prejuízo', largo: true,
+    corpo: `<div id="prjPasso1" ${pedido ? 'hidden' : ''}>
+        <div class="busca">${ic('busca')}<label class="sr" for="prjBusca">Buscar pedido</label>
+          <input class="in" id="prjBusca" type="search" placeholder="Nome do cliente, telefone ou código (RB-01001)" autocomplete="off"></div>
+        <div id="prjResultados" class="prj-resultados"><p class="dica" style="margin:10px 2px;color:var(--ink-3)">Digite para encontrar o pedido que deu prejuízo.</p></div>
+      </div>
+      <div id="prjPasso2"></div>`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok disabled>${ic('ok')}Lançar</button>`
+  });
+  let atual = null;
+  const desenharPedido = async p => {
+    atual = p;
+    m.$('#prjPasso1').hidden = true;
+    const ja = await api.admin.prejuizos.listar({ filtros: { pedido_id: p.id } }).catch(() => []);
+    m.$('#prjPasso2').innerHTML = `
+      <div class="prj-ped"><div><strong>${esc(p.cliente_nome)}</strong><small>${esc(p.codigo)} · retirada ${esc(formatarData(p.data_retirada))} · ${esc(p.status_nome || '')}</small></div>
+        ${pedido ? '' : '<button type="button" class="btn sm ghost" data-prj-trocar>Trocar pedido</button>'}</div>
+      ${ja.length ? `<p class="aviso-box" style="margin:0 0 12px">Já ${ja.length === 1 ? 'existe 1 lançamento' : `existem ${ja.length} lançamentos`} para este pedido, somando ${R(totalPrej(ja))}.</p>` : ''}
+      <p class="secao-t" style="margin-top:6px">Quais itens deram problema?</p>
+      <div class="prj-itens">${p.itens.map((i, n) => `<div class="prj-it" data-n="${n}">
+          <div class="prj-it-t"><strong>${i.quantidade}× ${esc(i.nome)}${i.peso_kg ? ` · ${esc(formatarPeso(i.peso_kg))}` : ''}</strong>
+            <small>${[i.massa, i.formato, i.segundo_recheio ? '2º recheio: ' + i.segundo_recheio : '', i.observacao].filter(Boolean).map(esc).join(' · ')}</small></div>
+          <div class="prj-it-q"><label class="sr" for="prjQ${n}">Quantos com problema</label>
+            <button type="button" class="btn icon sm ghost" data-prj-q="-${n}" aria-label="Menos">${ic('menos')}</button>
+            <input class="in" id="prjQ${n}" type="number" min="0" max="${i.quantidade}" value="0" inputmode="numeric">
+            <button type="button" class="btn icon sm ghost" data-prj-q="+${n}" aria-label="Mais">${ic('mais')}</button></div>
+          <div class="prj-it-v">${inDin('prjV' + n, 'Valor por unidade', i.preco_unitario)}</div>
+        </div>`).join('')}</div>
+      <div class="grid2" style="margin-top:14px">${inSel('prjMotivo', 'Motivo', Object.entries(MOTIVOS), 'sabor_errado')}
+        ${campo('prjData', 'Data', `<input class="in" id="prjData" type="date" value="${hojeISO()}" max="${hojeISO()}">`)}</div>
+      ${inTa('prjDesc', 'O que aconteceu <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>', '', { attrs: 'maxlength="500" placeholder="Ex.: entregue como chocolate, cliente pediu ninho. Fizemos outro bolo." style="min-height:70px"' })}
+      <div class="prj-total"><span>Prejuízo deste lançamento</span><strong id="prjTotal">${R(0)}</strong></div>
+      <p class="dica" style="margin:4px 0 0;color:var(--ink-3)">O valor vem do preço do item no pedido; ajuste se o custo de refazer foi outro.</p>`;
+    atualizar();
+    m.$('[data-prj-trocar]')?.addEventListener('click', () => { atual = null; m.$('#prjPasso2').innerHTML = ''; m.$('#prjPasso1').hidden = false; atualizar(); m.$('#prjBusca').focus(); });
+  };
+  const linhas = () => !atual ? [] : atual.itens.map((i, n) => ({ i, q: Math.max(0, Math.floor(Number(m.$('#prjQ' + n)?.value) || 0)), v: lerValor(m.$('#prjV' + n)?.value) })).filter(x => x.q > 0);
+  const atualizar = () => {
+    const l = linhas(), total = l.reduce((s, x) => s + x.q * (Number.isFinite(x.v) ? x.v : 0), 0);
+    if (m.$('#prjTotal')) m.$('#prjTotal').textContent = R(total);
+    m.$('[data-ok]').disabled = !l.length;
+    m.$('[data-ok]').innerHTML = `${ic('ok')}${l.length ? `Lançar ${R(total)}` : 'Lançar'}`;
+  };
+  m.el.addEventListener('input', e => { if (/^prj[QV]\d+$/.test(e.target.id)) atualizar(); });
+  m.el.addEventListener('click', e => {
+    const b = e.target.closest('[data-prj-q]'); if (!b) return;
+    const n = b.dataset.prjQ.slice(1), inp = m.$('#prjQ' + n), max = Number(inp.max);
+    inp.value = Math.max(0, Math.min(max, (Number(inp.value) || 0) + (b.dataset.prjQ[0] === '+' ? 1 : -1)));
+    atualizar();
+  });
+  // busca de pedidos
+  let tBusca = null;
+  m.$('#prjBusca').addEventListener('input', e => {
+    clearTimeout(tBusca);
+    const termo = e.target.value.trim();
+    tBusca = setTimeout(async () => {
+      if (termo.length < 2) { m.$('#prjResultados').innerHTML = '<p class="dica" style="margin:10px 2px;color:var(--ink-3)">Digite pelo menos 2 letras.</p>'; return; }
+      try {
+        const r = await api.admin.pedidos.listar({ busca: termo, porPagina: 8, ordenarPor: 'data_retirada', crescente: false });
+        m.$('#prjResultados').innerHTML = r.pedidos.length ? r.pedidos.map(p => `<button type="button" class="prj-res" data-prj-ped="${esc(p.id)}">
+            <span><strong>${esc(p.cliente_nome)}</strong><small>${esc(p.codigo)} · ${esc(formatarData(p.data_retirada))} · ${esc(p.resumo_itens || '')}</small></span>${pill(p.status_nome, p.status_cor)}</button>`).join('')
+          : '<p class="dica" style="margin:10px 2px;color:var(--ink-3)">Nenhum pedido encontrado.</p>';
+      } catch (err) { erroToast(err); }
+    }, 250);
+  });
+  m.$('#prjResultados').addEventListener('click', e => {
+    const b = e.target.closest('[data-prj-ped]'); if (!b) return;
+    ocupado(b, async () => desenharPedido(await api.admin.pedidos.obter(b.dataset.prjPed)));
+  });
+  m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    const l = linhas();
+    if (!l.length) throw new Error('Marque quantos itens deram problema.');
+    if (l.some(x => !Number.isFinite(x.v) || x.v < 0)) throw new Error('Confira o valor por unidade dos itens marcados.');
+    const motivo = valDe(m, 'prjMotivo'), descricao = valDe(m, 'prjDesc') || null, data = valDe(m, 'prjData') || hojeISO();
+    await api.admin.prejuizos.criarVarios(l.map(x => ({
+      pedido_id: atual.id, pedido_codigo: atual.codigo, cliente_nome: atual.cliente_nome, produto_id: x.i.produto_id || null,
+      item_nome: x.i.nome + (x.i.peso_kg ? ` ${formatarPeso(x.i.peso_kg)}` : ''), quantidade: x.q, valor_unitario: x.v, motivo, descricao, data
+    })));
+    const total = l.reduce((s, x) => s + x.q * x.v, 0);
+    m.fechar();
+    toast(`Prejuízo de ${R(total).replace(/ /g, ' ')} lançado no pedido ${atual.codigo}.`);
+    recarregarPrejuizos();
+  }));
+  if (pedido) desenharPedido(pedido); else setTimeout(() => m.$('#prjBusca').focus(), 60);
+}
+
 /* Atalhos do painel para a lista já filtrada */
 document.addEventListener('click', e => {
   const a = e.target.closest('[data-filtro]'); if (!a) return;
@@ -833,6 +1011,12 @@ document.addEventListener('click', e => {
 let hojeLista = [], hojeBusca = '', hojeAberto = null, hojeDia = null, hojeAtrasados = 0;
 const hojeDetalhes = new Map(), hojeVersao = new Map();
 const semAcento = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+/** Pedido já confirmado (sinal pago) ou mais adiante. Os que só foram recebidos ficam fora das listas do dia. */
+function confirmadoEmDiante(p) {
+  const conf = STATUS.find(s => s.codigo === 'confirmado');
+  if (!conf) return p.status !== 'recebido';
+  return (statusDe(p.status).ordem ?? 0) >= conf.ordem;
+}
 function statusRetirado() {
   return STATUS.find(s => s.codigo === 'retirado' && s.ativo)
     || STATUS.filter(s => s.finalizado && s.ativo && s.codigo !== 'cancelado').sort((a, b) => a.ordem - b.ordem)[0] || null;
@@ -868,7 +1052,8 @@ async function recarregarHoje(primeira = false) {
     ]);
     if (telaAtual !== 'hoje') return;
     const ret = statusRetirado();
-    hojeLista = r.pedidos.filter(p => !p.finalizado || p.status === ret?.codigo);   // cancelados não aparecem
+    // só confirmados em diante (quem ainda não pagou o sinal fica em Pedidos); cancelados não aparecem
+    hojeLista = r.pedidos.filter(p => (!p.finalizado || p.status === ret?.codigo) && confirmadoEmDiante(p));
     hojeAtrasados = atr.total || 0;
     for (const p of hojeLista) {
       if (hojeVersao.get(p.id) !== p.atualizado_em) { hojeDetalhes.delete(p.id); hojeVersao.set(p.id, p.atualizado_em); }
@@ -1170,6 +1355,7 @@ function renderGaveta(p) {
         <a class="btn sm" href="${esc(urlReciboInterno(p.id))}" target="_blank" rel="noopener">${ic('imprimir')}Imprimir recibo</a>
         <button type="button" class="btn sm wa" data-gav="msg">${ic('wa')}Mandar mensagem</button>
         <button type="button" class="btn sm ghost" data-gav="link">${ic('copiar')}Link do recibo</button>
+        ${isAdmin() ? `<button type="button" class="btn sm ghost" data-gav="prejuizo">${ic('alerta')}Lançar prejuízo</button>` : ''}
       </div>
 
       <section class="card"><div class="card-h"><h2>Status</h2>${pill(p.status_nome, p.status_cor)}</div>
@@ -1254,6 +1440,7 @@ document.addEventListener('click', async e => {
     case 'fechar': fecharGaveta(); break;
     case 'editar': modalEditarPedido(p); break;
     case 'pagar': modalPagamento(p); break;
+    case 'prejuizo': modalPrejuizo(p); break;
     case 'msg':
       if (!telefoneWa(p.cliente_telefone)) toast('Este pedido não tem o telefone do cliente.', { acao: { rotulo: 'Incluir telefone', fn: () => modalEditarPedido(p) } });
       else modalMensagem(p);
@@ -1716,6 +1903,7 @@ function modalProduto(p, grupoId = null) {
         ${inTxt('pSlug', 'Código', p.slug || '', { attrs: 'maxlength="80" pattern="[a-z0-9-]+"', dica: novo ? 'Gerado pelo nome.' : 'Evite mudar: sacolas abertas usam este código.' })}</div>
       ${inChk('pAtivo', 'Aparece no site', p.ativo)}
       <p class="secao-t">Preço por quantidade <span style="text-transform:none;letter-spacing:0;font-weight:400">(opcional, ex.: atacado)</span></p>
+      <p class="dica" style="margin:-4px 0 10px;color:var(--ink-3)">A menor quantidade das faixas vira o pedido mínimo no site (ex.: docinhos “de 20”). Com mínimo de 10 ou mais, o site soma de 10 em 10.</p>
       <div class="faixas" id="pFaixas">${faixas.map(linhaFaixa).join('')}</div>
       <button type="button" class="btn sm ghost" data-fx-add>${ic('mais')}Adicionar faixa</button>`,
     rodape: `${novo ? '' : `<button type="button" class="btn danger esq" data-del>${ic('lixo')}Excluir</button>`}<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>Salvar</button>`

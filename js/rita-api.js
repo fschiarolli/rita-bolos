@@ -409,6 +409,19 @@ export function criarApi(supabase, opcoes = {}) {
       banners: tabela('banners'),
       avisos: tabela('avisos', { ordem: [['secao', true], ['ordem', true]] }),
       status: tabela('status_pedido', { chave: 'codigo' }),
+      /* Prejuízos: itens refeitos ou perdidos (ex.: bolo entregue com o sabor errado) */
+      prejuizos: {
+        ...tabela('prejuizos', { ordem: [['data', false], ['criado_em', false]] }),
+        /** Lançamentos entre duas datas (YYYY-MM-DD), do mais recente para o mais antigo. */
+        async doPeriodo(de, ate) {
+          return conferir(await supabase.from('prejuizos').select('*').gte('data', de).lte('data', ate)
+            .order('data', { ascending: false }).order('criado_em', { ascending: false }), 'prejuízos');
+        },
+        /** Vários de uma vez (um por item do pedido). */
+        async criarVarios(linhas) {
+          return conferir(await supabase.from('prejuizos').insert(linhas).select(), 'prejuízos');
+        }
+      },
       /* Equipe: o usuário é criado no Supabase (Authentication > Users) e liberado aqui pelo e-mail */
       equipe: {
         listar: () => rpc('listar_equipe'),

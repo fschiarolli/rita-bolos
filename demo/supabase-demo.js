@@ -36,8 +36,9 @@ export function criarSupabaseDemo(opcoes = {}) {
   let db = null;  // carregado no fim (depois de todas as funções existirem)
 
   function carregar() {
-    try { const s = localStorage.getItem(CHAVE); if (s) return JSON.parse(s); } catch (e) {}
+    try { const s = localStorage.getItem(CHAVE); if (s) { const salvo = JSON.parse(s); salvo.prejuizos = salvo.prejuizos || []; return salvo; } } catch (e) {}
     db = clone(DADOS_DEMO);
+    db.prejuizos = db.prejuizos || [];
     db.bolo_formatos = db.bolo_formatos || [
       { id: novoId(), slug: 'redondo', nome: 'Redondo', descricao: null, ordem: 1, ativo: true, criado_em: agora(), atualizado_em: agora() },
       { id: novoId(), slug: 'quadrado', nome: 'Quadrado', descricao: null, ordem: 2, ativo: true, criado_em: agora(), atualizado_em: agora() }];
@@ -193,7 +194,8 @@ export function criarSupabaseDemo(opcoes = {}) {
       grupos: { ativo: true, ordem: 0 }, produtos: { ...DEF_PRODUTO }, banners: { ativo: true, ordem: 0, estilo: 'chocolate' },
       avisos: { ativo: true, ordem: 0 }, bolo_massas: { ativo: true, ordem: 0 }, bolo_formatos: { ativo: true, ordem: 0 }, bolo_pesos: { ativo: true, ordem: 0 },
       status_pedido: { ativo: true, ordem: 0, finalizado: false }, administradores: { ativo: true, papel: 'admin' },
-      pedido_observacoes: { fixada: false, autor_id: USUARIO_DEMO.id }, pedido_pagamentos: { tipo: 'sinal', forma: 'pix', pago_em: agora() }
+      pedido_observacoes: { fixada: false, autor_id: USUARIO_DEMO.id }, pedido_pagamentos: { tipo: 'sinal', forma: 'pix', pago_em: agora() },
+      prejuizos: { quantidade: 1, data: hojeSP(), registrado_por: USUARIO_DEMO.id }
     }[tabela] || {};
     if (tabela === 'pedido_observacoes' || tabela === 'pedido_historico') id.id = Date.now() + Math.floor(Math.random() * 1000);
     return { ...base, ...id, ...extra };
@@ -340,7 +342,7 @@ export function criarSupabaseDemo(opcoes = {}) {
     const exemplos = [
       { cliente_nome: 'Maria Souza', cliente_telefone: '(19) 99876-5432', data_retirada: hojeSP(0), hora_retirada: '16:00', _status: 'pronto', _pago: 'total',
         itens: [{ produto_slug: 'bolo-ninho-morango', quantidade: 1, peso_kg: 2.5, massa: 'preta', formato: 'redondo', segundo_recheio_slug: 'bolo-ninho-nutella', observacao: 'Escrever "Parabéns, Ana!"' },
-                { produto_slug: 'docinho-brigadeiro-cento', quantidade: 2 }] },
+                { produto_slug: 'docinho-brigadeiro-cento', quantidade: 100 }] },
       { cliente_nome: 'João Pereira', cliente_telefone: '(19) 98111-2233', data_retirada: hojeSP(1), hora_retirada: '10:00', _status: 'em_producao', _pago: 'sinal',
         itens: [{ produto_slug: 'kit-festa-10-pessoas', quantidade: 1, observacao: 'Bolo de brigadeiro; salgados: coxinha e kibe' }] },
       { cliente_nome: 'Ana Lima', data_retirada: hojeSP(2), hora_retirada: '14:30', _status: 'confirmado', _pago: 'sinal',

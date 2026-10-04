@@ -636,6 +636,50 @@ a.chip { text-decoration: none; }
   .sem-din strong { font-size: 21px; }
 }
 
+/* ---------- Prejuízos ---------- */
+.prej-tab td:nth-child(2) { white-space: nowrap; }
+.prej-tab td small { display: block; color: var(--ink-3); font-size: 12px; margin-top: 2px; }
+.prej-tab td, .prej-tab th { text-align: left; vertical-align: top; }
+.prej-tab td.num, .prej-tab th:nth-child(n+5) { text-align: right; white-space: nowrap; }
+.prj-resultados { display: grid; gap: 6px; margin-top: 12px; max-height: 340px; overflow-y: auto; }
+.prj-res { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; padding: 11px 13px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--surface); color: inherit; cursor: pointer; }
+.prj-res:hover { background: var(--surface-2); border-color: var(--line-2); }
+.prj-res span { min-width: 0; }
+.prj-res strong { display: block; }
+.prj-res small { display: block; color: var(--ink-3); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prj-ped { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-radius: var(--r-sm); background: var(--surface-2); margin-bottom: 14px; }
+.prj-ped strong { display: block; font-size: 15px; }
+.prj-ped small { color: var(--ink-3); font-size: 12.5px; }
+.prj-itens { display: grid; gap: 8px; }
+.prj-it { display: grid; grid-template-columns: minmax(0, 1fr) auto 170px; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
+.prj-it-t small { display: block; color: var(--ink-3); font-size: 12.5px; margin-top: 2px; }
+.prj-it-q { display: flex; align-items: center; gap: 4px; }
+.prj-it-q .in { width: 62px; text-align: center; font-weight: 700; padding-left: 6px; padding-right: 6px; }
+.prj-it-v .field { margin: 0; }
+.prj-it-v .field > label { font-size: 12px; }
+.prj-total { display: flex; justify-content: space-between; align-items: baseline; margin-top: 6px; padding: 14px 16px; border-radius: var(--r-sm); background: var(--rose-50); }
+.prj-total strong { font-family: var(--font-display); font-size: 22px; color: var(--rose-600); }
+@media (max-width: 640px) {
+  .prej-tab thead { display: none; }
+  .prej-tab, .prej-tab tbody, .prej-tab tfoot { display: block; width: 100%; }
+  .prej-tab tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 13px 16px; border-top: 1px solid var(--line); }
+  .prej-tab tbody td { display: block; padding: 0; border: 0; text-align: left !important; white-space: normal !important; }
+  .prej-tab tbody td:nth-child(1) { grid-column: 1; grid-row: 1; color: var(--ink-3); font-size: 12.5px; }
+  .prej-tab tbody td:nth-child(2) { grid-column: 1; grid-row: 2; }
+  .prej-tab tbody td:nth-child(3) { grid-column: 1 / -1; grid-row: 3; font-weight: 600; }
+  .prej-tab tbody td:nth-child(4) { grid-column: 1; grid-row: 4; }
+  .prej-tab tbody td:nth-child(5) { grid-column: 2; grid-row: 2; text-align: right !important; color: var(--ink-3); font-size: 12.5px; }
+  .prej-tab tbody td:nth-child(6) { grid-column: 2; grid-row: 1; text-align: right !important; }
+  .prej-tab tbody td:nth-child(7) { grid-column: 2; grid-row: 4; justify-self: end; }
+  .prej-tab td:nth-child(2) small { display: inline; margin-left: 6px; }
+  .prej-tab tfoot tr { display: flex; justify-content: space-between; padding: 12px 16px; }
+  .prej-tab tfoot th, .prej-tab tfoot td { padding: 0; border: 0; }
+  .prej-tab tfoot td:empty { display: none; }
+  .kpi strong { font-size: 19px; }
+  .kpi .delta { white-space: normal; }
+}
+@media (max-width: 640px) { .prj-it { grid-template-columns: minmax(0, 1fr) auto; } .prj-it-v { grid-column: 1 / -1; } }
+
 /* Algarismos de largura fixa onde números alinham em coluna */
 .valor-numerico, .ped .total, .valores .lin, .it-l, .pgto, .preco-in .in, .money .in, .np-item .sub, .hj-pg .falta, .hj-pagto, .hj-it .l, .hj-resumo,
 .status-bar, .tbl, .kv dd, .pill, .tag, .nav-badge, .hj-falta-g { font-variant-numeric: tabular-nums; }
@@ -676,6 +720,8 @@ a.chip { text-decoration: none; }
     <symbol id="i-casa" viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></symbol>
     <symbol id="i-tv" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
     <symbol id="i-grafico" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6" rx="1"/><rect x="12.5" y="7" width="3" height="10" rx="1"/><rect x="18" y="13" width="3" height="4" rx="1"/></symbol>
+    <symbol id="i-alerta" viewBox="0 0 24 24"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+    <symbol id="i-menos" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
   </defs>
 </svg>
 

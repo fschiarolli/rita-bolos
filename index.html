@@ -643,6 +643,17 @@ a { color: var(--teal); }
 .pick-dias.invalido .dia:not(.outra), .horas.invalido .hora:not(:disabled) { border-color: color-mix(in srgb, var(--error) 55%, var(--line)); }
 .pick-resumo { margin-top: 14px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px; background: var(--mint-50); color: var(--ink); font-weight: 700; font-size: 15px; }
 .pick-resumo .ic { color: var(--teal); flex: none; }
+/* Quantidade com mínimo (docinhos): escolha rápida */
+.step-edit { border: 0; background: none; font: inherit; color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; min-width: 2.4em; }
+.qtd-opcoes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+.qtd-op { min-height: 56px; border-radius: 16px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-size: 20px; font-weight: 900; cursor: pointer; font-variant-numeric: tabular-nums; transition: border-color .15s, background .15s; }
+.qtd-op:hover { border-color: var(--teal); }
+.qtd-op[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.qtd-linha { display: grid; grid-template-columns: 50px minmax(0, 1fr) 50px; gap: 8px; }
+.qtd-linha .input { text-align: center; font-size: 18px; font-weight: 800; }
+.qtd-bt { min-height: 50px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); display: grid; place-items: center; cursor: pointer; }
+.qtd-bt .ic { width: 20px; height: 20px; }
+
 .sec-wrap { margin-top: 12px; }
 .sec-wrap[hidden] { display: none; }
 .confirm-box { margin-top: 18px; padding: 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
@@ -1240,6 +1251,12 @@ function artePara(il, it, cat) {
   } catch (e) { /* desenho desconhecido: usa o da categoria */ }
   return arteCategoria(cat.icone);
 }
+/** Quantidade mínima = menor faixa de preço do produto (ex.: docinhos "a partir de 20"). Acima de 10, sobe de 10 em 10. */
+function quantidadeMinima(p) {
+  const minimos = (p.faixas_preco || []).map(f => Number(f.quantidade_minima) || 1);
+  const min = minimos.length ? Math.max(1, Math.min(...minimos)) : 1;
+  return { min, passo: min >= 10 ? 10 : 1 };
+}
 function register(item) { if (ITEMS[item.id]) console.warn('Produto repetido no cardápio:', item.id); ITEMS[item.id] = item; return item; }
 function itemDe(p, cat, g) {
   const isKit = cat.layout === 'grade';
@@ -1257,7 +1274,7 @@ function itemDe(p, cat, g) {
     flag: isKit ? (p.selo || null) : null, isKit,
     // bolo no pote usa sempre o desenho padrão (o mesmo para todos os sabores), mesmo que o cadastro tenha foto
     img: p.imagem_path && cat.icone !== 'pote' ? imgUrl(p.imagem_path) : null,
-    faixas: p.faixas_preco || [], antecedencia: Math.max(p.antecedencia_minima_dias || 0, cat.antecedencia_minima_dias || 0),
+    faixas: p.faixas_preco || [], ...quantidadeMinima(p), antecedencia: Math.max(p.antecedencia_minima_dias || 0, cat.antecedencia_minima_dias || 0),
     tone: isKit ? '' : (TONE_POR_ICONE[cat.icone] ?? '')
   };
   it.artFn = () => artePara(p.ilustracao, it, cat);
@@ -1372,12 +1389,13 @@ function syncCart() {
 function addSimple(id) {
   const it = ITEMS[id]; if (!it) return;
   const line = cart.find(l => l.key === id);
-  if (line) line.qty++; else cart.push({ key: id, id, qty: 1, notes: '' });
+  if (line) line.qty += it.passo || 1; else cart.push({ key: id, id, qty: it.min || 1, notes: '' });
   cartChanged(true);
 }
 function decSimple(id) {
   const line = cart.find(l => l.key === id); if (!line) return;
-  line.qty--; if (line.qty < 1) cart = cart.filter(l => l !== line);
+  const it = ITEMS[id] || {};
+  line.qty -= it.passo || 1; if (line.qty < (it.min || 1)) cart = cart.filter(l => l !== line);
   cartChanged();
 }
 function addLine(line) {
@@ -1405,6 +1423,7 @@ function updateBadge(bump) {
 ========================================================= */
 function priceHTML(it) {
   if (it.kind === 'cake' || it.perKg) return `${fmt(it.price)} <small>o kg</small>`;
+  if (it.min > 1) return `${fmt(it.price)} <small>a unidade · mín. ${it.min}</small>`;
   return fmt(it.price);
 }
 function controlHTML(it) {
@@ -1412,9 +1431,9 @@ function controlHTML(it) {
   if (it.kind !== 'simple') return `<span class="add-dot" aria-hidden="true">${icon('plus')}${q ? `<span class="add-count">${q}</span>` : ''}</span>`;
   if (!q) return `<button type="button" class="add-btn" data-add="${it.id}" aria-label="Adicionar ${esc(it.name)}">${icon('plus')}</button>`;
   return `<span class="stepper" role="group" aria-label="Quantidade de ${esc(it.name)}">
-    <button type="button" data-dec="${it.id}" aria-label="${q === 1 ? 'Remover' : 'Diminuir'} ${esc(it.name)}">${icon(q === 1 ? 'trash' : 'minus')}</button>
-    <span class="step-val">${q}</span>
-    <button type="button" data-add="${it.id}" aria-label="Aumentar ${esc(it.name)}">${icon('plus')}</button></span>`;
+    <button type="button" data-dec="${it.id}" aria-label="${q <= (it.min || 1) ? 'Remover' : 'Diminuir'} ${esc(it.name)}">${icon(q <= (it.min || 1) ? 'trash' : 'minus')}</button>
+    ${it.min > 1 ? `<button type="button" class="step-val step-edit" data-qtd="${it.id}" aria-label="${q} unidades de ${esc(it.name)}. Escolher quantidade">${q}</button>` : `<span class="step-val">${q}</span>`}
+    <button type="button" data-add="${it.id}" aria-label="Aumentar ${esc(it.name)}${it.passo > 1 ? ` em ${it.passo}` : ''}">${icon('plus')}</button></span>`;
 }
 function rowHTML(it, opts = {}) {
   const sub = opts.sub ?? (it.kind === 'cake' ? `${kg(WEIGHT_OPTIONS[0])} por ${fmt(it.price * WEIGHT_OPTIONS[0])}` : (it.sub || ''));
@@ -1666,8 +1685,8 @@ function renderCart() {
         ${missing ? `<div class="line-warn${it.notesRequired ? ' req' : ''}" id="lw-${i}">${icon('info')}${esc(it.notesLabel || 'Informe os sabores')}${it.notesRequired ? ' (obrigatório)' : ''}</div>` : ''}
         <div class="line-bottom">
           <span class="stepper" role="group" aria-label="Quantidade de ${esc(it.name)}">
-            <button type="button" data-ldec="${i}" aria-label="${l.qty === 1 ? 'Remover' : 'Diminuir'} ${esc(it.name)}">${icon(l.qty === 1 ? 'trash' : 'minus')}</button>
-            <span class="step-val">${l.qty}</span>
+            <button type="button" data-ldec="${i}" aria-label="${l.qty - (it.passo || 1) < (it.min || 1) ? 'Remover' : 'Diminuir'} ${esc(it.name)}">${icon(l.qty - (it.passo || 1) < (it.min || 1) ? 'trash' : 'minus')}</button>
+            ${it.min > 1 ? `<button type="button" class="step-val step-edit" data-qtd="${esc(l.id)}" aria-label="${l.qty} unidades. Escolher quantidade">${l.qty}</button>` : `<span class="step-val">${l.qty}</span>`}
             <button type="button" data-linc="${i}" aria-label="Aumentar ${esc(it.name)}">${icon('plus')}</button>
           </span>
           <span class="line-total">${fmt(price * l.qty)}</span>
@@ -1799,6 +1818,51 @@ function openConfig(it, opener) {
     </div>
     <div class="sheet-foot">${qtyStepper('qv')}<button type="button" class="btn btn-primary btn-split" data-act="cfg-add"><span>Adicionar</span><span id="cfgTotal">${fmt(it.price)}</span></button></div>`, opener);
 }
+
+/* ---- Quantidade com mínimo (ex.: docinhos a partir de 20): escolha rápida ---- */
+function openQtd(it, opener) {
+  if (!it) return;
+  const atual = qtyOf(it.id);
+  sheetState = { type: 'qtd', item: it, qty: atual || it.min };
+  const opcoes = [...new Set([it.min, it.min + it.passo, 50, 100, 150, 200].filter(n => n >= it.min && (n - it.min) % it.passo === 0))].sort((a, b) => a - b).slice(0, 6);
+  openSheet(`${sheetHead(it.name, `${fmt(it.price)} a unidade · mínimo ${it.min}`, thumbHTML(it))}
+    <div class="sheet-body">
+      <p class="lbl" id="qtdLbl" style="margin-top:4px">Quantos você quer?</p>
+      <div class="qtd-opcoes" role="group" aria-labelledby="qtdLbl">${opcoes.map(n => `<button type="button" class="qtd-op" data-qset="${n}" aria-pressed="${n === sheetState.qty}">${n}</button>`).join('')}</div>
+      <div class="qtd-outra"><label class="lbl" for="qtdIn" style="font-size:13.5px;margin-bottom:6px">Ou digite a quantidade</label>
+        <div class="qtd-linha"><button type="button" class="qtd-bt" data-qset="-" aria-label="Menos ${it.passo}">${icon('minus')}</button>
+          <input class="input" id="qtdIn" type="number" inputmode="numeric" min="${it.min}" step="1" value="${sheetState.qty}" aria-describedby="qtdDica">
+          <button type="button" class="qtd-bt" data-qset="+" aria-label="Mais ${it.passo}">${icon('plus')}</button></div>
+        <p class="hint" id="qtdDica">Mínimo de ${it.min} unidades${it.passo > 1 ? `; os botões somam de ${it.passo} em ${it.passo}` : ''}.</p>
+        <p class="err" id="qtdErro">A quantidade mínima é ${it.min}.</p></div>
+    </div>
+    <div class="sheet-foot">${atual ? `<button type="button" class="btn btn-ghost" data-act="qtd-rem">${icon('trash')}<span>Remover</span></button>` : ''}
+      <button type="button" class="btn btn-primary btn-split" data-act="qtd-ok"><span>${atual ? 'Atualizar' : 'Adicionar'}</span><span id="qtdTotal">${fmt(precoLinha({ id: it.id, qty: sheetState.qty }) * sheetState.qty)}</span></button></div>`, opener);
+}
+function qtdAtualizar(n) {
+  const s = sheetState, it = s.item;
+  s.qty = n;
+  const valido = Number.isInteger(n) && n >= it.min && n <= 9999;
+  $('#qtdIn').value = Number.isFinite(n) ? n : '';
+  $('#qtdIn').setAttribute('aria-invalid', String(!valido));
+  $('#qtdErro').classList.toggle('show', !valido);
+  $$('.qtd-op').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.qset) === n)));
+  $('#qtdTotal').textContent = valido ? fmt(precoLinha({ id: it.id, qty: n }) * n) : '—';
+}
+function qtdConfirmar() {
+  const s = sheetState, it = s.item, n = s.qty;
+  if (!(Number.isInteger(n) && n >= it.min)) { qtdAtualizar(n); $('#qtdIn').focus(); return; }
+  const line = cart.find(l => l.key === it.id) || cart.find(l => l.id === it.id);
+  const novo = !line;
+  if (line) line.qty = n; else cart.push({ key: it.id, id: it.id, qty: n, notes: '' });
+  cartChanged(novo);
+  requestCloseSheet();
+  toast(`${novo ? 'Adicionado' : 'Atualizado'}: ${n} ${it.name}`, 'Ver sacola', () => { location.hash = '#sacola'; });
+}
+document.addEventListener('input', e => {
+  if (e.target.id === 'qtdIn' && sheetState?.type === 'qtd') qtdAtualizar(Math.floor(Number(e.target.value)));
+});
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'qtdIn') { e.preventDefault(); qtdConfirmar(); } });
 
 /* ---- Finalizar ---- */
 function todayISO(offsetDays = 0) { const d = new Date(Date.now() + offsetDays * 864e5); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; }
@@ -2099,10 +2163,18 @@ function showView(v) {
    EVENTOS
 ========================================================= */
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-add],[data-dec],[data-open],[data-cat],[data-sub],[data-act],[data-linc],[data-ldec],[data-q]');
+  const t = e.target.closest('[data-add],[data-dec],[data-open],[data-cat],[data-sub],[data-act],[data-linc],[data-ldec],[data-q],[data-qtd],[data-qset]');
   if (!t) return;
   const d = t.dataset;
-  if (d.add) { e.stopPropagation(); addSimple(d.add); const it = ITEMS[d.add]; if (qtyOf(d.add) === 1) toast(`Adicionado: ${it.name}`, 'Ver sacola', () => { location.hash = '#sacola'; }); return; }
+  if (d.qtd) { e.stopPropagation(); openQtd(ITEMS[d.qtd], t); return; }
+  if (d.qset) {
+    const s = sheetState; if (s?.type !== 'qtd') return;
+    const it = s.item, atual = Number.isInteger(s.qty) && s.qty >= it.min ? s.qty : it.min;
+    qtdAtualizar(d.qset === '+' ? atual + it.passo : d.qset === '-' ? Math.max(it.min, atual - it.passo) : Number(d.qset));
+    return;
+  }
+  if (d.add && ITEMS[d.add]?.min > 1 && !qtyOf(d.add)) { e.stopPropagation(); openQtd(ITEMS[d.add], t); return; }
+  if (d.add) { e.stopPropagation(); addSimple(d.add); const it = ITEMS[d.add]; if (qtyOf(d.add) === (it.min || 1)) toast(`Adicionado: ${it.name}`, 'Ver sacola', () => { location.hash = '#sacola'; }); return; }
   if (d.dec) { e.stopPropagation(); decSimple(d.dec); return; }
   if (d.open) { const it = ITEMS[d.open]; if (!it) return; it.kind === 'cake' ? openCake(it, t) : openConfig(it, t); return; }
   if (d.cat) { if (d.cat !== currentCat) history.replaceState(history.state, '', '#cardapio/' + d.cat); renderCategory(d.cat); return; }
@@ -2115,12 +2187,15 @@ document.addEventListener('click', e => {
   }
   if (d.linc || d.ldec) {
     const i = Number(d.linc ?? d.ldec), l = cart[i]; if (!l) return;
-    if (d.linc) l.qty++;
-    else { if (l.qty === 1) { snapshot(); cart.splice(i, 1); cartChanged(); toast(`${ITEMS[l.id]?.name || 'Item'} removido`, 'Desfazer', undo); return; } l.qty--; }
+    const itl = ITEMS[l.id] || {}, passo = itl.passo || 1, min = itl.min || 1;
+    if (d.linc) l.qty += passo;
+    else { if (l.qty - passo < min) { snapshot(); cart.splice(i, 1); cartChanged(); toast(`${ITEMS[l.id]?.name || 'Item'} removido`, 'Desfazer', undo); return; } l.qty -= passo; }
     cartChanged(); return;
   }
   switch (d.act) {
     case 'close': requestCloseSheet(); break;
+    case 'qtd-ok': qtdConfirmar(); break;
+    case 'qtd-rem': { const it = sheetState.item; snapshot(); cart = cart.filter(l => l.id !== it.id); cartChanged(); requestCloseSheet(); toast(`${it.name} removido`, 'Desfazer', undo); break; }
     case 'cake-add': {
       const s = sheetState;
       addLine({ key: s.item.id + '-' + Date.now(), id: s.item.id, qty: s.qty, peso: s.weight, massa: s.massa, formato: s.formato,
