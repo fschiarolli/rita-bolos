@@ -432,6 +432,11 @@ export function criarSupabaseDemo(opcoes = {}) {
   }
   Object.assign(RPC, {
     listar_equipe: () => { exigirEquipe(); return listarEquipe(); },
+    definir_avatar: ({ p_avatar }) => {
+      exigirEquipe();
+      const a = db.administradores.find(x => x.user_id === USUARIO_DEMO.id && x.ativo); if (!a) throw 'Só a equipe pode escolher um avatar.';
+      a.avatar = p_avatar || null; salvar(); return null;
+    },
     salvar_membro_equipe: ({ p_email, p_nome, p_papel, p_ativo }) => {
       exigirEquipe();
       const email = String(p_email || '').trim().toLowerCase();

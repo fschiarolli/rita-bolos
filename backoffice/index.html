@@ -188,6 +188,25 @@ strong, b { font-weight: 600; }
 .user-card strong { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .user-card small { display: block; font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .avatar { width: 36px; height: 36px; border-radius: 50%; display: inline-grid; place-items: center; flex: none; font-family: var(--font-display); font-weight: 700; font-size: 14px; color: #fff; background: linear-gradient(135deg, #B9476A, #4A2A1C); box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--line-2); }
+.avatar.av-img { background: none; overflow: hidden; }
+.avatar.av-img svg { width: 100%; height: 100%; display: block; }
+/* Minha conta: o avatar é o botão para trocar */
+.av-trocar { position: relative; display: inline-grid; border-radius: 50%; flex: none; cursor: pointer; }
+.av-trocar:hover .avatar { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--teal); }
+.av-lapis { position: absolute; right: -4px; bottom: -4px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--teal); color: #fff; box-shadow: 0 0 0 2px var(--surface); }
+.av-lapis .ic { width: 12px; height: 12px; }
+/* Escolha do avatar */
+.av-topo { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+.av-topo .avatar { width: 64px; height: 64px; font-size: 22px; }
+.av-topo strong { display: block; font-size: 16px; }
+.av-topo small { display: block; font-size: 13px; color: var(--ink-3); }
+.av-grade { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 860px) { .av-grade { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+.av-op { aspect-ratio: 1; border-radius: 18px; overflow: hidden; padding: 0; cursor: pointer; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); transition: transform .12s, box-shadow .12s; }
+.av-op svg { width: 100%; height: 100%; display: block; }
+.av-op:hover { transform: translateY(-2px); }
+.av-op[aria-checked="true"] { box-shadow: 0 0 0 3px var(--surface), 0 0 0 6px var(--teal); }
+@media (max-width: 560px) { .av-grade { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; } }
 .user-box strong { display: block; font-size: 15px; }
 .user-box small { display: block; font-size: 13px; color: var(--ink-3); overflow-wrap: anywhere; }
 
@@ -748,7 +767,7 @@ a.chip { text-decoration: none; }
     const v = Date.now(), abs = p => new URL(p, location.href).href;
     const mapa = document.createElement('script');
     mapa.type = 'importmap';
-    mapa.textContent = JSON.stringify({ imports: Object.fromEntries(['../js/rita-api.js', '../js/config.js', '../demo/supabase-demo.js', '../demo/dados-demo.js']
+    mapa.textContent = JSON.stringify({ imports: Object.fromEntries(['./avatares.js', '../js/rita-api.js', '../js/config.js', '../demo/supabase-demo.js', '../demo/dados-demo.js']
       .map(p => [abs(p), abs(p) + '?v=' + v])) });
     document.head.appendChild(mapa);
     const app = document.createElement('script');

@@ -287,6 +287,8 @@ export function criarApi(supabase, opcoes = {}) {
         const r = conferir(await supabase.from('administradores').select('*').eq('user_id', u.user.id).maybeSingle(), 'perfil');
         return r && r.ativo ? { ...r, email: u.user.email } : null;
       },
+      /** Avatar do próprio perfil (código de backoffice/avatares.js, ou null para usar as iniciais). */
+      definirAvatar: (avatar) => rpc('definir_avatar', { p_avatar: avatar || null }),
       /** Avisa quando alguém entra ou sai. Devolve uma função para parar de ouvir. */
       aoMudar(callback) {
         const { data } = supabase.auth.onAuthStateChange((evento, sessao) => callback(evento, sessao));

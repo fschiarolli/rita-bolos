@@ -6,6 +6,7 @@
  * Modo demonstração, sem banco: abra com ?demo
  */
 import { criarApi, conectar, formatarPreco as R, formatarPeso, formatarData, linkRecibo, linkWhatsApp, montarMensagemStatus, prepararAba } from '../js/rita-api.js';
+import { AVATARES, avatarSVG, temAvatar } from './avatares.js';
 
 const DEMO = new URLSearchParams(location.search).has('demo');
 const FUSO = 'America/Sao_Paulo';
@@ -372,6 +373,61 @@ const NAV = [
   { id: 'ajustes', rot: 'Ajustes', ic: 'config', admin: true }
 ];
 const iniciais = nome => String(nome || '?').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0].toUpperCase()).join('') || '?';
+
+/* ---- Avatar do perfil: personagem escolhido (backoffice/avatares.js) ou as iniciais ---- */
+// Sem o sql/avatar-perfil.sql rodado, a escolha fica guardada só neste aparelho
+const AVATAR_LOCAL = id => 'ritabolos.avatar.' + id;
+const avatarDe = pessoa => {
+  let a = pessoa?.avatar;
+  if (a === undefined && pessoa?.user_id) { try { a = localStorage.getItem(AVATAR_LOCAL(pessoa.user_id)); } catch (e) { a = null; } }
+  return a && temAvatar(a) ? a : null;
+};
+function avatarHTML(pessoa, attrs = '') {
+  const a = avatarDe(pessoa);
+  return a ? `<span class="avatar av-img" ${attrs}>${avatarSVG(a)}</span>` : `<span class="avatar" ${attrs}>${esc(iniciais(pessoa?.nome))}</span>`;
+}
+/** Redesenha o avatar da pessoa logada onde ele aparece (menu, topo, Minha conta). */
+function atualizarMeuAvatar() {
+  $$('[data-eu]').forEach(el => {
+    const novo = document.createElement('div');
+    novo.innerHTML = avatarHTML(perfil, [...el.attributes].filter(at => at.name !== 'class').map(at => `${at.name}="${esc(at.value)}"`).join(' '));
+    el.replaceWith(novo.firstElementChild);
+  });
+}
+function modalAvatar() {
+  let escolhido = avatarDe(perfil) || '';
+  const opcao = id => `<button type="button" class="av-op" role="radio" aria-checked="${id === escolhido}" data-av="${id}" aria-label="Personagem ${Number(id.slice(1))}">${avatarSVG(id)}</button>`;
+  const m = abrirModal({
+    titulo: 'Escolha seu avatar',
+    largo: true,
+    corpo: `<div class="av-topo"><span class="av-prev">${avatarHTML({ ...perfil, avatar: escolhido })}</span>
+        <div style="flex:1;min-width:0"><strong>${esc(perfil.nome)}</strong><small>Aparece no menu, no topo e para a equipe.</small></div>
+        <button type="button" class="btn ghost sm" data-av="" aria-checked="${!escolhido}">Usar as iniciais</button></div>
+      <div class="av-grade" role="radiogroup" aria-label="Avatares">${AVATARES.map(a => opcao(a.id)).join('')}</div>`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>Usar este avatar</button>`
+  });
+  m.el.addEventListener('click', e => {
+    const b = e.target.closest('[data-av]'); if (!b) return;
+    escolhido = b.dataset.av;
+    m.$$('[data-av]').forEach(x => x.setAttribute('aria-checked', String(x === b)));
+    m.$('.av-prev').innerHTML = avatarHTML({ ...perfil, avatar: escolhido });
+  });
+  m.el.addEventListener('dblclick', e => { if (e.target.closest('[data-av]')) m.$('[data-ok]').click(); });
+  m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    let soAqui = false;
+    try { await api.auth.definirAvatar(escolhido || null); }
+    catch (e) {
+      // banco ainda sem a coluna/função (sql/avatar-perfil.sql): guarda neste aparelho
+      if (!/PGRST202|42883|42703|definir_avatar|function|função/i.test(`${e?.codigo} ${e?.message}`)) throw e;
+      soAqui = true;
+    }
+    try { if (escolhido) localStorage.setItem(AVATAR_LOCAL(perfil.user_id), escolhido); else localStorage.removeItem(AVATAR_LOCAL(perfil.user_id)); } catch (e) { /* sem armazenamento */ }
+    if (soAqui) delete perfil.avatar; else perfil.avatar = escolhido || null;
+    m.fechar();
+    atualizarMeuAvatar();
+    toast(soAqui ? 'Avatar salvo neste aparelho. Para valer em todos, rode sql/avatar-perfil.sql no Supabase.' : 'Avatar atualizado.', soAqui ? { tempo: 8000 } : {});
+  }));
+}
 const papelTxt = () => (perfil.papel === 'admin' ? 'Administração' : 'Atendimento');
 function telaShell() {
   const itens = NAV.filter(n => !n.admin || isAdmin());
@@ -389,7 +445,7 @@ function telaShell() {
         <a class="nav-a" href="${esc(urlPote())}" target="_blank" rel="noopener">${ic('pote')}<span>Página do bolo no pote</span>${ic('externo', 'ic ext')}</a>
       </nav>
       <div class="side-foot">
-        <button type="button" class="user-card" data-act="conta" aria-label="Minha conta"><span class="avatar" aria-hidden="true">${esc(iniciais(perfil.nome))}</span>
+        <button type="button" class="user-card" data-act="conta" aria-label="Minha conta">${avatarHTML(perfil, 'aria-hidden="true" data-eu')}
           <span class="uc-t"><strong>${esc(perfil.nome)}</strong><small>${papelTxt()}${perfil.email ? ' · ' + esc(perfil.email) : ''}</small></span></button>
         <button type="button" class="btn icon sm ghost" data-act="sair" aria-label="Sair da conta" title="Sair">${ic('sair')}</button>
       </div>
@@ -402,7 +458,7 @@ function telaShell() {
         <div class="topo-acts">
           <button type="button" class="topo-bt" data-act="tema">${ic(temaAtual() === 'dark' ? 'sol' : 'lua')}</button>
           <a class="topo-bt" data-tv href="${esc(urlQuadro())}" target="_blank" rel="noopener" aria-label="Abrir o quadro da equipe (TV)" title="Quadro da equipe (TV)">${ic('tv')}</a>
-          <button type="button" class="topo-av" data-act="conta" aria-label="Minha conta" title="${esc(perfil.nome)}"><span class="avatar">${esc(iniciais(perfil.nome))}</span></button>
+          <button type="button" class="topo-av" data-act="conta" aria-label="Minha conta" title="${esc(perfil.nome)}">${avatarHTML(perfil, 'data-eu')}</button>
         </div>
       </header>
       <main class="conteudo" id="conteudo" tabindex="-1"></main>
@@ -452,7 +508,7 @@ document.addEventListener('keydown', e => {
 function modalConta() {
   const m = abrirModal({
     titulo: 'Minha conta',
-    corpo: `<div class="user-box" style="display:flex;align-items:center;gap:12px;margin-bottom:18px"><span class="avatar" style="width:44px;height:44px;font-size:16px" aria-hidden="true">${esc(iniciais(perfil.nome))}</span>
+    corpo: `<div class="user-box" style="display:flex;align-items:center;gap:12px;margin-bottom:18px"><button type="button" class="av-trocar" data-trocar-avatar aria-label="Trocar avatar" title="Trocar avatar">${avatarHTML(perfil, 'style="width:52px;height:52px;font-size:18px" data-eu')}<span class="av-lapis" aria-hidden="true">${ic('editar')}</span></button>
         <div style="min-width:0"><strong>${esc(perfil.nome)}</strong><small>${papelTxt()}${perfil.email ? ' · ' + esc(perfil.email) : ''}</small></div></div>
       <div style="display:grid;gap:10px">
         <button type="button" class="btn ghost block" data-act="tema">${ic(temaAtual() === 'dark' ? 'sol' : 'lua')}${temaAtual() === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}</button>
@@ -465,6 +521,7 @@ function modalConta() {
       </div>`
   });
   m.$('[data-act="tema"]').addEventListener('click', () => m.fechar());
+  m.$('[data-trocar-avatar]').addEventListener('click', () => { m.fechar(); modalAvatar(); });
   m.$('[data-copiar-pote]').addEventListener('click', async () => {
     const url = new URL(urlPote(), location.href).href;
     try { await navigator.clipboard.writeText(url); toast('Link da página do bolo no pote copiado. É só colar para o cliente.'); }

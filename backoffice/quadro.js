@@ -8,14 +8,14 @@
  *
  * Endereço: backoffice/quadro.html
  *   ?demo     usa os dados de demonstração (os mesmos do backoffice ?demo)
- *   ?dias=7   quantos dias à frente aparecem nas colunas (padrão 7)
+ *   ?dias=14  quantos dias à frente aparecem nas colunas (padrão 14, o mesmo prazo que o site oferece para a retirada)
  */
 import { criarApi, conectar, formatarPreco as R, formatarPeso } from '../js/rita-api.js';
 
 const PARAMS = new URLSearchParams(location.search);
 const DEMO = PARAMS.has('demo');
 const FUSO = 'America/Sao_Paulo';
-const DIAS_A_FRENTE = Math.min(60, Math.max(1, parseInt(PARAMS.get('dias'), 10) || 7));
+const DIAS_A_FRENTE = Math.min(60, Math.max(1, parseInt(PARAMS.get('dias'), 10) || 14));
 const TROCA_PAGINA_MS = 12000;
 const NOVO_MS = 3 * 60e3;          // quanto tempo um pedido novo fica destacado
 const MUDOU_MS = 2600;             // destaque rápido de quem acabou de mudar de coluna
