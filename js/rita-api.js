@@ -55,6 +55,25 @@ function conferir({ data, error }, contexto) {
 /* ================================================================
    Utilidades (também exportadas para o site)
 ================================================================ */
+
+/** Pix para o pagamento do sinal: aparece no fim do pedido, nas mensagens do WhatsApp e no recibo. */
+export const PIX = { chave: '06954518808', tipo: 'CPF', nome: 'Valdemir Schiarolli' };
+export const PIX_TEXTO = `*Pix (${PIX.tipo}):* ${PIX.chave}\n*Nome:* ${PIX.nome}`;
+
+/**
+ * Imagem de referência (ex.: modelo do topper) enviada pelo cliente: vai na observação do item,
+ * numa linha "Referência: <link>". Assim chega junto com o pedido em todo lugar (WhatsApp, recibo).
+ */
+const RE_REFERENCIA = /(?:^|\n)\s*Refer[êe]ncia:\s*(\S+)\s*$/im;
+export const juntarReferencia = (obs, url) => [String(obs || '').trim(), url ? `Referência: ${url}` : ''].filter(Boolean).join('\n') || null;
+/** Separa a observação do link da imagem: { texto, imagem }. */
+export function separarReferencia(obs) {
+  const s = String(obs || ''), m = s.match(RE_REFERENCIA);
+  return m ? { texto: s.replace(RE_REFERENCIA, '').trim(), imagem: m[1] } : { texto: s.trim(), imagem: null };
+}
+/** Topper / topo de bolo (pede imagem de referência): pelo slug, nome ou grupo. */
+export const ehTopper = (...textos) => textos.some(t => /topper|^topos?\b|topo de bolo|topos de bolo/i.test(String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '')));
+
 export function formatarPreco(valor) {
   const n = Number(valor || 0);
   return 'R$\u00a0' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -110,12 +129,16 @@ export function montarMensagemWhatsApp(pedido, urlRecibo) {
     if (i.formato) l.push(`   _Formato:_ ${i.formato}`);
     if (i.segundo_recheio) l.push(`   _2º recheio:_ ${i.segundo_recheio}`);
     l.push(`   Qtd: ${i.quantidade} x ${formatarPreco(i.preco_unitario)} = ${formatarPreco(i.subtotal)}`);
-    if (i.observacao) l.push(`   _Obs:_ ${i.observacao}`);
+    const { texto, imagem } = separarReferencia(i.observacao);
+    if (texto) l.push(`   _Obs:_ ${texto}`);
+    if (imagem) l.push(`   _Imagem de referência:_ ${imagem}`);
   });
   if (p.observacao_cliente) l.push('', `*Observação:* ${p.observacao_cliente}`);
   l.push('', '----------------------------',
     `*Total:* ${formatarPreco(p.total)}`,
     `*Sinal mínimo (${pct}%):* ${formatarPreco(p.valor_sinal)}`,
+    '',
+    PIX_TEXTO,
     '',
     `*ATENÇÃO:* Pedido só será confirmado mediante envio do comprovante de pagamento de pelo menos ${pct}% do valor total.`);
   if (urlRecibo) l.push('', '----------------------------', '*RECIBO DO PEDIDO:*', urlRecibo);
@@ -135,7 +158,7 @@ export function montarMensagemStatus(pedido, status, urlRecibo) {
   const saldo = Number(p.saldo ?? 0);
   const pct = Number(p.percentual_sinal ?? 50).toLocaleString('pt-BR');
   const textos = {
-    recebido: [`Recebemos o seu pedido ${ped}.`, `Para confirmar, envie o comprovante do sinal de ${formatarPreco(p.valor_sinal)} (${pct}% do total).`],
+    recebido: [`Recebemos o seu pedido ${ped}.`, `Para confirmar, envie o comprovante do sinal de ${formatarPreco(p.valor_sinal)} (${pct}% do total).`, `\n${PIX_TEXTO}`],
     confirmado: [`Seu pedido ${ped} est\u00e1 *confirmado*! Recebemos o sinal.`, retirada],
     em_producao: [`Seu pedido ${ped} j\u00e1 est\u00e1 *em produ\u00e7\u00e3o*.`, retirada],
     pronto: [`Seu pedido ${ped} est\u00e1 *pronto para retirada*!`, retirada, saldo > 0 ? `*Falta pagar:* ${formatarPreco(saldo)}` : 'Est\u00e1 tudo pago, \u00e9 s\u00f3 vir buscar.'],
@@ -243,6 +266,20 @@ export function criarApi(supabase, opcoes = {}) {
     cardapio: {
       /** Cardápio completo em uma chamada (ver docs/api.md para o formato). */
       obter: () => rpc('obter_cardapio')
+    },
+
+    /* Imagens de referência enviadas pelo cliente (bucket público "referencias", ver sql/referencias-topper.sql) */
+    referencias: {
+      /** Envia a imagem (File/Blob) e devolve { path, url } — a url vai na observação do item. */
+      async enviar(arquivo) {
+        const tipo = arquivo.type || 'image/jpeg';
+        const ext = ({ 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/heic': 'heic', 'image/heif': 'heif' })[tipo] || 'jpg';
+        const mes = new Date().toISOString().slice(0, 7);
+        const path = `${mes}/${novaChave()}.${ext}`;
+        const { error } = await supabase.storage.from('referencias').upload(path, arquivo, { cacheControl: '31536000', upsert: false, contentType: tipo });
+        if (error) throw new ErroApi(error, 'imagem de referência');
+        return { path, url: supabase.storage.from('referencias').getPublicUrl(path).data.publicUrl };
+      }
     },
 
     pedidos: {
@@ -468,7 +505,7 @@ export function criarApi(supabase, opcoes = {}) {
       }
     },
 
-    util: { formatarPreco, formatarPeso, formatarData, novaChave, linkWhatsApp, linkRecibo, montarMensagemWhatsApp, montarMensagemStatus, prepararAba }
+    util: { formatarPreco, formatarPeso, formatarData, novaChave, linkWhatsApp, linkRecibo, montarMensagemWhatsApp, montarMensagemStatus, prepararAba, separarReferencia, juntarReferencia, ehTopper, PIX }
   };
 }
 

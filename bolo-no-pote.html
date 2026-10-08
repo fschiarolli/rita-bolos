@@ -254,6 +254,13 @@ textarea.input { height: auto; min-height: 76px; padding: 12px 15px; resize: ver
 .feito-res { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; text-align: left; background: var(--bg); border-radius: 16px; padding: 14px 16px; margin: 18px 0; font-size: 15px; }
 .feito-res span { color: var(--ink-3); } .feito-res strong { text-align: right; }
 .feito .pilha { display: grid; gap: 10px; }
+.pix { display: grid; gap: 6px; text-align: left; padding: 14px 16px; margin: -4px 0 18px; border-radius: 16px; background: var(--mint-50); border: 1px solid var(--mint-200); }
+.pix-t { font-weight: 800; font-size: 15px; }
+.pix-l { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pix-l small { display: block; font-size: 12px; color: var(--ink-3); font-weight: 700; }
+.pix-l strong { font-size: 20px; letter-spacing: .03em; }
+.pix-l .btn { min-height: 42px; padding: 0 16px; font-size: 14px; }
+.pix-n { font-weight: 800; }
 
 /* ---------- Como funciona ---------- */
 .passos { display: grid; gap: 12px; counter-reset: p; }
@@ -744,6 +751,8 @@ document.addEventListener('click', e => {
   const outraH = e.target.closest('[data-hora-outra]');
   if (outraH) { $('#caixaHora').hidden = false; outraH.setAttribute('aria-expanded', 'true'); const i = $('#cHoraOutra'); i.focus(); try { i.showPicker?.(); } catch (err) { /* idem */ } return; }
   if (e.target.closest('[data-act="direto"]')) { enviarDireto(); return; }
+  const cp = e.target.closest('[data-copiar]');
+  if (cp) { navigator.clipboard.writeText(cp.dataset.copiar).then(() => { cp.textContent = 'Copiado!'; setTimeout(() => { cp.textContent = 'Copiar'; }, 1800); }, () => prompt('Copie a chave Pix:', cp.dataset.copiar)); return; }
   if (e.target.closest('[data-act="novo"]')) { location.hash = ''; location.reload(); }
 });
 document.addEventListener('change', e => {
@@ -832,6 +841,10 @@ function registrado(pedido, aba) {
       Ela responde para combinar o sinal de ${fmt(pedido.valor_sinal)}.</p>
     <div class="feito-res"><span>Total</span><strong>${fmt(pedido.total)}</strong>
       <span>Retirada</span><strong>${String(pedido.data_retirada).split('-').reverse().join('/')} às ${esc(hora)}</strong></div>
+    <div class="pix"><span class="pix-t">Pague o sinal de ${fmt(pedido.valor_sinal)} por Pix</span>
+      <div class="pix-l"><span><small>Chave Pix (${esc(U.PIX.tipo)})</small><strong>${esc(U.PIX.chave)}</strong></span>
+        <button type="button" class="btn btn-ghost" data-copiar="${esc(U.PIX.chave)}">Copiar</button></div>
+      <span class="pix-n">${esc(U.PIX.nome)}</span></div>
     <div class="pilha">
       <a class="btn btn-wa btn-block" href="${esc(waUrl)}" target="_blank" rel="noopener">${icon('wa')}${abriu ? 'Abrir o WhatsApp de novo' : 'Enviar pelo WhatsApp'}</a>
       <a class="btn btn-ghost btn-block" href="${esc(recibo)}" target="_blank" rel="noopener">Ver recibo do pedido</a>

@@ -10,7 +10,7 @@
  *   ?demo     usa os dados de demonstração (os mesmos do backoffice ?demo)
  *   ?dias=14  quantos dias à frente aparecem nas colunas (padrão 14, o mesmo prazo que o site oferece para a retirada)
  */
-import { criarApi, conectar, formatarPreco as R, formatarPeso } from '../js/rita-api.js';
+import { criarApi, conectar, formatarPreco as R, formatarPeso, separarReferencia } from '../js/rita-api.js';
 
 const PARAMS = new URLSearchParams(location.search);
 const DEMO = PARAMS.has('demo');
@@ -442,7 +442,8 @@ function itensDoCartao(p) {
     const det = detalheItem(i);
     return `<li class="c-item"><span class="c-qtd">${i.quantidade}×</span><span>
       <span class="c-prod">${esc(i.nome)}${i.peso_kg ? ` <span class="c-peso">${esc(formatarPeso(i.peso_kg))}</span>` : ''}</span>
-      ${det ? `<span class="c-det">${esc(det)}</span>` : ''}${i.observacao ? `<span class="c-iobs">${esc(i.observacao)}</span>` : ''}</span></li>`;
+      ${det ? `<span class="c-det">${esc(det)}</span>` : ''}${(() => { const o = separarReferencia(i.observacao);   // o link da imagem de referência vira uma miniatura
+        return `${o.texto ? `<span class="c-iobs">${esc(o.texto)}</span>` : ''}${o.imagem ? `<span class="c-ref"><img src="${esc(o.imagem)}" alt="">imagem de referência</span>` : ''}`; })()}</span></li>`;
   }).join('') + (itens.length > mostrar.length ? `<li class="c-mais">+ ${plural(itens.length - mostrar.length, 'item', 'itens')}</li>` : '');
 }
 /** Dinheiro só onde importa: sinal no começo, saldo no pronto (para quem entrega). */
@@ -469,7 +470,7 @@ function producao(ctx) {
       const linhas = new Map();
       for (const p of pedidos) for (const i of dados.itens.get(p.id) || []) {
         const det = detalheItem(i), chave = [i.categoria, i.nome, i.peso_kg, det, i.observacao].join('|');
-        const l = linhas.get(chave) || { cat: i.categoria || '', nome: i.nome, peso: i.peso_kg, det, obs: i.observacao, qtd: 0 };
+        const l = linhas.get(chave) || { cat: i.categoria || '', nome: i.nome, peso: i.peso_kg, det, obs: separarReferencia(i.observacao).texto, qtd: 0 };
         l.qtd += Number(i.quantidade) || 0; linhas.set(chave, l);
       }
       const porCat = new Map(), ordemCat = c => dados.ordemCat.get(c) ?? 999;   // mesma ordem do cardápio

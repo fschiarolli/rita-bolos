@@ -5,7 +5,8 @@
  * Usa a mesma API do site (../js/rita-api.js).
  * Modo demonstração, sem banco: abra com ?demo
  */
-import { criarApi, conectar, formatarPreco as R, formatarPeso, formatarData, linkRecibo, linkWhatsApp, montarMensagemStatus, prepararAba } from '../js/rita-api.js';
+import { criarApi, conectar, formatarPreco as R, formatarPeso, formatarData, linkRecibo, linkWhatsApp, montarMensagemStatus, prepararAba,
+  separarReferencia, juntarReferencia, ehTopper, PIX } from '../js/rita-api.js';
 import { AVATARES, avatarSVG, temAvatar } from './avatares.js';
 
 const DEMO = new URLSearchParams(location.search).has('demo');
@@ -1020,7 +1021,7 @@ async function modalPrejuizo(pedido = null) {
       <p class="secao-t" style="margin-top:6px">Quais itens deram problema?</p>
       <div class="prj-itens">${p.itens.map((i, n) => `<div class="prj-it" data-n="${n}">
           <div class="prj-it-t"><strong>${i.quantidade}× ${esc(i.nome)}${i.peso_kg ? ` · ${esc(formatarPeso(i.peso_kg))}` : ''}</strong>
-            <small>${[i.massa, i.formato, i.segundo_recheio ? '2º recheio: ' + i.segundo_recheio : '', i.observacao].filter(Boolean).map(esc).join(' · ')}</small></div>
+            <small>${[i.massa, i.formato, i.segundo_recheio ? '2º recheio: ' + i.segundo_recheio : '', separarReferencia(i.observacao).texto].filter(Boolean).map(esc).join(' · ')}</small></div>
           <div class="prj-it-q"><label class="sr" for="prjQ${n}">Quantos com problema</label>
             <button type="button" class="btn icon sm ghost" data-prj-q="-${n}" aria-label="Menos">${ic('menos')}</button>
             <input class="in" id="prjQ${n}" type="number" min="0" max="${i.quantidade}" value="0" inputmode="numeric">
@@ -1205,7 +1206,8 @@ function detalheHoje(id) {
   const itens = p.itens.map(i => {
     const det = [i.peso_kg && formatarPeso(i.peso_kg), i.massa, i.formato, i.segundo_recheio && '2º recheio: ' + i.segundo_recheio, i.faixa_preco].filter(Boolean);
     return `<div class="hj-it"><div class="l"><b>${i.quantidade}× ${esc(i.nome)}</b><span>${R(i.subtotal)}</span></div>
-      ${det.length ? `<small>${det.map(esc).join(' · ')}</small>` : ''}${i.observacao ? `<small class="obs">Obs.: ${esc(i.observacao)}</small>` : ''}</div>`;
+      ${det.length ? `<small>${det.map(esc).join(' · ')}</small>` : ''}${(() => { const o = separarReferencia(i.observacao);
+        return `${o.texto ? `<small class="obs">Obs.: ${esc(o.texto)}</small>` : ''}${o.imagem ? `<a class="hj-ref" href="${esc(o.imagem)}" target="_blank" rel="noopener"><img src="${esc(o.imagem)}" alt="" loading="lazy">Imagem de referência</a>` : ''}`; })()}</div>`;
   }).join('');
   const fixadas = (p.observacoes || []).filter(o => o.fixada);
   const anterior = p.finalizado ? (p.historico || []).slice().reverse().find(h => h.status_novo === p.status)?.status_anterior : null;
@@ -1426,6 +1428,152 @@ function proximoStatus(p) {
   if (atual.finalizado) return null;
   return STATUS.filter(s => s.ativo && s.ordem > (atual.ordem ?? 0) && s.codigo !== 'cancelado').sort((a, b) => a.ordem - b.ordem)[0] || null;
 }
+/* ---- Imagem de referência do item (topper): vem do site na observação, como "Referência: <link>" ---- */
+function itemReferencia(i) {
+  const { texto, imagem } = separarReferencia(i.observacao), topper = ehTopper(i.nome, i.categoria);
+  const obs = texto ? `<div class="it-d"><b>Obs.:</b> ${esc(texto)}</div>` : '';
+  if (!imagem && !topper) return obs;
+  const inp = `<input type="file" accept="image/*" id="refIt-${esc(i.id)}" data-ref-item="${esc(i.id)}" class="sr" tabindex="-1">`;
+  return obs + (imagem
+    ? `<div class="it-ref"><a class="it-ref-img" href="${esc(imagem)}" target="_blank" rel="noopener" title="Abrir a imagem"><img src="${esc(imagem)}" alt="Imagem de referência de ${esc(i.nome)}" loading="lazy"></a>
+        <div class="it-ref-acoes"><span>Imagem de referência</span>
+          <button type="button" class="btn sm wa" data-gav="topo" data-item="${esc(i.id)}">${ic('wa')}Enviar para quem faz o topo</button>
+          <label class="btn sm ghost" for="refIt-${esc(i.id)}">${ic('foto')}Trocar imagem</label></div></div>${inp}`
+    : `<div class="it-ref sem"><span>${ic('alerta')}Sem imagem de referência</span><label class="btn sm ghost" for="refIt-${esc(i.id)}">${ic('foto')}Anexar imagem</label></div>${inp}`);
+}
+/** Reduz a foto antes de enviar (até 1600 px, JPEG). */
+async function reduzirImagem(arquivo, max = 1600) {
+  if (!/^image\/(jpeg|png|webp)$/.test(arquivo.type || '')) return arquivo;
+  const bmp = await createImageBitmap(arquivo).catch(() => null); if (!bmp) return arquivo;
+  const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(bmp, 0, 0, c.width, c.height);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', .85));
+  return blob && blob.size < arquivo.size ? blob : arquivo;
+}
+// anexar ou trocar a imagem de um item pelo backoffice (ex.: o cliente mandou pelo WhatsApp)
+document.addEventListener('change', e => {
+  const t = e.target; if (!t.dataset?.refItem || !t.files?.[0] || !pedidoAtual) return;
+  const arquivo = t.files[0], i = pedidoAtual.itens.find(x => String(x.id) === t.dataset.refItem); t.value = '';
+  if (!i) return;
+  acaoGaveta(null, async () => {
+    if (!/^image\//.test(arquivo.type || '')) throw new Error('Escolha um arquivo de imagem.');
+    const img = await reduzirImagem(arquivo);
+    const { url } = await api.referencias.enviar(img);
+    await api.admin.pedidos.itens.atualizar(i.id, { observacao: juntarReferencia(separarReferencia(i.observacao).texto, url) });
+    toast('Imagem de referência anexada.');
+    return api.admin.pedidos.obter(pedidoAtual.id);
+  });
+});
+
+/* ---- Enviar o topo para quem faz: imagem, tipo e data ---- */
+async function contatoTopos() {
+  const c = await configLoja();
+  let local = {}; try { local = JSON.parse(localStorage.getItem('ritabolos.topos') || '{}'); } catch (e) { local = {}; }
+  return { numero: c?.whatsapp_topos || local.numero || '', nome: c?.nome_topos || local.nome || '' };
+}
+async function salvarContatoTopos(numero, nome) {
+  try { localStorage.setItem('ritabolos.topos', JSON.stringify({ numero, nome })); } catch (e) { /* sem armazenamento */ }
+  // sem o sql/referencias-topper.sql (ou sem acesso de administração), fica só neste aparelho
+  try { await api.admin.configuracoes.salvar({ whatsapp_topos: numero || null, nome_topos: nome || null }); cacheLoja = null; } catch (e) { /* idem */ }
+}
+async function modalTopo(p, i) {
+  const { texto, imagem } = separarReferencia(i.observacao);
+  const ct = await contatoTopos();
+  const quando = `${formatarData(p.data_retirada)} (${dataCurta(p.data_retirada)})${p.hora_retirada ? ' às ' + hora(p.hora_retirada) : ''}`;
+  const msg = [`Olá${ct.nome ? ', ' + ct.nome.trim().split(/\s+/)[0] : ''}! Tem um topo de bolo para fazer:`, '',
+    `*Pedido:* ${p.codigo} (${p.cliente_nome})`, `*Tipo:* ${i.quantidade > 1 ? i.quantidade + '× ' : ''}${i.nome}`,
+    texto ? `*Tema / detalhes:* ${texto}` : null, `*Data:* ${quando}`, '', imagem ? `*Imagem de referência:* ${imagem}` : null]
+    .filter(l => l !== null).join('\n');
+  // a foto em si vai pelo "Compartilhar" do celular; o link vai na mensagem
+  const arquivo = imagem && navigator.canShare ? fetch(imagem).then(r => r.blob()).then(b => new File([b], `topo-${p.codigo}.${/png/.test(b.type) ? 'png' : 'jpg'}`, { type: b.type || 'image/jpeg' })).catch(() => null) : Promise.resolve(null);
+  const podeCompartilhar = !!imagem && !!navigator.canShare;
+  const m = abrirModal({
+    titulo: 'Enviar para quem faz o topo',
+    corpo: `<div class="topo-prev">${imagem ? `<img src="${esc(imagem)}" alt="Imagem de referência">` : ''}
+        <div><strong>${i.quantidade > 1 ? i.quantidade + '× ' : ''}${esc(i.nome)}</strong>${texto ? `<small>${esc(texto)}</small>` : ''}<small>Data: ${esc(quando)}</small></div></div>
+      <div class="grid2">${inTxt('tpNum', 'WhatsApp de quem faz o topo', formatarTel(ct.numero), { attrs: ATTR_TEL })}${inTxt('tpNome', 'Nome <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>', ct.nome, { attrs: 'maxlength="60"' })}</div>
+      ${inTa('tpMsg', 'Mensagem', msg, { attrs: 'maxlength="1500" style="min-height:170px"' })}
+      <p class="dica" style="margin:0">O contato fica salvo para os próximos topos. ${podeCompartilhar ? 'No celular, <b>Compartilhar imagem</b> manda a foto em si: escolha o WhatsApp e a pessoa.' : 'A mensagem leva o link da imagem.'}</p>`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button>${podeCompartilhar ? `<button type="button" class="btn ghost" data-compartilhar>${ic('foto')}Compartilhar imagem</button>` : ''}<button type="button" class="btn wa" data-ok>${ic('wa')}Abrir WhatsApp</button>`
+  });
+  const lembrar = num => { const nome = valDe(m, 'tpNome'); if (num !== digitosTel(ct.numero) || nome !== ct.nome) salvarContatoTopos(num, nome); };
+  m.$('[data-ok]').addEventListener('click', () => {
+    const num = digitosTel(valDe(m, 'tpNum'));
+    if (num.length < 10) { toast('Informe o WhatsApp com DDD de quem faz o topo.', { tipo: 'erro' }); m.$('#tpNum').focus(); return; }
+    window.open(linkWhatsApp('55' + num, valDe(m, 'tpMsg')), '_blank', 'noopener');   // ainda no clique, para o navegador não bloquear
+    lembrar(num); m.fechar();
+  });
+  m.$('[data-compartilhar]')?.addEventListener('click', async () => {
+    const f = await arquivo;
+    if (!f || !navigator.canShare({ files: [f] })) { toast('Este aparelho não compartilha a imagem. Use “Abrir WhatsApp”: a mensagem leva o link.', { tipo: 'erro' }); return; }
+    try { await navigator.share({ files: [f], text: valDe(m, 'tpMsg') }); lembrar(digitosTel(valDe(m, 'tpNum'))); m.fechar(); }
+    catch (e) { if (e?.name !== 'AbortError') erroToast(e); }
+  });
+}
+
+/* ---- Impressão na térmica (bobina de 80 mm, 72 mm de área de impressão) ---- */
+async function imprimirTermica(p) {
+  const loja = await configLoja() || {};
+  const pct = Number(p.percentual_sinal ?? 50).toLocaleString('pt-BR');
+  const falta = Math.max(0, Number(p.saldo ?? (p.total - p.valor_pago)));
+  const l = (a, b, cls = '') => `<div class="l ${cls}"><span>${a}</span><span>${b}</span></div>`;
+  const itens = p.itens.map(i => {
+    const { texto, imagem } = separarReferencia(i.observacao);
+    const det = [i.massa && `Massa: ${i.massa}`, i.formato && `Formato: ${i.formato}`, i.segundo_recheio && `2º recheio: ${i.segundo_recheio}`].filter(Boolean);
+    return `<div class="it">${l(`<b class="n">${i.quantidade}x ${esc(i.nome)}${i.peso_kg ? ' ' + esc(formatarPeso(i.peso_kg)) : ''}</b>`, R(i.subtotal))}
+      ${det.map(d => `<div class="d">${esc(d)}</div>`).join('')}
+      ${i.quantidade > 1 ? `<div class="d">${i.quantidade} x ${R(i.preco_unitario)}</div>` : ''}
+      ${texto ? `<div class="d ob">Obs: ${esc(texto)}</div>` : ''}${imagem ? '<div class="d ob">* Imagem de referência anexada (ver no sistema)</div>' : ''}</div>`;
+  }).join('<div class="sep fino"></div>');
+  const fixadas = (p.observacoes || []).filter(o => o.fixada);
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Pedido ${esc(p.codigo)}</title><style>
+    @page { size: 80mm auto; margin: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: #fff; color: #000; }
+    body { width: 80mm; padding: 3mm 4mm 8mm; font: 12.5px/1.35 Arial, Helvetica, sans-serif; }
+    .c { text-align: center; } .loja { font-size: 17px; font-weight: 900; } .sub { font-size: 11px; }
+    .cod { font-size: 24px; font-weight: 900; letter-spacing: .5px; margin-top: 4px; }
+    .sep { border-top: 1px dashed #000; margin: 6px 0; } .sep.fino { border-top-style: dotted; margin: 4px 0; } .sep.forte { border-top: 2px solid #000; }
+    .ret { border: 2px solid #000; padding: 5px 6px; margin: 6px 0; text-align: center; }
+    .ret small { display: block; font-size: 11px; font-weight: 700; letter-spacing: 1px; } .ret b { display: block; font-size: 18px; line-height: 1.2; }
+    .l { display: flex; justify-content: space-between; gap: 8px; } .l > span:last-child { white-space: nowrap; text-align: right; }
+    .t { font-size: 13px; font-weight: 800; letter-spacing: 1px; margin: 2px 0 4px; }
+    .it .n { font-size: 13.5px; } .it .d { font-size: 11.5px; margin-left: 12px; } .it .ob { font-weight: 700; }
+    .tot { font-size: 16px; font-weight: 900; } .falta { font-size: 15px; font-weight: 900; }
+    .box { border: 1px solid #000; padding: 4px 6px; margin: 5px 0; font-size: 12px; } .box b { display: block; }
+    .pix .k { display: block; font-size: 17px; font-weight: 900; letter-spacing: .5px; }
+    .pe { text-align: center; font-size: 10.5px; margin-top: 8px; }
+  </style></head><body>
+    <div class="c loja">${esc(loja.nome_loja || 'Rita Bolos')}</div>
+    <div class="c sub">${esc(loja.slogan || 'Bolos e sobremesas')}</div>
+    <div class="c cod">${esc(p.codigo)}</div>
+    <div class="c sub">Feito em ${esc(dataHora(p.criado_em))} · ${esc(ORIGENS[p.origem] || p.origem || '')}</div>
+    <div class="sep"></div>
+    <div><b>Cliente:</b> ${esc(p.cliente_nome)}</div>
+    ${p.cliente_telefone ? `<div><b>Tel.:</b> ${esc(formatarTel(p.cliente_telefone) || p.cliente_telefone)}</div>` : ''}
+    <div><b>Situação:</b> ${esc(p.status_nome || p.status)}</div>
+    <div class="ret"><small>RETIRADA</small><b>${esc(dataCurta(p.data_retirada).toUpperCase())}</b><b>${esc(formatarData(p.data_retirada))}${p.hora_retirada ? ' às ' + esc(hora(p.hora_retirada)) : ''}</b></div>
+    <div class="t">ITENS</div>${itens}
+    <div class="sep forte"></div>
+    ${l('Subtotal', R(p.subtotal))}${Number(p.desconto) > 0 ? l('Desconto', '- ' + R(p.desconto)) : ''}
+    ${l('TOTAL', R(p.total), 'tot')}
+    ${l(`Sinal (${pct}%)`, R(p.valor_sinal))}${l('Pago', R(p.valor_pago))}
+    ${l(falta > 0 ? 'FALTA PAGAR' : 'PAGO', falta > 0 ? R(falta) : 'OK', 'falta')}
+    ${p.observacao_cliente ? `<div class="box"><b>Observação do cliente</b>${esc(p.observacao_cliente)}</div>` : ''}
+    ${fixadas.length ? `<div class="box"><b>Anotações</b>${fixadas.map(o => esc(o.texto)).join('<br>')}</div>` : ''}
+    ${falta > 0 ? `<div class="box pix"><b>Pix (${esc(PIX.tipo)})</b><span class="k">${esc(PIX.chave)}</span>${esc(PIX.nome)}</div>` : ''}
+    <div class="pe">${loja.whatsapp_exibicao ? 'WhatsApp ' + esc(loja.whatsapp_exibicao) + '<br>' : ''}Impresso em ${esc(dataHora(new Date().toISOString()))}</div>
+  </body></html>`;
+  $('#impTermica')?.remove();
+  const f = document.createElement('iframe');
+  f.id = 'impTermica'; f.title = 'Impressão'; f.setAttribute('aria-hidden', 'true'); f.tabIndex = -1;
+  f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  f.onload = () => setTimeout(() => { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { erroToast(e); } }, 120);
+  f.srcdoc = html;
+  document.body.appendChild(f);
+}
+
 function renderGaveta(p) {
   pedidoAtual = p;
   const g = $('#gaveta');
@@ -1437,7 +1585,7 @@ function renderGaveta(p) {
       ${i.segundo_recheio ? `<div class="it-d"><b>2º recheio:</b> ${esc(i.segundo_recheio)}</div>` : ''}
       ${i.faixa_preco ? `<div class="it-d"><b>Faixa de preço:</b> ${esc(i.faixa_preco)}</div>` : ''}
       <div class="it-d">${R(i.preco_unitario)} cada${i.preco_kg ? ` (${R(i.preco_kg)} o kg)` : ''}</div>
-      ${i.observacao ? `<div class="it-d"><b>Obs.:</b> ${esc(i.observacao)}</div>` : ''}
+      ${itemReferencia(i)}
     </div>`).join('');
   const quitado = Number(p.total) > 0 && Number(p.valor_pago) >= Number(p.total);
   g.innerHTML = `
@@ -1449,6 +1597,7 @@ function renderGaveta(p) {
     <div class="gav-b">
       <div class="acoes-topo">
         <a class="btn sm" href="${esc(urlReciboInterno(p.id))}" target="_blank" rel="noopener">${ic('imprimir')}Imprimir recibo</a>
+        <button type="button" class="btn sm" data-gav="termica">${ic('imprimir')}Imprimir 80 mm</button>
         <button type="button" class="btn sm wa" data-gav="msg">${ic('wa')}Mandar mensagem</button>
         <button type="button" class="btn sm ghost" data-gav="link">${ic('copiar')}Link do recibo</button>
         ${isAdmin() ? `<button type="button" class="btn sm ghost" data-gav="prejuizo">${ic('alerta')}Lançar prejuízo</button>` : ''}
@@ -1537,6 +1686,8 @@ document.addEventListener('click', async e => {
     case 'editar': modalEditarPedido(p); break;
     case 'pagar': modalPagamento(p); break;
     case 'prejuizo': modalPrejuizo(p); break;
+    case 'termica': imprimirTermica(p); break;
+    case 'topo': { const i = p.itens.find(x => String(x.id) === b.dataset.item); if (i) modalTopo(p, i); break; }
     case 'msg':
       if (!telefoneWa(p.cliente_telefone)) toast('Este pedido não tem o telefone do cliente.', { acao: { rotulo: 'Incluir telefone', fn: () => modalEditarPedido(p) } });
       else modalMensagem(p);
@@ -1663,23 +1814,31 @@ async function modalStatus(p, codigo) {
   const s = statusDe(codigo);
   if (codigo === p.status) { toast(`O pedido já está como “${s.nome}”.`); return; }
   const aviso = await campoAvisoWa(p, s);
+  // confirmar = sinal recebido: já registra o pagamento do que falta do sinal
+  const faltaSinal = codigo === 'confirmado' ? Math.max(0, Math.round((Number(p.valor_sinal) - Number(p.valor_pago)) * 100) / 100) : 0;
   const m = abrirModal({
     titulo: `Mudar para “${s.nome}”`,
     corpo: `<p style="margin:0 0 12px;font-weight:400">${esc(p.codigo)} · ${esc(p.cliente_nome)}: de ${pill(p.status_nome, p.status_cor)} para ${pill(s.nome, s.cor)}</p>
+      ${faltaSinal > 0 ? `<div class="np-concl on st-sinal">${inChk('stSinal', `<span><strong>Registrar o sinal de ${R(faltaSinal)} como pago</strong><small>O pagamento entra no pedido junto com a confirmação.</small></span>`, true)}
+        <div class="np-concl-op">${inSel('stForma', 'Como foi pago', Object.entries(FORMAS), 'pix')}</div></div>` : ''}
       ${inTa('stCom', 'Comentário <span style="font-weight:400;color:var(--ink-3)">(opcional, fica no histórico)</span>', '', { attrs: `maxlength="500" placeholder="${codigo === 'cancelado' ? 'Motivo do cancelamento' : 'Ex.: sinal recebido por Pix'}" style="min-height:64px"` })}
       ${aviso}`,
     rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn ${codigo === 'cancelado' ? 'danger' : 'primary'}" data-ok>Mudar status</button>`
   });
   ligarAvisoWa(m, 'Mudar status');
+  m.$('#stSinal')?.addEventListener('change', e => { m.$('.st-sinal').classList.toggle('on', e.target.checked); m.$('.st-sinal .np-concl-op').hidden = !e.target.checked; });
   setTimeout(() => m.$('[data-ok]').focus(), 60);
   m.$('[data-ok]').addEventListener('click', ev => {
     const com = valDe(m, 'stCom');
+    const sinal = faltaSinal > 0 && chkDe(m, 'stSinal'), forma = valDe(m, 'stForma') || 'pix';
     const wa = avisoWa(m, p);   // abre a aba do WhatsApp ainda no clique
     m.fechar();
     acaoGaveta(null, async () => {
+      if (sinal) await api.admin.pedidos.registrarPagamento(p.id, { valor: faltaSinal, forma, tipo: 'sinal', observacao: 'Registrado ao confirmar o pedido' })
+        .catch(e => { wa.cancelar(); throw e; });
       const r = await api.admin.pedidos.alterarStatus(p.id, codigo, com || null).catch(e => { wa.cancelar(); throw e; });
       wa.enviar();
-      toast(`${p.codigo}: ${s.nome}`);
+      toast(sinal ? `${p.codigo}: ${s.nome}, sinal de ${R(faltaSinal)} registrado` : `${p.codigo}: ${s.nome}`);
       return r;
     });
   });
@@ -1736,7 +1895,8 @@ async function modalEditarPedido(p) {
     const peso = it?.peso_kg ? Number(it.peso_kg) : pesos[0];
     const opPesos = [...new Set([...pesos, peso])].sort((a, b) => a - b);
     const sel = (lista, val) => lista.map(([v, t]) => `<option value="${esc(v)}" ${String(v) === String(val) ? 'selected' : ''}>${esc(t)}</option>`).join('');
-    return `<div class="np-item" data-k="${k}" ${it ? `data-id="${esc(it.id)}"` : ''}>
+    const ref = separarReferencia(it?.observacao);   // a imagem de referência fica guardada à parte e volta para a observação ao salvar
+    return `<div class="np-item" data-k="${k}" ${it ? `data-id="${esc(it.id)}"` : ''} data-ref="${esc(ref.imagem || '')}">
       ${campo('edP' + k, 'Produto', `<select class="sel" id="edP${k}" data-np="prod">${fora ? `<option value="">${esc(it.nome)} (fora do cardápio)</option>` : opcoesProd}</select>`)}
       ${campo('edQ' + k, 'Qtd.', `<input class="in" id="edQ${k}" data-np="qtd" type="number" min="1" max="999" value="${it ? it.quantidade : 1}" inputmode="numeric">`)}
       <button type="button" class="btn icon ghost" data-np="tirar" aria-label="Tirar item" style="align-self:end">${ic('lixo')}</button>
@@ -1748,7 +1908,8 @@ async function modalEditarPedido(p) {
         ${!it && finalizacoes.length ? campo('edFin' + k, 'Finalização', `<select class="sel" id="edFin${k}" data-np="fin"><option value="">Tradicional (sem taxa)</option>${finalizacoes.map(f =>
           `<option value="${esc(f.slug)}">${esc(rotuloFinalizacao(f))} (+${esc(R(f.preco))})</option>`).join('')}</select>`) : ''}
       </div>
-      <div class="obs-l">${campo('edO' + k, 'Observação do item', `<input class="in" id="edO${k}" data-np="obs" maxlength="1000" value="${esc(it?.observacao || '')}" placeholder="Sabores, escrita no bolo, tema…">`)}</div>
+      <div class="obs-l">${campo('edO' + k, 'Observação do item', `<input class="in" id="edO${k}" data-np="obs" maxlength="1000" value="${esc(ref.texto)}" placeholder="Sabores, escrita no bolo, tema…">`)}
+        ${ref.imagem ? `<div class="ed-ref"><img src="${esc(ref.imagem)}" alt=""><span>Imagem de referência anexada</span><button type="button" class="btn sm ghost" data-np="tirar-ref">Remover imagem</button></div>` : ''}</div>
       <div class="ed-preco">${campo('edV' + k, 'Valor de cada', `<div class="money"><input class="in" id="edV${k}" data-np="preco" inputmode="decimal" value="${it ? esc(valorTxt(it.preco_unitario)) : ''}"></div>`)}
         <div class="sub" data-np="sub"></div></div>
     </div>`;
@@ -1813,6 +1974,7 @@ async function modalEditarPedido(p) {
     const b = e.target.closest('[data-np]'); if (!b) return;
     if (b.dataset.np === 'add') { m.$('#edItens').insertAdjacentHTML('beforeend', linha()); m.$('#edItens .np-item:last-child select').focus(); atualizar(); }
     if (b.dataset.np === 'tirar') { b.closest('.np-item').remove(); atualizar(); }
+    if (b.dataset.np === 'tirar-ref') { b.closest('.np-item').dataset.ref = ''; b.closest('.ed-ref').remove(); }
   });
   atualizar();
 
@@ -1832,7 +1994,7 @@ async function modalEditarPedido(p) {
       if (!(quantidade >= 1 && quantidade <= 999)) throw new Error(`Quantidade inválida em "${nomeItem}".`);
       const preco = lerValor(campoDe(box, 'preco').value);
       if (preco == null || Number.isNaN(preco) || preco < 0) throw new Error(`Informe o valor de "${nomeItem}".`);
-      const d = { quantidade, preco_unitario: Math.round(preco * 100) / 100, observacao: campoDe(box, 'obs').value.trim() || null };
+      const d = { quantidade, preco_unitario: Math.round(preco * 100) / 100, observacao: juntarReferencia(campoDe(box, 'obs').value, box.dataset.ref) };
       if (prod) {
         Object.assign(d, { produto_id: prod.id, categoria: prod.categoria, nome: prod.nome, peso_kg: null, preco_kg: null, massa: null, formato: null,
           segundo_recheio_id: null, segundo_recheio: null, faixa_preco: null });
@@ -2354,6 +2516,7 @@ function ligarSwitch(box, mapa) {
 /* ---- Loja ---- */
 async function ajLoja(box) {
   let c;
+  const topos = await contatoTopos();
   try { c = await configLoja(true); if (!c) throw new Error('Configurações não encontradas. Rode o seed.sql.'); } catch (e) { box.innerHTML = `<div class="vazio"><h2>Não foi possível carregar</h2><p>${esc(e.message)}</p></div>`; return; }
   box.innerHTML = `
     <div class="pausa ${c.aceitando_pedidos ? 'on' : 'off'}" id="ajPausa">
@@ -2368,6 +2531,7 @@ async function ajLoja(box) {
       <div class="grid3">${inNum('lSinal', 'Sinal (%)', c.percentual_sinal, { attrs: 'min="0" max="100" step="1"' })}${inNum('lAnt', 'Antecedência mínima (dias)', c.antecedencia_minima_dias, { attrs: 'min="0"' })}${inNum('lTol', 'Tolerância de peso do bolo (g)', c.tolerancia_peso_bolo_g, { attrs: 'min="0" step="50"' })}</div>
       <div class="grid2">${inNum('lDias', 'Retirada sugerida (dias depois do pedido)', c.dias_retirada_sugerida, { attrs: 'min="0"', dica: 'Só para pedidos lançados aqui pela equipe. No site, o cliente escolhe o dia.' })}${campo('lHora', 'Horário sugerido', `<input class="in" id="lHora" type="time" value="${esc(hora(c.hora_retirada_sugerida))}">`, 'Idem: no site, o cliente escolhe o horário.')}</div>
       ${inTxt('lUrl', 'Endereço do site', c.url_site || '', { attrs: 'type="url" placeholder="https://ritabolos.com.br/"', dica: 'Usado no link do recibo que vai no WhatsApp.' })}
+      <div class="grid2">${inTxt('lTopNum', 'WhatsApp de quem faz os topos', formatarTel(topos.numero), { attrs: ATTR_TEL, dica: 'Usado no botão “Enviar para quem faz o topo”, ao lado da imagem de referência.' })}${inTxt('lTopNome', 'Nome de quem faz os topos', topos.nome, { attrs: 'maxlength="60"' })}</div>
       ${fotoCampo('lLogo', 'Logotipo', c.logo_path)}
       <div style="display:flex;justify-content:flex-end"><button type="button" class="btn primary" id="lSalvar">Salvar ajustes</button></div>
     </div>`;
@@ -2394,6 +2558,9 @@ async function ajLoja(box) {
       dias_retirada_sugerida: numDe(fake, 'lDias') || 0, hora_retirada_sugerida: valDe(fake, 'lHora') || '10:00',
       url_site: valDe(fake, 'lUrl') || null, logo_path: fotoDe(fake, 'lLogo')
     });
+    const topNum = digitosTel(valDe(fake, 'lTopNum'));
+    if (topNum && topNum.length < 10) throw new Error('Informe o WhatsApp de quem faz os topos com DDD.');
+    await salvarContatoTopos(topNum, valDe(fake, 'lTopNome'));
     cacheLoja = null; cardapioAtivo = null; toast('Ajustes salvos. O site já mostra as mudanças.');
   }));
 }

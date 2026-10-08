@@ -742,6 +742,31 @@ a { color: var(--teal); }
 .kit-art { aspect-ratio: 4 / 5; width: 100%; display: grid; place-items: center; background: var(--mint-50); }
 .kit-art .art { width: 62%; height: auto; }
 .line-warn.req { color: var(--error); }
+/* Imagem de referência do topper */
+.ref-escolher { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 16px; border: 2px dashed var(--mint-400); background: var(--mint-50); color: var(--ink); cursor: pointer; }
+.ref-escolher .ic { width: 28px; height: 28px; color: var(--teal); }
+.ref-escolher strong { display: block; font-size: 15px; }
+.ref-escolher small { display: block; font-size: 13px; color: var(--ink-3); font-weight: 600; }
+.ref-escolher:focus-within, .ref-escolher:hover { border-style: solid; }
+.ref-ok { display: flex; align-items: center; gap: 12px; }
+.ref-ok img { width: 72px; height: 72px; object-fit: cover; border-radius: 12px; background: var(--surface-2); box-shadow: var(--shadow-1); }
+.ref-env { display: flex; align-items: center; gap: 10px; padding: 14px 4px; font-weight: 700; color: var(--ink-2); }
+.ref-spin { width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--mint-200); border-top-color: var(--teal); animation: gira .8s linear infinite; }
+.line-ref { margin: 8px 0 2px; }
+.line-ref .ref-ok img { width: 48px; height: 48px; border-radius: 10px; }
+.line-ref .ref-ok span { font-size: 13px; font-weight: 700; color: var(--ink-2); flex: 1; }
+.line-ref .ref-falta { cursor: pointer; padding: 6px 0; text-decoration: underline; text-underline-offset: 3px; }
+/* Pix no fim do pedido */
+.pix-box { width: 100%; display: grid; gap: 6px; text-align: left; padding: 14px 16px; border-radius: 16px; background: var(--mint-50); border: 1px solid var(--mint-200); }
+.pix-t { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 14.5px; }
+.pix-t .ic { width: 18px; height: 18px; color: var(--teal); }
+.pix-l { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pix-l small { display: block; font-size: 12px; color: var(--ink-3); font-weight: 700; }
+.pix-l strong { font-size: 20px; letter-spacing: .03em; font-variant-numeric: tabular-nums; }
+.pix-copiar { min-height: 40px; padding: 0 14px; font-size: 14px; flex: none; }
+.pix-copiar .ic { width: 17px; height: 17px; }
+.pix-n { font-weight: 800; }
+.pix-d { font-size: 12.5px; color: var(--ink-3); }
 .last-order { margin: 4px 18px 0; padding: 14px; border-radius: 18px; background: var(--mint-50); display: flex; gap: 12px; align-items: flex-start; }
 .last-order .lo-ic { width: 36px; height: 36px; border-radius: 50%; background: var(--surface); color: var(--teal); display: grid; place-items: center; flex: none; }
 .last-order .lo-ic .ic { width: 20px; height: 20px; stroke-width: 2.6; }
@@ -778,6 +803,7 @@ a { color: var(--teal); }
   <symbol id="i-scale" viewBox="0 0 24 24"><path d="M6 20.5h12l-1.5-11h-9z"/><path d="M9.5 9.5a2.5 2.5 0 1 1 5 0"/></symbol>
   <symbol id="i-coins" viewBox="0 0 24 24"><ellipse cx="12" cy="6.5" rx="7" ry="3"/><path d="M5 6.5v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5"/><path d="M5 11.5v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5"/></symbol>
   <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3.5 8.5 4.5L12 12.5 3.5 8z"/><path d="m3.5 12 8.5 4.5 8.5-4.5M3.5 16l8.5 4.5 8.5-4.5"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11.5" height="11.5" rx="2.5"/><path d="M15 9V5.5A2 2 0 0 0 13 3.5H5.5a2 2 0 0 0-2 2V13a2 2 0 0 0 2 2H9"/></symbol>
   <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="m20.5 16-4.5-4.5-8.5 8"/></symbol>
   <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11 18.5h2"/></symbol>
   <symbol id="i-send" viewBox="0 0 24 24"><path d="M21 3 10.5 13.5M21 3l-6.5 18-4-7.5L3 9.5z"/></symbol>
@@ -1043,6 +1069,9 @@ let FINALIZACOES = [];   // finalização do bolo (colorido, glitter…): produt
 const ehFinalizacao = p => /^finalizacao-/.test(p?.slug || '');
 const grupoFinalizacao = nome => /^finaliza/.test(String(nome || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim());
 const finDe = slug => (slug && FINALIZACOES.find(f => f.slug === slug)) || null;
+/* Topper (topo de bolo): o cliente precisa enviar uma imagem de referência; o link vai na observação do item */
+const ehTopperItem = it => !!it && /topper|^topos?\b|topo de bolo|topos de bolo/i.test(norm(`${it.id} ${it.name} ${it.group || ''}`));
+const comReferencia = (obs, url) => [String(obs || '').trim(), url ? `Referência: ${url}` : ''].filter(Boolean).join('\n') || null;
 const CAT_ALIAS = { pote: 'bolo-no-pote' };   // links antigos
 
 /* Carrega a API (ou o banco de demonstração) */
@@ -1412,7 +1441,7 @@ function decSimple(id) {
 function addLine(line) {
   // Itens iguais (mesmas escolhas e observação) são somados
   const same = cart.find(l => l.id === line.id && (l.peso || 0) === (line.peso || 0) && (l.massa || '') === (line.massa || '') && (l.formato || '') === (line.formato || '') &&
-    (l.segundo || '') === (line.segundo || '') && (l.fin || '') === (line.fin || '') && (l.notes || '') === (line.notes || ''));
+    (l.segundo || '') === (line.segundo || '') && (l.fin || '') === (line.fin || '') && (l.ref || '') === (line.ref || '') && (l.notes || '') === (line.notes || ''));
   if (same) same.qty += line.qty; else cart.push(line);
   cartChanged(true);
 }
@@ -1694,6 +1723,10 @@ function renderCart() {
         <label class="sr-only" for="ln-${i}">Observação para ${esc(it.name)}</label>
         <textarea class="line-notes" id="ln-${i}" rows="1" data-notes="${i}" maxlength="1000" placeholder="${esc(it.needsNotes ? (it.notesPh || 'Informe os sabores') : 'Observação (opcional)')}">${esc(l.notes || '')}</textarea>
         ${missing ? `<div class="line-warn${it.notesRequired ? ' req' : ''}" id="lw-${i}">${icon('info')}${esc(it.notesLabel || 'Informe os sabores')}${it.notesRequired ? ' (obrigatório)' : ''}</div>` : ''}
+        ${ehTopperItem(it) ? `<div class="line-ref" id="lref-${i}">${l.ref
+          ? `<div class="ref-ok"><img src="${esc(l.ref)}" alt="Imagem de referência"><span>Imagem de referência</span><label class="link-btn" for="lr-${i}">Trocar</label></div>`
+          : `<label class="line-warn req ref-falta" for="lr-${i}">${icon('image')}Enviar imagem de referência (obrigatório)</label>`}</div>
+          <input type="file" accept="image/*" id="lr-${i}" data-ref-linha="${i}" class="sr-only" tabindex="-1">` : ''}
         <div class="line-bottom">
           <span class="stepper" role="group" aria-label="Quantidade de ${esc(it.name)}">
             <button type="button" data-ldec="${i}" aria-label="${l.qty - (it.passo || 1) < (it.min || 1) ? 'Remover' : 'Diminuir'} ${esc(it.name)}">${icon(l.qty - (it.passo || 1) < (it.min || 1) ? 'trash' : 'minus')}</button>
@@ -1817,9 +1850,53 @@ function refreshCake() {
   }
 }
 
+/* ---- Imagem de referência do topper ---- */
+/** Reduz a foto antes de enviar (foto de celular tem vários MB): até 1600 px, JPEG. */
+async function reduzirImagem(arquivo, max = 1600) {
+  if (!/^image\/(jpeg|png|webp)$/.test(arquivo.type || '')) return arquivo;
+  const bmp = await createImageBitmap(arquivo).catch(() => null); if (!bmp) return arquivo;
+  const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(bmp, 0, 0, c.width, c.height);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', .85));
+  return blob && blob.size < arquivo.size ? blob : arquivo;
+}
+async function enviarReferencia(arquivo) {
+  if (!arquivo || (!/^image\//.test(arquivo.type || '') && !/\.(heic|heif)$/i.test(arquivo.name || ''))) throw new Error('Escolha um arquivo de imagem (foto ou print da tela).');
+  const img = await reduzirImagem(arquivo);
+  if (img.size > 5 * 1024 * 1024) throw new Error('A imagem é muito grande (máximo 5 MB). Tente um print da tela.');
+  await conectarApi();
+  return (await API.referencias.enviar(img)).url;
+}
+/** Caixa da imagem: botão para escolher, "enviando…" ou a imagem com "Trocar". O input fica fora (id). */
+const refBoxHTML = ({ url, enviando } = {}, idInput) => enviando
+  ? `<div class="ref-env"><span class="ref-spin" aria-hidden="true"></span>Enviando a imagem…</div>`
+  : url ? `<div class="ref-ok"><img src="${esc(url)}" alt="Imagem de referência escolhida"><label class="link-btn" for="${idInput}">Trocar imagem</label></div>`
+  : `<label class="ref-escolher" for="${idInput}">${icon('image')}<span><strong>Escolher imagem</strong><small>Foto da galeria ou print da tela</small></span></label>`;
+async function refNoSheet(arquivo) {
+  const s = sheetState, box = () => $('#refBox');
+  s.refEnviando = true; box().innerHTML = refBoxHTML({ enviando: true }); $('#eRef').classList.remove('show');
+  try { s.ref = await enviarReferencia(arquivo); }
+  catch (e) { console.error(e); if ($('#eRef')) { $('#eRef').textContent = e.message || 'Não deu para enviar a imagem. Tente de novo.'; $('#eRef').classList.add('show'); } }
+  finally { s.refEnviando = false; if (sheetState === s && box()) box().innerHTML = refBoxHTML({ url: s.ref }, 'cfgRef'); }
+}
+async function refNaLinha(i, arquivo) {
+  const l = cart[i]; if (!l) return;
+  const w = document.getElementById('lref-' + i); if (w) w.innerHTML = refBoxHTML({ enviando: true });
+  try { l.ref = await enviarReferencia(arquivo); saveCart(); toast('Imagem de referência enviada'); }
+  catch (e) { console.error(e); toast(e.message || 'Não deu para enviar a imagem. Tente de novo.'); }
+  renderCart();
+}
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.id === 'cfgRef' && t.files?.[0] && sheetState?.type === 'config') { refNoSheet(t.files[0]); t.value = ''; }
+  if (t.dataset?.refLinha !== undefined && t.files?.[0]) { refNaLinha(Number(t.dataset.refLinha), t.files[0]); t.value = ''; }
+});
+
 /* ---- Item com observação (salgados, toppers, kits) ---- */
 function openConfig(it, opener) {
-  sheetState = { type: 'config', item: it, qty: 1 };
+  sheetState = { type: 'config', item: it, qty: 1, ref: null };
+  const topper = ehTopperItem(it);
   const hero = it.isKit && it.img ? `<div class="sheet-hero" style="margin:0 0 14px"><img src="${esc(it.img)}" alt="${esc(it.name)}"></div>` : '';
   const thumb = it.isKit && it.img ? '' : thumbHTML(it);
   const meta = (it.perKg ? `${fmt(it.price)} o kg` : fmt(it.price)) + (!it.isKit && it.sub && it.unidade !== 'unidade' && it.unidade !== 'kg' && /unidades/.test(it.sub) ? ` (${esc(it.sub.toLowerCase())})` : '');
@@ -1831,6 +1908,11 @@ function openConfig(it, opener) {
       <div class="field"><label class="lbl" for="cfgNotes">${esc(it.notesLabel || 'Observações')} ${opt}</label>
         <textarea class="textarea" id="cfgNotes" maxlength="1000" placeholder="${esc(it.notesPh || '')}"></textarea>
         ${it.needsNotes ? `<p class="hint">${it.notesRequired ? 'Precisa ser preenchido antes de enviar o pedido. ' : ''}Se preferir, você pode completar depois, na sacola.</p>` : ''}</div>
+      ${topper ? `<div class="field" id="refField"><span class="lbl">Imagem de referência <span class="opt">(obrigatório)</span></span>
+        <p class="hint" style="margin:0 0 8px">Mande a foto ou o print do topo que você quer. A Rita usa como modelo.</p>
+        <div id="refBox">${refBoxHTML({}, 'cfgRef')}</div>
+        <input type="file" id="cfgRef" accept="image/*" class="sr-only" tabindex="-1">
+        <p class="err" id="eRef" role="alert">Envie a imagem de referência do topo.</p></div>` : ''}
     </div>
     <div class="sheet-foot">${qtyStepper('qv')}<button type="button" class="btn btn-primary btn-split" data-act="cfg-add"><span>Adicionar</span><span id="cfgTotal">${fmt(it.price)}</span></button></div>`, opener);
 }
@@ -2002,6 +2084,7 @@ function openCheckout(opener) {
   const total = cartTotal();
   const faltando = cart.filter(l => ITEMS[l.id]?.needsNotes && !ITEMS[l.id]?.notesRequired && !(l.notes || '').trim());
   const obrig = cart.filter(l => ITEMS[l.id]?.notesRequired && !(l.notes || '').trim());
+  const semRef = cart.filter(l => ehTopperItem(ITEMS[l.id]) && !l.ref);
   const ant = antecedenciaSacola(), minD = todayISO(ant);
   sheetState = { type: 'checkout', chave: U?.novaChave ? U.novaChave() : String(Date.now()), minDate: minD, ant };
   if (!CFG.aceitando_pedidos) {
@@ -2015,6 +2098,7 @@ function openCheckout(opener) {
     <div class="sheet-body">
       <div id="sendErr"></div>
       ${obrig.length ? `<div class="notice rose" style="margin:0 0 6px">${icon('info')}<span>Preencha na sacola antes de enviar: ${esc(obrig.map(l => `${ITEMS[l.id].name} (${ITEMS[l.id].notesLabel})`).join(', '))}.</span></div>` : ''}
+      ${semRef.length ? `<div class="notice rose" style="margin:0 0 6px">${icon('image')}<span>Envie na sacola a imagem de referência de: ${esc(semRef.map(l => ITEMS[l.id].name).join(', '))}.</span></div>` : ''}
       ${faltando.length ? `<div class="notice rose" style="margin:0 0 6px">${icon('info')}<span>Faltam os sabores de: ${esc(faltando.map(l => ITEMS[l.id].name).join(', '))}. Você pode voltar à sacola ou combinar com a Rita no WhatsApp.</span></div>` : ''}
       <div class="field" style="margin-top:6px"><label class="lbl" for="cName">Seu nome</label>
         <input class="input" id="cName" autocomplete="name" maxlength="120" placeholder="Como podemos te chamar?" value="${esc(store(NAME_KEY) || '')}" aria-describedby="eName">
@@ -2030,7 +2114,7 @@ function openCheckout(opener) {
         <p class="hint" style="margin-top:8px">Ao confirmar, o pedido fica registrado e abrimos a mensagem pronta para o WhatsApp da Rita. Ele só é confirmado após o envio do comprovante de pelo menos ${pctTxt()} do valor.</p>
       </div>
     </div>
-    <div class="sheet-foot"><button type="button" class="btn btn-wa btn-block" data-act="send" ${obrig.length ? 'disabled' : ''}>${icon('send')}<span>Confirmar pedido</span></button></div>`, opener);
+    <div class="sheet-foot"><button type="button" class="btn btn-wa btn-block" data-act="send" ${obrig.length || semRef.length ? 'disabled' : ''}>${icon('send')}<span>Confirmar pedido</span></button></div>`, opener);
 }
 function validateCheckout() {
   const name = $('#cName'), d = $('#cDate'), t = $('#cTime'), minD = sheetState.minDate || todayISO();
@@ -2067,7 +2151,7 @@ async function sendOrder() {
   const payload = {
     chave_idempotencia: sheetState.chave, cliente_nome: name, cliente_telefone: phone || null, data_retirada: pd, hora_retirada: pt,
     itens: cart.flatMap(l => {
-      const it = ITEMS[l.id], o = { produto_slug: l.id, quantidade: l.qty, observacao: (l.notes || '').trim() || null, nome: it?.name };
+      const it = ITEMS[l.id], o = { produto_slug: l.id, quantidade: l.qty, observacao: comReferencia(l.notes, l.ref), nome: it?.name };
       if (it?.kind !== 'cake') return [o];
       o.peso_kg = l.peso; o.massa = l.massa; if (l.formato) o.formato = l.formato; if (l.segundo) o.segundo_recheio_slug = l.segundo;
       // finalização (colorido, glitter…) vai como item logo abaixo do bolo: o preço é conferido no servidor
@@ -2108,6 +2192,7 @@ function pedidoRegistrado(pedido, ctx, aba) {
       <h2 class="sheet-title" id="sheetTitle" tabindex="-1">Pedido ${esc(pedido.codigo)} registrado!</h2>
       <p>${abriu ? 'Abrimos o WhatsApp com a mensagem pronta: é só tocar em <strong>Enviar</strong> para a Rita receber o pedido.' : 'Agora envie a mensagem para a Rita pelo WhatsApp.'} Ela responde para combinar o sinal de ${fmt(pedido.valor_sinal)}.</p>
       <div class="done-sum"><span>Total</span><strong>${fmt(pedido.total)}</strong><span>Retirada</span><strong>${esc(formatPickupDate(pedido.data_retirada, pedido.hora_retirada || ctx.pt))}</strong></div>
+      ${pixHTML(pedido.valor_sinal)}
       <div class="stack">
         <a class="btn btn-wa btn-block" href="${esc(waUrl)}" target="_blank" rel="noopener">${icon('wa')}${abriu ? 'Abrir o WhatsApp de novo' : 'Enviar pelo WhatsApp'}</a>
         <a class="btn btn-ghost btn-block" href="${esc(urlRecibo)}" target="_blank" rel="noopener">Ver recibo do pedido</a>
@@ -2115,6 +2200,21 @@ function pedidoRegistrado(pedido, ctx, aba) {
       </div></div></div>`;
   setTimeout(() => $('#sheetTitle')?.focus(), 30);
 }
+/* Pix do sinal (o mesmo de js/rita-api.js; repetido aqui para o plano B sem servidor) */
+const pix = () => U?.PIX || { chave: '06954518808', tipo: 'CPF', nome: 'Valdemir Schiarolli' };
+function pixHTML(valor) {
+  const p = pix();
+  return `<div class="pix-box"><span class="pix-t">${icon('coins')}Pague o sinal${valor ? ` de ${fmt(valor)}` : ''} por Pix</span>
+    <div class="pix-l"><span><small>Chave Pix (${esc(p.tipo)})</small><strong>${esc(p.chave)}</strong></span>
+      <button type="button" class="btn btn-ghost pix-copiar" data-copiar="${esc(p.chave)}">${icon('copy')}Copiar</button></div>
+    <span class="pix-n">${esc(p.nome)}</span>
+    <span class="pix-d">Depois, mande o comprovante no WhatsApp da Rita.</span></div>`;
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-copiar]'); if (!b) return;
+  try { await navigator.clipboard.writeText(b.dataset.copiar); toast('Chave Pix copiada'); }
+  catch (err) { prompt('Copie a chave Pix:', b.dataset.copiar); }
+});
 /* Plano B: se o servidor estiver fora do ar, a mensagem segue direto pelo WhatsApp */
 function sendDirect() {
   const name = $('#cName').value.trim(), pd = $('#cDate').value, pt = $('#cTime').value;
@@ -2126,8 +2226,10 @@ function sendDirect() {
     if (meta && it.kind === 'cake') m += `   _${meta.replace(/^[^,]+,\s*/, '')}_\n`;
     m += `   Qtd: ${l.qty} x ${fmt(p)} = ${fmt(l.qty * p)}\n`;
     if (l.notes && l.notes.trim()) m += `   _Obs:_ ${l.notes.trim()}\n`;
+    if (l.ref) m += `   _Imagem de referência:_ ${l.ref}\n`;
   });
   m += `\n----------------------------\n*Total:* ${fmt(total)}\n*Sinal mínimo (${pctTxt()}):* ${fmt(sinalDe(total))}`;
+  m += `\n\n*Pix (${pix().tipo}):* ${pix().chave}\n*Nome:* ${pix().nome}`;
   window.open(`https://wa.me/${CFG.whatsapp_numero}?text=${encodeURIComponent(m.replace(/\u00a0/g, ' '))}`, '_blank', 'noopener');
 }
 function openClearConfirm(opener) {
@@ -2224,7 +2326,12 @@ document.addEventListener('click', e => {
     }
     case 'cfg-add': {
       const s = sheetState;
-      addLine({ key: s.item.id + '-' + Date.now(), id: s.item.id, qty: s.qty, notes: $('#cfgNotes').value.trim() });
+      if (ehTopperItem(s.item) && !s.ref) {   // topper: a imagem de referência é obrigatória
+        $('#eRef').textContent = s.refEnviando ? 'Espere a imagem terminar de enviar.' : 'Envie a imagem de referência do topo.';
+        $('#eRef').classList.add('show'); $('#refField').scrollIntoView({ block: 'center', behavior: reduceMotion() ? 'auto' : 'smooth' });
+        break;
+      }
+      addLine({ key: s.item.id + '-' + Date.now(), id: s.item.id, qty: s.qty, notes: $('#cfgNotes').value.trim(), ref: s.ref || null });
       requestCloseSheet(); toast(`Adicionado: ${s.item.name}`, 'Ver sacola', () => { location.hash = '#sacola'; });
       break;
     }

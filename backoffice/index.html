@@ -415,6 +415,26 @@ a.chip { text-decoration: none; }
 .it-l { display: flex; justify-content: space-between; gap: 12px; font-weight: 600; }
 .it-d { font-size: 13px; color: var(--ink-2); margin-top: 2px; }
 .it-d b { color: var(--ink); }
+/* Imagem de referência do item (topper) */
+.it-ref { display: flex; gap: 12px; align-items: center; margin-top: 8px; padding: 10px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line); }
+.it-ref-img { flex: none; display: block; width: 88px; height: 88px; border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
+.it-ref-img img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .2s; }
+.it-ref-img:hover img { transform: scale(1.05); }
+.it-ref-acoes { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.it-ref-acoes > span { font-size: 12.5px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
+.it-ref.sem { justify-content: space-between; flex-wrap: wrap; border-style: dashed; border-color: rgba(var(--rose-rgb), .5); }
+.it-ref.sem > span { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; color: var(--rose-600); }
+.it-ref.sem > span .ic { width: 16px; height: 16px; }
+.topo-prev { display: flex; gap: 14px; align-items: center; margin-bottom: 14px; }
+.topo-prev img { width: 96px; height: 96px; object-fit: cover; border-radius: 14px; flex: none; box-shadow: 0 0 0 1px var(--line); }
+.topo-prev strong { display: block; font-size: 16px; }
+.topo-prev small { display: block; font-size: 13px; color: var(--ink-2); margin-top: 2px; }
+.ed-ref { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 13px; color: var(--ink-2); }
+.ed-ref img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; }
+.ed-ref span { flex: 1; }
+.hj-ref { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12.5px; font-weight: 600; color: var(--teal); text-decoration: none; }
+.hj-ref img { width: 40px; height: 40px; object-fit: cover; border-radius: 8px; }
+.st-sinal { margin: 0 0 14px; }
 .valores .lin { display: flex; justify-content: space-between; padding: 4px 0; font-weight: 500; }
 .valores .lin.tot { font-family: var(--font-display); font-size: 20px; font-weight: 700; border-top: 1px solid var(--line); margin-top: 6px; padding-top: 10px; }
 .valores .lin.saldo { color: var(--rose-600); font-weight: 600; }
