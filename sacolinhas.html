@@ -840,8 +840,11 @@ Para personalizarmos seu kit, preciso de algumas informacoes:
 
 (Lembrete: pedidos com no minimo 07 dias de antecedencia)`;
 
-  const url = `https://wa.me/${WPP_NUMBER}?text=${encodeURIComponent(message)}`;
-  window.open(url, '_blank');
+  // celular: abre direto o aplicativo; computador: WhatsApp Web (o wa.me passa pelo site whatsapp.com, que às vezes cai)
+  const celular = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+  const texto = encodeURIComponent(message);
+  if (celular) location.href = `whatsapp://send?phone=${WPP_NUMBER}&text=${texto}`;
+  else window.open(`https://web.whatsapp.com/send?phone=${WPP_NUMBER}&text=${texto}`, '_blank', 'noopener');
 });
 </script>
 

@@ -99,9 +99,29 @@ export function novaChave() {
   });
 }
 
+/** Celular ou tablet (inclui iPad, que se apresenta como Mac). */
+export const ehCelular = () => typeof navigator !== 'undefined'
+  && (/Android|iPhone|iPad|iPod|Mobile|Silk|Kindle|Opera Mini|IEMobile/i.test(navigator.userAgent || '') || (/Macintosh/.test(navigator.userAgent || '') && navigator.maxTouchPoints > 1));
+
+/**
+ * Link para conversar no WhatsApp com a mensagem pronta.
+ * Não usa o wa.me: ele passa pelo site whatsapp.com, que às vezes fica fora do ar
+ * ("Sorry, something went wrong") mesmo com o WhatsApp funcionando.
+ * Celular: abre direto o aplicativo. Computador: abre o WhatsApp Web.
+ */
 export function linkWhatsApp(numero, texto) {
-  return `https://wa.me/${String(numero).replace(/\D/g, '')}?text=${encodeURIComponent(texto || '')}`;
+  const n = String(numero || '').replace(/\D/g, ''), t = texto ? `&text=${encodeURIComponent(texto)}` : '';
+  return ehCelular() ? `whatsapp://send?phone=${n}${t}` : `https://web.whatsapp.com/send?phone=${n}${t}`;
 }
+/** Abre o link do WhatsApp: o aplicativo na própria aba (sem deixar aba vazia); o WhatsApp Web numa aba nova. */
+export function abrirWhatsApp(url) {
+  if (/^whatsapp:/i.test(url)) location.href = url;
+  else window.open(url, '_blank', 'noopener');
+}
+/** Atributos de um <a> para o link do WhatsApp (aba nova só para o WhatsApp Web). */
+export const alvoWhatsApp = url => /^whatsapp:/i.test(url) ? '' : 'target="_blank" rel="noopener"';
+/** Link da imagem que pode ir numa mensagem (no modo demonstração a imagem é um "data:" enorme, que quebra o link). */
+export const linkCompartilhavel = url => /^https?:\/\//i.test(String(url || '')) ? url : '(imagem anexada no pedido)';
 
 /** Endereço do recibo imprimível (recibo.html na raiz do site). */
 export function linkRecibo(token, baseSite) {
@@ -131,7 +151,7 @@ export function montarMensagemWhatsApp(pedido, urlRecibo) {
     l.push(`   Qtd: ${i.quantidade} x ${formatarPreco(i.preco_unitario)} = ${formatarPreco(i.subtotal)}`);
     const { texto, imagem } = separarReferencia(i.observacao);
     if (texto) l.push(`   _Obs:_ ${texto}`);
-    if (imagem) l.push(`   _Imagem de referência:_ ${imagem}`);
+    if (imagem) l.push(`   _Imagem de referência:_ ${linkCompartilhavel(imagem)}`);
   });
   if (p.observacao_cliente) l.push('', `*Observação:* ${p.observacao_cliente}`);
   l.push('', '----------------------------',
@@ -178,6 +198,8 @@ export function montarMensagemStatus(pedido, status, urlRecibo) {
  * aba.ir devolve false quando o navegador bloqueou a aba.
  */
 export function prepararAba() {
+  // no celular o WhatsApp é o aplicativo: abre da própria página (uma aba vazia ficaria para trás)
+  if (ehCelular()) return { ir(url) { if (!/^whatsapp:/i.test(url)) return false; location.href = url; return true; }, fechar() {} };
   let w = null;
   try { w = window.open('', '_blank'); } catch (e) { w = null; }
   if (w) {
@@ -505,7 +527,7 @@ export function criarApi(supabase, opcoes = {}) {
       }
     },
 
-    util: { formatarPreco, formatarPeso, formatarData, novaChave, linkWhatsApp, linkRecibo, montarMensagemWhatsApp, montarMensagemStatus, prepararAba, separarReferencia, juntarReferencia, ehTopper, PIX }
+    util: { formatarPreco, formatarPeso, formatarData, novaChave, linkWhatsApp, abrirWhatsApp, alvoWhatsApp, linkCompartilhavel, linkRecibo, montarMensagemWhatsApp, montarMensagemStatus, prepararAba, separarReferencia, juntarReferencia, ehTopper, PIX }
   };
 }
 

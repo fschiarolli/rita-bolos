@@ -462,6 +462,21 @@ const pct = () => Number(CFG.percentual_sinal ?? 50);
 const sinalDe = v => Math.round(v * pct()) / 100;
 const potes = n => `${n} ${n === 1 ? 'pote' : 'potes'}`;
 
+/* WhatsApp: no celular abre direto o aplicativo; no computador, o WhatsApp Web.
+   (O wa.me passa pelo site whatsapp.com, que às vezes cai com "Sorry, something went wrong".) Igual ao js/rita-api.js. */
+const ehCelular = () => /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle|Opera Mini|IEMobile/i.test(navigator.userAgent || '') || (/Macintosh/.test(navigator.userAgent || '') && navigator.maxTouchPoints > 1);
+const waLink = (numero, texto) => {
+  const n = String(numero || '').replace(/\D/g, ''), t = texto ? `&text=${encodeURIComponent(String(texto).replace(/\u00a0/g, ' '))}` : '';
+  return ehCelular() ? `whatsapp://send?phone=${n}${t}` : `https://web.whatsapp.com/send?phone=${n}${t}`;
+};
+const waAlvo = url => /^whatsapp:/i.test(url) ? '' : 'target="_blank" rel="noopener"';
+const abrirWa = url => { if (/^whatsapp:/i.test(url)) location.href = url; else window.open(url, '_blank', 'noopener'); };
+/** Liga os <a data-wa> fixos da página ao número da loja. */
+function ligarLinksWa(numero) {
+  const u = waLink(numero);
+  $$('a[data-wa]').forEach(a => { a.href = u; if (/^whatsapp:/i.test(u)) a.removeAttribute('target'); else { a.target = '_blank'; a.rel = 'noopener'; } });
+}
+
 /* ---------- desenho do pote (o mesmo do site), colorido pelo sabor ---------- */
 const OUT = 'rgba(58,31,20,.28)';
 function tone(hex, p) {
@@ -556,7 +571,7 @@ function aplicarDados(d) {
 /* ---------- desenho da página ---------- */
 function render() {
   // links de WhatsApp e do cardápio completo
-  $$('[data-wa]').forEach(a => { a.href = `https://wa.me/${String(CFG.whatsapp_numero).replace(/\D/g, '')}`; });
+  ligarLinksWa(CFG.whatsapp_numero);
   $$('[data-wa-txt]').forEach(s => { s.textContent = CFG.whatsapp_exibicao || ''; });
   $$('[data-cardapio]').forEach(a => { a.href = 'index.html' + (DEMO ? '?demo' : '') + (CAT ? `#cardapio/${CAT.slug}` : ''); });
   $('#passoSinal').textContent = `O pedido chega no WhatsApp da Rita e é confirmado com o sinal de ${pct().toLocaleString('pt-BR')}%.`;
@@ -584,7 +599,7 @@ function render() {
 
   if (!ITENS.length) {
     $('#listaSabores').outerHTML = `<div class="carga" id="listaSabores"><p>${CAT ? 'Nenhum sabor disponível no momento.' : 'O bolo no pote não está no cardápio agora.'}</p>
-      <a class="btn btn-wa" href="https://wa.me/${esc(CFG.whatsapp_numero)}" target="_blank" rel="noopener">${icon('wa')}Falar com a Rita</a></div>`;
+      <a class="btn btn-wa" href="${esc(waLink(CFG.whatsapp_numero))}" ${waAlvo(waLink(CFG.whatsapp_numero))}>${icon('wa')}Falar com a Rita</a></div>`;
   } else {
     $('#listaSabores').className = 'sabores';
     $('#listaSabores').innerHTML = ITENS.map(cartao).join('');
@@ -828,7 +843,7 @@ async function enviar() {
 }
 function registrado(pedido, aba) {
   const recibo = U.linkRecibo(pedido.token, CFG.url_site || undefined) + (DEMO ? '&demo' : '');
-  const waUrl = U.linkWhatsApp(pedido.loja?.whatsapp_numero || CFG.whatsapp_numero, U.montarMensagemWhatsApp(pedido, recibo));
+  const waUrl = waLink(pedido.loja?.whatsapp_numero || CFG.whatsapp_numero, U.montarMensagemWhatsApp(pedido, recibo));
   const abriu = !!aba?.ir(waUrl);
   const hora = String(pedido.hora_retirada || ret.hora).slice(0, 5);
   store(ULTIMO_KEY, JSON.stringify({ codigo: pedido.codigo, token: pedido.token, waUrl, recibo, total: pedido.total, data: pedido.data_retirada, hora, em: Date.now() }));
@@ -846,7 +861,7 @@ function registrado(pedido, aba) {
         <button type="button" class="btn btn-ghost" data-copiar="${esc(U.PIX.chave)}">Copiar</button></div>
       <span class="pix-n">${esc(U.PIX.nome)}</span></div>
     <div class="pilha">
-      <a class="btn btn-wa btn-block" href="${esc(waUrl)}" target="_blank" rel="noopener">${icon('wa')}${abriu ? 'Abrir o WhatsApp de novo' : 'Enviar pelo WhatsApp'}</a>
+      <a class="btn btn-wa btn-block" href="${esc(waUrl)}" ${waAlvo(waUrl)}>${icon('wa')}${abriu ? 'Abrir o WhatsApp de novo' : 'Enviar pelo WhatsApp'}</a>
       <a class="btn btn-ghost btn-block" href="${esc(recibo)}" target="_blank" rel="noopener">Ver recibo do pedido</a>
       <button type="button" class="btn btn-ghost btn-block" data-act="novo">Fazer outro pedido</button>
     </div></div>`;
@@ -861,7 +876,7 @@ function enviarDireto() {
   linhas().forEach((l, i) => { m += `\n${i + 1}. *${l.it.nome}*\n   Qtd: ${l.q} x ${fmt(l.unit)} = ${fmt(l.q * l.unit)}\n`; });
   if (obs) m += `\n*Observação:* ${obs}\n`;
   m += `\n----------------------------\n*Total:* ${fmt(tot)}\n*Sinal mínimo (${pct().toLocaleString('pt-BR')}%):* ${fmt(sinalDe(tot))}`;
-  window.open(`https://wa.me/${String(CFG.whatsapp_numero).replace(/\D/g, '')}?text=${encodeURIComponent(m.replace(/ /g, ' '))}`, '_blank', 'noopener');
+  abrirWa(waLink(CFG.whatsapp_numero, m));
 }
 
 /* ---------- início ---------- */
@@ -871,6 +886,7 @@ async function atualizarCardapio() {
   store(CACHE_KEY, JSON.stringify(d));
   aplicarDados(d);
 }
+ligarLinksWa(CFG.whatsapp_numero);
 $('#cNome').value = store(NAME_KEY) || '';
 $('#cFone').value = store(PHONE_KEY) || '';
 (async () => {

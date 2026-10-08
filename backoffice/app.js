@@ -5,7 +5,7 @@
  * Usa a mesma API do site (../js/rita-api.js).
  * Modo demonstração, sem banco: abra com ?demo
  */
-import { criarApi, conectar, formatarPreco as R, formatarPeso, formatarData, linkRecibo, linkWhatsApp, montarMensagemStatus, prepararAba,
+import { criarApi, conectar, formatarPreco as R, formatarPeso, formatarData, linkRecibo, linkWhatsApp, abrirWhatsApp, linkCompartilhavel, montarMensagemStatus, prepararAba,
   separarReferencia, juntarReferencia, ehTopper, PIX } from '../js/rita-api.js';
 import { AVATARES, avatarSVG, temAvatar } from './avatares.js';
 
@@ -457,7 +457,7 @@ function telaShell() {
         <form class="topo-busca" id="topoBusca" role="search">${ic('busca')}<label class="sr" for="topoBuscaIn">Buscar pedido</label>
           <input id="topoBuscaIn" type="search" placeholder="Buscar pedido: nome, telefone ou código" autocomplete="off"><kbd aria-hidden="true">/</kbd></form>
         <div class="topo-acts">
-          <button type="button" class="topo-bt" data-act="tema">${ic(temaAtual() === 'dark' ? 'sol' : 'lua')}</button>
+          <button type="button" class="topo-bt" data-act="tema" aria-haspopup="menu" aria-expanded="false">${ic(temaDe(temaAtual()).icone)}</button>
           <a class="topo-bt" data-tv href="${esc(urlQuadro())}" target="_blank" rel="noopener" aria-label="Abrir o quadro da equipe (TV)" title="Quadro da equipe (TV)">${ic('tv')}</a>
           <button type="button" class="topo-av" data-act="conta" aria-label="Minha conta" title="${esc(perfil.nome)}">${avatarHTML(perfil, 'data-eu')}</button>
         </div>
@@ -482,22 +482,79 @@ function telaShell() {
 }
 
 /* Tema claro/escuro: sem escolha segue o sistema; a escolha fica salva neste aparelho */
-const temaAtual = () => document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-function atualizarBotaoTema() {
-  const b = $('[data-act="tema"]'); if (!b) return;
-  const escuro = temaAtual() === 'dark';
-  b.innerHTML = ic(escuro ? 'sol' : 'lua');
-  b.setAttribute('aria-label', escuro ? 'Usar tema claro' : 'Usar tema escuro');
-  b.title = escuro ? 'Tema claro' : 'Tema escuro';
-  $('meta[name="theme-color"]')?.setAttribute('content', escuro ? '#120B08' : '#F8F2EA');
-}
-function alternarTema() {
-  const novo = temaAtual() === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', novo);
-  try { localStorage.setItem('ritabolos.tema', novo === 'dark' ? 'escuro' : 'claro'); } catch (e) { /* só nesta visita */ }
+/* ---- Temas: Automático (segue o aparelho), Claro, Escuro e Morango ----
+   As cores ficam no index.html (:root[data-theme="..."]). Para criar outro: um bloco de cores lá e uma linha aqui. */
+const TEMAS = [
+  { id: 'auto', nome: 'Automático', desc: 'Claro ou escuro, como o aparelho', attr: null },
+  { id: 'claro', nome: 'Claro', desc: 'Creme e chocolate', attr: 'light', meta: '#F8F2EA', icone: 'sol', amostra: ['#F8F2EA', '#FFFFFF', '#4A2A1C', '#2B7465'] },
+  { id: 'escuro', nome: 'Escuro', desc: 'Para pouca luz', attr: 'dark', meta: '#120B08', icone: 'lua', amostra: ['#120B08', '#1C130F', '#F2DCC6', '#8FD3BF'] },
+  { id: 'morango', nome: 'Morango', desc: 'Rosa suave e framboesa', attr: 'morango', meta: '#FCF0F3', icone: 'morango', amostra: ['#FCF0F3', '#FFFFFF', '#A8345C', '#2B7465'] }
+];
+const temaDe = id => TEMAS.find(t => t.id === id) || TEMAS[0];
+const temaEscolhido = () => { try { const t = localStorage.getItem('ritabolos.tema'); return TEMAS.some(x => x.id === t) ? t : 'auto'; } catch (e) { return 'auto'; } };
+/** Tema em uso agora: o automático vira claro ou escuro conforme o aparelho. */
+const temaAtual = () => { const t = temaEscolhido(); return t === 'auto' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'escuro' : 'claro') : t; };
+const amostraTema = t => t.id === 'auto' ? '<span class="tema-amostra auto" aria-hidden="true"></span>'
+  : `<span class="tema-amostra" aria-hidden="true" style="--a:${t.amostra[0]};--b:${t.amostra[1]};--c:${t.amostra[2]};--d:${t.amostra[3]}"></span>`;
+function aplicarTema(id) {
+  const t = temaDe(id);
+  if (t.attr) document.documentElement.setAttribute('data-theme', t.attr); else document.documentElement.removeAttribute('data-theme');
+  try { if (t.attr) localStorage.setItem('ritabolos.tema', t.id); else localStorage.removeItem('ritabolos.tema'); } catch (e) { /* só nesta visita */ }
   atualizarBotaoTema();
 }
+function atualizarBotaoTema() {
+  const atual = temaDe(temaAtual()), escolhido = temaDe(temaEscolhido());
+  $('meta[name="theme-color"]')?.setAttribute('content', atual.meta);
+  $$('[data-act="tema"]').forEach(b => {
+    b.innerHTML = ic(atual.icone);
+    b.title = `Tema: ${escolhido.nome}`;
+    b.setAttribute('aria-label', `Trocar o tema (agora: ${escolhido.nome})`);
+  });
+  $$('[data-tema]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.tema === escolhido.id)));
+}
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', atualizarBotaoTema);
+
+/* Menu de temas do botão da barra superior */
+function fecharMenuTema(devolverFoco) {
+  const menu = $('#temaMenu'); if (!menu) return;
+  menu.remove();
+  const b = $('.topo [data-act="tema"]'); b?.setAttribute('aria-expanded', 'false');
+  if (devolverFoco) b?.focus();
+}
+function abrirMenuTema(botao) {
+  if ($('#temaMenu')) { fecharMenuTema(true); return; }
+  const menu = document.createElement('div');
+  menu.id = 'temaMenu'; menu.className = 'tema-menu'; menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', 'Tema');
+  menu.innerHTML = `<p class="tema-menu-t" aria-hidden="true">Tema</p>${TEMAS.map(t => `<button type="button" role="menuitemradio" aria-checked="${t.id === temaEscolhido()}" data-tema="${t.id}">
+      ${amostraTema(t)}<span><strong>${esc(t.nome)}</strong><small>${esc(t.desc)}</small></span>${ic('ok')}</button>`).join('')}`;
+  document.body.appendChild(menu);
+  posicionarMenuTema();
+  botao.setAttribute('aria-haspopup', 'menu'); botao.setAttribute('aria-expanded', 'true');
+  (menu.querySelector('[aria-checked="true"]') || menu.querySelector('button')).focus();
+}
+/** Abaixo do botão, alinhado à direita (refeito se a janela mudar de tamanho: no celular a barra do navegador some ao rolar). */
+function posicionarMenuTema() {
+  const menu = $('#temaMenu'), b = $('.topo [data-act="tema"]'); if (!menu || !b) return;
+  const r = b.getBoundingClientRect();
+  menu.style.top = `${Math.round(r.bottom + 8)}px`;
+  menu.style.right = `${Math.max(8, Math.round(innerWidth - r.right))}px`;
+}
+document.addEventListener('click', e => {
+  const op = e.target.closest('[data-tema]');
+  if (op) { aplicarTema(op.dataset.tema); if (op.closest('#temaMenu')) fecharMenuTema(true); return; }
+  if ($('#temaMenu') && !e.target.closest('#temaMenu, [data-act="tema"]')) fecharMenuTema();
+});
+document.addEventListener('keydown', e => {
+  const menu = $('#temaMenu'); if (!menu) return;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); fecharMenuTema(true); return; }
+  if (e.key === 'Tab') { fecharMenuTema(); return; }
+  if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+    const ops = $$('button', menu), i = ops.indexOf(document.activeElement);
+    const n = e.key === 'Home' ? 0 : e.key === 'End' ? ops.length - 1 : (i + (e.key === 'ArrowDown' ? 1 : -1) + ops.length) % ops.length;
+    e.preventDefault(); ops[n].focus();
+  }
+}, true);
+addEventListener('resize', posicionarMenuTema);
 /* "/" leva para a busca da barra superior */
 document.addEventListener('keydown', e => {
   if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -512,7 +569,8 @@ function modalConta() {
     corpo: `<div class="user-box" style="display:flex;align-items:center;gap:12px;margin-bottom:18px"><button type="button" class="av-trocar" data-trocar-avatar aria-label="Trocar avatar" title="Trocar avatar">${avatarHTML(perfil, 'style="width:52px;height:52px;font-size:18px" data-eu')}<span class="av-lapis" aria-hidden="true">${ic('editar')}</span></button>
         <div style="min-width:0"><strong>${esc(perfil.nome)}</strong><small>${papelTxt()}${perfil.email ? ' · ' + esc(perfil.email) : ''}</small></div></div>
       <div style="display:grid;gap:10px">
-        <button type="button" class="btn ghost block" data-act="tema">${ic(temaAtual() === 'dark' ? 'sol' : 'lua')}${temaAtual() === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}</button>
+        <div><p class="secao-t" style="margin:0 0 8px" id="lblTema">Tema</p>
+          <div class="tema-grade" role="radiogroup" aria-labelledby="lblTema">${TEMAS.map(t => `<button type="button" class="tema-op" role="radio" aria-checked="${t.id === temaEscolhido()}" data-tema="${t.id}" title="${esc(t.desc)}">${amostraTema(t)}${esc(t.nome)}</button>`).join('')}</div></div>
         <a class="btn ghost block" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}Abrir o site</a>
         <div style="display:flex;gap:8px"><a class="btn ghost" style="flex:1" href="${esc(urlPote())}" target="_blank" rel="noopener">${ic('pote')}Página do bolo no pote</a>
           <button type="button" class="btn ghost" data-copiar-pote aria-label="Copiar o link da página do bolo no pote" title="Copiar link">${ic('copiar')}</button></div>
@@ -521,7 +579,6 @@ function modalConta() {
         <button type="button" class="btn danger block" data-sair>${ic('sair')}Sair</button>
       </div>`
   });
-  m.$('[data-act="tema"]').addEventListener('click', () => m.fechar());
   m.$('[data-trocar-avatar]').addEventListener('click', () => { m.fechar(); modalAvatar(); });
   m.$('[data-copiar-pote]').addEventListener('click', async () => {
     const url = new URL(urlPote(), location.href).href;
@@ -603,7 +660,7 @@ document.addEventListener('click', e => {
   switch (a.dataset.act) {
     case 'conta': modalConta(); break;
     case 'novo-pedido': modalNovoPedido(); break;
-    case 'tema': alternarTema(); break;
+    case 'tema': abrirMenuTema(a); break;
     case 'sair':
       confirmar('Sair da conta?', 'Você volta para a tela de entrada do backoffice.', { botao: 'Sair' })
         .then(ok => { if (ok) api.auth.sair().catch(() => {}); });
@@ -1483,7 +1540,7 @@ async function modalTopo(p, i) {
   const quando = `${formatarData(p.data_retirada)} (${dataCurta(p.data_retirada)})${p.hora_retirada ? ' às ' + hora(p.hora_retirada) : ''}`;
   const msg = [`Olá${ct.nome ? ', ' + ct.nome.trim().split(/\s+/)[0] : ''}! Tem um topo de bolo para fazer:`, '',
     `*Pedido:* ${p.codigo} (${p.cliente_nome})`, `*Tipo:* ${i.quantidade > 1 ? i.quantidade + '× ' : ''}${i.nome}`,
-    texto ? `*Tema / detalhes:* ${texto}` : null, `*Data:* ${quando}`, '', imagem ? `*Imagem de referência:* ${imagem}` : null]
+    texto ? `*Tema / detalhes:* ${texto}` : null, `*Data:* ${quando}`, '', imagem ? `*Imagem de referência:* ${linkCompartilhavel(imagem)}` : null]
     .filter(l => l !== null).join('\n');
   // a foto em si vai pelo "Compartilhar" do celular; o link vai na mensagem
   const arquivo = imagem && navigator.canShare ? fetch(imagem).then(r => r.blob()).then(b => new File([b], `topo-${p.codigo}.${/png/.test(b.type) ? 'png' : 'jpg'}`, { type: b.type || 'image/jpeg' })).catch(() => null) : Promise.resolve(null);
@@ -1501,7 +1558,7 @@ async function modalTopo(p, i) {
   m.$('[data-ok]').addEventListener('click', () => {
     const num = digitosTel(valDe(m, 'tpNum'));
     if (num.length < 10) { toast('Informe o WhatsApp com DDD de quem faz o topo.', { tipo: 'erro' }); m.$('#tpNum').focus(); return; }
-    window.open(linkWhatsApp('55' + num, valDe(m, 'tpMsg')), '_blank', 'noopener');   // ainda no clique, para o navegador não bloquear
+    abrirWhatsApp(linkWhatsApp('55' + num, valDe(m, 'tpMsg')));   // ainda no clique, para o navegador não bloquear
     lembrar(num); m.fechar();
   });
   m.$('[data-compartilhar]')?.addEventListener('click', async () => {
@@ -1744,7 +1801,7 @@ function avisoWa(m, p) {
   const aba = prepararAba(), url = linkWhatsApp(wa, msg);
   return {
     enviar() {
-      if (!aba.ir(url)) toast(`O navegador bloqueou o WhatsApp. Avise ${p.cliente_nome} por aqui:`, { acao: { rotulo: 'Abrir WhatsApp', fn: () => window.open(url, '_blank', 'noopener') } });
+      if (!aba.ir(url)) toast(`O navegador bloqueou o WhatsApp. Avise ${p.cliente_nome} por aqui:`, { acao: { rotulo: 'Abrir WhatsApp', fn: () => abrirWhatsApp(url) } });
     },
     cancelar() { aba.fechar(); }
   };
@@ -1803,7 +1860,7 @@ async function modalMensagem(p) {
   m.$('[data-ok]').addEventListener('click', () => {
     const txt = ta.value.trim();
     if (!txt) { toast('Escreva a mensagem antes de abrir o WhatsApp.', { tipo: 'erro' }); ta.focus(); return; }
-    window.open(linkWhatsApp(wa, txt), '_blank', 'noopener');   // ainda dentro do clique: o navegador não bloqueia
+    abrirWhatsApp(linkWhatsApp(wa, txt));   // ainda dentro do clique: o navegador não bloqueia
     m.fechar();
     toast(`WhatsApp aberto na conversa de ${nome}.`);
   });
