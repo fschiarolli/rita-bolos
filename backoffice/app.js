@@ -354,6 +354,7 @@ async function aposLogin() {
   if (!ehProdutor()) carregarAvisos().then(ok => { if (ok && perfil) ligarAvisos(); });
   if (!ehProdutor()) mapaKitsLoja();   // conteúdo dos kits já pronto para a gaveta e a impressão
   if (isAdmin()) badgeEstoque();
+  if (!ehProdutor() && confNiimbot().usar) { carregarNiimblue().catch(() => {}); reconectarNiimbot(); }
   if (!ehProdutor() && impressaoAuto().ligada) toast('Impressão automática ligada neste aparelho: pedidos confirmados saem na impressora.', { tempo: 6000 });
 }
 
@@ -473,6 +474,7 @@ function telaShell() {
         ${prod ? '' : `<form class="topo-busca" id="topoBusca" role="search">${ic('busca')}<label class="sr" for="topoBuscaIn">Buscar pedido</label>
           <input id="topoBuscaIn" type="search" placeholder="Buscar pedido: nome, telefone ou código" autocomplete="off"><kbd aria-hidden="true">/</kbd></form>`}
         <div class="topo-acts">
+          ${prod ? '' : `<button type="button" class="topo-bt nb-ind" data-act="niimbot" hidden>${ic('imprimir')}<span class="nb-ponto" aria-hidden="true"></span></button>`}
           ${prod ? '' : `<button type="button" class="topo-bt" data-act="avisos" aria-haspopup="dialog" aria-expanded="false" aria-label="Avisos" title="Avisos" hidden>${ic('sino')}<span class="topo-badge" data-badge-avisos hidden></span></button>`}
           <button type="button" class="topo-bt" data-act="tema" aria-haspopup="menu" aria-expanded="false">${ic(temaDe(temaAtual()).icone)}</button>
           ${prod ? '' : `<a class="topo-bt" data-tv href="${esc(urlQuadro())}" target="_blank" rel="noopener" aria-label="Abrir o quadro da equipe (TV)" title="Quadro da equipe (TV)">${ic('tv')}</a>`}
@@ -602,6 +604,17 @@ function modalConta() {
             <select class="sel" id="impFormato"><option value="etiqueta" ${impressaoAuto().formato !== 'pedido' ? 'selected' : ''}>Etiqueta para a caixa</option><option value="pedido" ${impressaoAuto().formato === 'pedido' ? 'selected' : ''}>Pedido completo</option></select>
             <button type="button" class="btn ghost sm" data-imp-teste>${ic('imprimir')}Testar</button></div>
           <p class="dica">Ligue só no computador da térmica, com o backoffice aberto. Para sair direto, sem a janela de impressão, abra o Chrome com <code>--kiosk-printing</code> e deixe a térmica como impressora padrão.</p></div>
+        <div class="imp-auto"><p class="secao-t" style="margin:4px 0 8px">Etiquetas na Niimbot (Bluetooth)</p>
+          ${inChk('nbUsar', 'Imprimir as etiquetas na Niimbot', confNiimbot().usar)}
+          <div class="nb-corpo" id="nbCorpo" ${confNiimbot().usar ? '' : 'hidden'}>
+            <div class="imp-linha"><label class="sr" for="nbTam">Tamanho da etiqueta</label>
+              <select class="sel" id="nbTam">${TAMANHOS_ETIQUETA.map(([v, t]) => `<option value="${v}" ${v === confNiimbot().tamanho ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+              <button type="button" class="btn ghost sm" data-nb-conectar>${niimbotConectada() ? 'Reconectar' : 'Conectar'}</button>
+              <button type="button" class="btn ghost sm" data-nb-teste>${ic('imprimir')}Testar</button></div>
+            <p class="nb-status">${ic('imprimir')}<span id="nbStatus">${niimbotConectada() ? `Conectada: ${esc(niim.nome)}` : 'Desconectada'}</span></p>
+            <div class="nb-previa" id="nbPrevia" aria-label="Prévia da etiqueta"></div>
+            <p class="dica">Vale para o botão Etiqueta do pedido e para a impressão automática (com "Etiqueta para a caixa"). Ligue a Niimbot, toque em Conectar e escolha a impressora na lista. Funciona no Chrome do computador e do Android (no iPhone, não).</p>
+          </div></div>
         <a class="btn ghost block" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}Abrir o site</a>
         <div style="display:flex;gap:8px"><a class="btn ghost" style="flex:1" href="${esc(urlPote())}" target="_blank" rel="noopener">${ic('pote')}Página do bolo no pote</a>
           <button type="button" class="btn ghost" data-copiar-pote aria-label="Copiar o link da página do bolo no pote" title="Copiar link">${ic('copiar')}</button></div>
@@ -617,12 +630,38 @@ function modalConta() {
   };
   m.$('#impAuto')?.addEventListener('change', salvarImp);
   m.$('#impFormato')?.addEventListener('change', () => salvarImpressaoAuto({ ...impressaoAuto(), formato: valDe(m, 'impFormato') }));
-  m.$('[data-imp-teste]')?.addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+  const pedidoDeTeste = async () => {
     const { pedidos } = await api.admin.pedidos.listar({ porPagina: 1, ordenarPor: 'criado_em', crescente: false });
     if (!pedidos.length) throw new Error('Ainda não há pedidos para usar no teste.');
-    const p = await api.admin.pedidos.obter(pedidos[0].id);
-    await (valDe(m, 'impFormato') === 'pedido' ? imprimirTermica(p) : imprimirEtiqueta(p));
+    return api.admin.pedidos.obter(pedidos[0].id);
+  };
+  m.$('[data-imp-teste]')?.addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    const p = await pedidoDeTeste();
+    await (valDe(m, 'impFormato') === 'pedido' ? imprimirTermica(p) : imprimirEtiquetaDoPedido(p));
   }));
+  // Niimbot: liga/desliga, tamanho, conectar, testar e a prévia da etiqueta
+  let pedidoPrevia = null;
+  const previa = async () => {
+    const box = m.$('#nbPrevia'); if (!box || box.closest('[hidden]')) return;
+    try { pedidoPrevia = pedidoPrevia || await pedidoDeTeste(); } catch (e) { box.textContent = 'A prévia aparece quando houver um pedido.'; return; }
+    const { W, H, pxmm } = medidasEtiqueta(niimbotConectada() ? niim.client.getModelMetadata() : null);
+    const c = canvasEtiqueta(pedidoPrevia, W, H, pxmm, await configLoja() || {});
+    const [wMm] = confNiimbot().tamanho.split('x').map(Number);
+    c.style.width = `${Math.min(280, wMm * 5.2)}px`; c.setAttribute('role', 'img'); c.setAttribute('aria-label', `Prévia da etiqueta do pedido ${pedidoPrevia.codigo}`);
+    box.replaceChildren(c);
+  };
+  m.$('#nbUsar')?.addEventListener('change', e => {
+    salvarConfNiimbot({ usar: e.target.checked });
+    m.$('#nbCorpo').hidden = !e.target.checked;
+    atualizarIndicadorNiimbot();
+    if (e.target.checked) { carregarNiimblue().catch(() => {}); previa(); }   // já deixa o módulo pronto para conectar
+  });
+  m.$('#nbTam')?.addEventListener('change', e => { salvarConfNiimbot({ tamanho: e.target.value }); previa(); });
+  m.$('[data-nb-conectar]')?.addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    await conectarNiimbot(); toast(`Niimbot conectada (${niim.nome}).`); previa();
+  }));
+  m.$('[data-nb-teste]')?.addEventListener('click', ev => ocupado(ev.currentTarget, async () => { await etiquetaNiimbot(pedidoPrevia || await pedidoDeTeste()); }));
+  if (confNiimbot().usar) { carregarNiimblue().catch(() => {}); previa(); }
   m.$('[data-copiar-pote]')?.addEventListener('click', async () => {
     const url = new URL(urlPote(), location.href).href;
     try { await navigator.clipboard.writeText(url); toast('Link da página do bolo no pote copiado. É só colar para o cliente.'); }
@@ -708,6 +747,10 @@ document.addEventListener('click', e => {
     case 'novo-pedido': modalNovoPedido(); break;
     case 'tema': abrirMenuTema(a); break;
     case 'avisos': abrirAvisos(a); break;
+    case 'niimbot':
+      if (niimbotConectada()) toast(`Niimbot conectada (${niim.nome}).`, { acao: { rotulo: 'Desconectar', fn: () => niim?.client?.disconnect().then(atualizarIndicadorNiimbot) } });
+      else ocupado(a, async () => { await conectarNiimbot(); toast(`Niimbot conectada (${niim.nome}).`); });
+      break;
     case 'sair':
       confirmar('Sair da conta?', 'Você volta para a tela de entrada do backoffice.', { botao: 'Sair' })
         .then(ok => { if (ok) api.auth.sair().catch(() => {}); });
@@ -1888,6 +1931,205 @@ async function imprimirEtiqueta(p) {
   return mandarParaTermica(html);
 }
 
+/* =========================================================
+   NIIMBOT (impressora de etiquetas por Bluetooth)
+   Usa a NiimBlueLib (código aberto, licença MIT: github.com/MultiMote/niimbluelib), que fala direto com
+   a impressora pelo Bluetooth do navegador, sem o aplicativo da Niimbot. Funciona no Chrome/Edge do
+   computador e no Chrome do Android; no iPhone o navegador não tem Bluetooth. A conexão vale enquanto o
+   backoffice está aberto (ao recarregar, tenta reconectar sozinho; se não der, avisa para tocar em Conectar).
+========================================================= */
+const NIIMBLUELIB_URL = 'https://cdn.jsdelivr.net/npm/@mmote/niimbluelib@0.47.0/dist/umd/niimbluelib.min.js';
+const TAMANHOS_ETIQUETA = [['50x30', '50 × 30 mm'], ['40x30', '40 × 30 mm'], ['50x20', '50 × 20 mm'], ['40x40', '40 × 40 mm'], ['50x50', '50 × 50 mm'],
+  ['30x20', '30 × 20 mm'], ['40x12', '40 × 12 mm (D11, D110)'], ['30x15', '30 × 15 mm (D11, D110)']];
+const CHAVE_NIIMBOT = 'ritabolos.niimbot';
+function confNiimbot() {
+  try { return { usar: false, tamanho: '50x30', ...JSON.parse(localStorage.getItem(CHAVE_NIIMBOT) || '{}') }; } catch (e) { return { usar: false, tamanho: '50x30' }; }
+}
+function salvarConfNiimbot(c) { try { localStorage.setItem(CHAVE_NIIMBOT, JSON.stringify({ ...confNiimbot(), ...c })); } catch (e) { /* sem armazenamento */ } }
+let niim = null;                       // { lib, client, nome }
+let filaNiimbot = Promise.resolve();
+const niimbotConectada = () => !!niim?.client?.isConnected();
+
+async function carregarNiimblue() {
+  if (window.niimbluelib) return window.niimbluelib;
+  await new Promise((ok, falha) => {
+    const s = document.createElement('script');
+    s.src = NIIMBLUELIB_URL; s.onload = ok;
+    s.onerror = () => { s.remove(); falha(new Error('Não deu para carregar o módulo da Niimbot. Confira a internet e tente de novo.')); };
+    document.head.appendChild(s);
+  });
+  return window.niimbluelib;
+}
+/** Conecta (abre a lista do Bluetooth para escolher a impressora). Precisa vir de um toque. device: impressora já autorizada antes. */
+async function conectarNiimbot(device) {
+  if (!navigator.bluetooth) throw new Error('Este navegador não conecta por Bluetooth. Use o Chrome (ou o Edge) no computador, ou o Chrome no Android. No iPhone não funciona.');
+  const lib = await carregarNiimblue();
+  try { await niim?.client?.disconnect(); } catch (e) { /* já estava desconectada */ }
+  const client = lib.instantiateClient('bluetooth');
+  client.on('disconnect', () => { if (niim?.client === client) atualizarIndicadorNiimbot(); });
+  let info;
+  try { info = await client.connect(device ? { authorizedDevice: device } : undefined); }
+  catch (e) {
+    if (/cancel/i.test(e?.message || '') || e?.name === 'NotFoundError') throw new Error('Nenhuma impressora escolhida. Ligue a Niimbot e toque em Conectar de novo.');
+    throw new Error(`Não deu para conectar na Niimbot: ${e?.message || e}`);
+  }
+  const meta = client.getModelMetadata();
+  niim = { lib, client, nome: meta?.model || info?.deviceName || 'Niimbot' };
+  salvarConfNiimbot({ ultimaImpressora: info?.deviceName || null });
+  atualizarIndicadorNiimbot();
+  return niim;
+}
+/** Ao abrir o backoffice: reconecta sozinho à impressora já autorizada, quando o navegador deixa. */
+async function reconectarNiimbot() {
+  const c = confNiimbot();
+  if (!c.usar || niimbotConectada() || !navigator.bluetooth?.getDevices) { atualizarIndicadorNiimbot(); return; }
+  try {
+    const devices = await navigator.bluetooth.getDevices();
+    const d = devices.find(x => x.name && x.name === c.ultimaImpressora) || devices.find(x => /^(B|D|H|K|A)\d/i.test(x.name || ''));
+    if (d) await conectarNiimbot(d);
+  } catch (e) { /* fica o aviso para conectar com um toque */ }
+  atualizarIndicadorNiimbot();
+}
+/** Botão na barra de cima: aparece quando a Niimbot está em uso neste aparelho (verde: conectada). */
+function atualizarIndicadorNiimbot() {
+  const usar = confNiimbot().usar, ok = niimbotConectada();
+  $$('[data-act="niimbot"]').forEach(b => {
+    b.hidden = !usar;
+    b.classList.toggle('on', ok); b.classList.toggle('off', !ok);
+    b.title = ok ? `Niimbot conectada (${niim.nome}). Toque para desconectar.` : 'Niimbot desconectada. Toque para conectar.';
+    b.setAttribute('aria-label', b.title);
+  });
+  const st = $('#nbStatus'); if (st) st.textContent = ok ? `Conectada: ${niim.nome}` : 'Desconectada';
+  const bt = $('[data-nb-conectar]'); if (bt) bt.textContent = ok ? 'Reconectar' : 'Conectar';
+}
+
+/** Desenha a etiqueta do pedido num canvas do tamanho da etiqueta (pxmm: pontos por mm da impressora), já em preto e branco. */
+function canvasEtiqueta(p, W, H, pxmm, loja = {}) {
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); g.fillStyle = '#000'; g.strokeStyle = '#000';
+  const M = Math.max(4, Math.round(pxmm * 1.2)), largura = W - 2 * M;   // margem de ~1,2 mm
+  const fonte = (px, peso = 800) => `${peso} ${Math.max(8, Math.round(px))}px Arial, "Helvetica Neue", Helvetica, sans-serif`;
+  const medir = (t, px, peso) => { g.font = fonte(px, peso); return g.measureText(t).width; };
+  const encaixar = (t, px, peso, max) => { while (px > 9 && medir(t, px, peso) > max) px -= 1; return px; };   // diminui a letra até caber
+  const cortar = (t, max) => { if (g.measureText(t).width <= max) return t; while (t.length > 1 && g.measureText(t + '…').width > max) t = t.slice(0, -1); return t.trimEnd() + '…'; };
+  const escrever = (t, x, y, alinhar = 'left') => { g.textAlign = alinhar; g.fillText(t, x, y); };
+  const quebrar = (texto, max, maxLinhas) => {   // quebra em palavras; se não couber tudo, a última linha termina com "…"
+    const palavras = texto.split(/\s+/).filter(Boolean), linhas = [];
+    let atual = '', i = 0;
+    for (; i < palavras.length; i++) {
+      const t = atual ? `${atual} ${palavras[i]}` : palavras[i];
+      if (g.measureText(t).width <= max || !atual) atual = t;
+      else { linhas.push(atual); atual = palavras[i]; if (linhas.length === maxLinhas) break; }
+    }
+    if (linhas.length < maxLinhas && atual) { linhas.push(atual); i = palavras.length; }
+    if (i < palavras.length) linhas[linhas.length - 1] = cortar(`${linhas[linhas.length - 1]} …`, max);
+    return linhas.map(l => cortar(l, max));
+  };
+  const iso = p.data_retirada || '';
+  const dia = iso ? `${DIAS[new Date(iso + 'T12:00:00Z').getUTCDay()].toUpperCase()} ${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '', horario = p.hora_retirada ? hora(p.hora_retirada) : '';
+  const quando = [dia, horario].filter(Boolean).join(' ');
+  const falta = Math.max(0, Number(p.saldo ?? (Number(p.total) - Number(p.valor_pago))));
+  const pagto = falta > 0 ? `FALTA ${R(falta).replace(/ /g, ' ')}` : 'PAGO';
+  const itens = (p.itens || []).map(i => `${i.quantidade}x ${i.nome}${i.peso_kg ? ' ' + formatarPeso(i.peso_kg) : ''}`).join(' · ');
+  const mm = v => v * pxmm;
+
+  if (H < mm(20)) {
+    // etiqueta estreita (D11, D110): código com o dia e o horário ao lado; o nome do cliente embaixo
+    let fCod = Math.min(mm(5.5), H * 0.46), fDia = fCod * 0.42, fHora = fCod * 0.62;
+    let bloco = Math.max(dia ? medir(dia, fDia, 800) : 0, horario ? medir(horario, fHora, 900) : 0);
+    if (bloco > largura * 0.44) { const k = largura * 0.44 / bloco; fDia *= k; fHora *= k; bloco *= k; }
+    fCod = encaixar(p.codigo, fCod, 900, largura - bloco - mm(1.5));
+    const topo = M * 0.6, base = topo + Math.max(fCod * 0.78, (dia ? fDia * 0.8 + mm(0.5) : 0) + (horario ? fHora * 0.78 : 0));
+    g.font = fonte(fCod, 900); escrever(p.codigo, M, base);
+    if (dia) { g.font = fonte(fDia, 800); escrever(dia, W - M, horario ? topo + fDia * 0.8 : base, 'right'); }
+    if (horario) { g.font = fonte(fHora, 900); escrever(horario, W - M, base, 'right'); }
+    const fN = encaixar(p.cliente_nome || '', Math.min(mm(4.2), (H - base - M * 0.6) * 0.95), 800, largura);
+    g.font = fonte(fN, 800); escrever(cortar(p.cliente_nome || '', largura), M, base + mm(0.5) + fN * 0.8);
+  } else {
+    // código grande; à direita, o dia em cima e o horário embaixo; nome do cliente; itens; pagamento no rodapé
+    let fDia = mm(3.1), fHora = mm(4.6);
+    let blocoQ = Math.max(dia ? medir(dia, fDia, 800) : 0, horario ? medir(horario, fHora, 900) : 0);
+    if (blocoQ > largura * 0.44) { const k = largura * 0.44 / blocoQ; fDia *= k; fHora *= k; blocoQ *= k; }   // etiqueta estreita: o código continua grande
+    const fCod = encaixar(p.codigo, mm(6.2), 900, largura - blocoQ - mm(2));
+    const topo = M, base = topo + Math.max(fCod * 0.78, (dia ? fDia * 0.8 + mm(0.8) : 0) + (horario ? fHora * 0.78 : 0));
+    g.font = fonte(fCod, 900); escrever(p.codigo, M, base);
+    if (dia) { g.font = fonte(fDia, 800); escrever(dia, W - M, horario ? topo + fDia * 0.8 : base, 'right'); }
+    if (horario) { g.font = fonte(fHora, 900); escrever(horario, W - M, base, 'right'); }
+    let y = base + mm(1.4);
+    g.lineWidth = Math.max(2, Math.round(pxmm * 0.3)); g.beginPath(); g.moveTo(M, y); g.lineTo(W - M, y); g.stroke();
+    const fN = encaixar(p.cliente_nome || '', mm(4.2), 800, largura);
+    y += mm(1.2) + fN * 0.8; g.font = fonte(fN, 800); escrever(cortar(p.cliente_nome || '', largura), M, y);
+    const fP = mm(3.4), rodape = H - M;   // linha do pagamento, colada embaixo
+    const fI = mm(2.8), alturaLinha = fI * 1.2, livre = rodape - fP - mm(1) - y;
+    const nLinhas = Math.max(0, Math.floor(livre / alturaLinha));
+    if (nLinhas && itens) {
+      g.font = fonte(fI, 700);
+      quebrar(itens, largura, nLinhas).forEach((l, i) => escrever(l, M, y + mm(0.6) + (i + 1) * alturaLinha - fI * 0.2));
+    }
+    const fPg = encaixar(pagto, fP, 900, largura * 0.62);
+    g.font = fonte(fPg, 900); escrever(pagto, W - M, rodape, 'right');
+    const nomeLoja = loja.nome_loja || 'Rita Bolos', livreLoja = largura - medir(pagto, fPg, 900) - mm(2);
+    if (medir(nomeLoja, mm(2.4), 700) <= livreLoja) { g.font = fonte(mm(2.4), 700); escrever(nomeLoja, M, rodape); }   // só se couber inteiro
+  }
+  // preto e branco "duro": a impressora não tem cinza, e a borda suave das letras sairia borrada
+  const img = g.getImageData(0, 0, W, H), d = img.data;
+  for (let i = 0; i < d.length; i += 4) { const preto = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114 < 150; d[i] = d[i + 1] = d[i + 2] = preto ? 0 : 255; d[i + 3] = 255; }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+/** Tamanho da etiqueta em pontos para a impressora conectada (ou 203 dpi, para a prévia). */
+function medidasEtiqueta(meta) {
+  const [wMm, hMm] = confNiimbot().tamanho.split('x').map(Number), dpi = meta?.dpi || 203, pxmm = dpi / 25.4;
+  let W = Math.round(wMm * pxmm), H = Math.round(hMm * pxmm);
+  // a cabeça de impressão limita a largura (B1: 48 mm) ou, nas D11/D110 (imprimem de lado), a altura
+  if (meta?.printheadPixels) { if ((meta.printDirection || 'top') === 'top') W = Math.min(W, meta.printheadPixels); else H = Math.min(H, meta.printheadPixels); }
+  return { W, H, pxmm };
+}
+async function imprimirNaNiimbot(p, quantidade = 1) {
+  const { lib, client } = niim;
+  const meta = client.getModelMetadata() || {};
+  const { W, H, pxmm } = medidasEtiqueta(meta);
+  const canvas = canvasEtiqueta(p, W, H, pxmm, await configLoja() || {});
+  const direcao = meta.printDirection || 'top';
+  const encoded = lib.ImageEncoder.encodeCanvas(canvas, lib.PageColorType.SingleColor, direcao);
+  const tarefa = client.getPrintTaskType() || (direcao === 'left' ? 'D110' : 'B1');
+  const task = client.protocol.newPrintTask(tarefa, {
+    totalPages: quantidade, density: meta.densityDefault || 3, labelType: lib.LabelType.WithGaps, statusPollIntervalMs: 100, statusTimeoutMs: 8000
+  });
+  try {
+    await task.printInit();
+    await task.printPage(encoded, quantidade);
+    await task.waitForPageFinished();
+    await task.waitForFinished();
+  } finally {
+    await task.printEnd().catch(() => {});
+  }
+}
+/**
+ * Etiqueta do pedido na Niimbot. Num toque (botão Etiqueta, Testar), conecta se precisar.
+ * Na impressão automática não dá para abrir a lista do Bluetooth sem um toque: avisa com o botão para conectar.
+ */
+function etiquetaNiimbot(p, { automatico = false } = {}) {
+  const tarefa = filaNiimbot.then(async () => {
+    if (!niimbotConectada()) {
+      if (automatico) {
+        toast(`A etiqueta do pedido ${p.codigo} não saiu: a Niimbot está desconectada.`, { tipo: 'erro', tempo: 20000,
+          acao: { rotulo: 'Conectar e imprimir', fn: () => etiquetaNiimbot(p).catch(erroToast) } });
+        return false;
+      }
+      await conectarNiimbot();
+    }
+    await imprimirNaNiimbot(p);
+    toast(`Etiqueta do pedido ${p.codigo} impressa na Niimbot.`);
+    return true;
+  });
+  filaNiimbot = tarefa.catch(() => {});
+  return tarefa.catch(e => { throw new Error(/print|paper|lid|cover/i.test(e?.message || '') ? `A Niimbot não imprimiu (${e.message}). Confira se a tampa está fechada e se tem etiqueta.` : e?.message || String(e)); });
+}
+/** Botão "Etiqueta": na Niimbot, se estiver em uso neste aparelho; senão, na térmica de 80 mm. */
+const imprimirEtiquetaDoPedido = (p, opcoes) => (confNiimbot().usar ? etiquetaNiimbot(p, opcoes) : imprimirEtiqueta(p));
+
 /* ---- Impressão automática: cada pedido que vira "Confirmado" sai na térmica deste aparelho ----
    Fica ligada só no computador da impressora (Minha conta). Sem a janela de impressão, só com o
    Chrome aberto com --kiosk-printing (imprime direto na impressora padrão). */
@@ -1907,6 +2149,9 @@ function jaImpresso(id, marcar) {
 async function imprimirSeConfirmado(pedido) {
   const cfg = impressaoAuto();
   if (!cfg.ligada || ehProdutor() || pedido?.status !== 'confirmado' || !pedido.id) return;
+  const naNiimbot = cfg.formato !== 'pedido' && confNiimbot().usar;
+  // etiqueta na Niimbot com várias abas abertas: a aba que está conectada imprime primeiro
+  if (naNiimbot && !niimbotConectada()) await new Promise(r => setTimeout(r, 2500));
   // várias abas abertas neste computador: só uma imprime
   const fazer = async () => {
     if (jaImpresso(pedido.id)) return;
@@ -1916,6 +2161,7 @@ async function imprimirSeConfirmado(pedido) {
     const conf = [...(p.historico || [])].reverse().find(h => h.status_novo === 'confirmado');
     if (!conf || Date.now() - new Date(conf.alterado_em).getTime() > 10 * 60e3) return;
     jaImpresso(p.id, true);
+    if (naNiimbot) { await etiquetaNiimbot(p, { automatico: true }); return; }
     toast(`Imprimindo ${cfg.formato === 'pedido' ? 'o pedido' : 'a etiqueta do pedido'} ${p.codigo}…`);
     await (cfg.formato === 'pedido' ? imprimirTermica(p) : imprimirEtiqueta(p));
   };
@@ -2041,7 +2287,7 @@ document.addEventListener('click', async e => {
     case 'pagar': modalPagamento(p); break;
     case 'prejuizo': modalPrejuizo(p); break;
     case 'termica': imprimirTermica(p); break;
-    case 'etiqueta': imprimirEtiqueta(p); break;
+    case 'etiqueta': ocupado(b, () => imprimirEtiquetaDoPedido(p)); break;
     case 'topo': { const i = p.itens.find(x => String(x.id) === b.dataset.item); if (i) modalTopo(p, i); break; }
     case 'topo-novo': { const i = p.itens.find(x => String(x.id) === b.dataset.item); if (i) novoTopoDoItem(p, i); break; }
     case 'topo-ver': abrirTopo(b.dataset.id, () => toposDaGaveta(pedidoAtual)); break;

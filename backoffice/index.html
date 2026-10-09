@@ -840,6 +840,17 @@ a.chip { text-decoration: none; }
 .imp-auto .dica { font-size: 12px; line-height: 1.45; color: var(--ink-3); margin: 0; }
 .imp-auto code { background: var(--surface); padding: 1px 5px; border-radius: 6px; font-family: var(--font-num); font-size: 11.5px; }
 
+/* ---------- Niimbot (Minha conta e barra de cima) ---------- */
+.nb-corpo[hidden] { display: none; }
+.nb-corpo { margin-top: 8px; }
+.nb-status { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.nb-status .ic { width: 16px; height: 16px; }
+.nb-previa { display: flex; justify-content: center; padding: 10px; margin-bottom: 8px; border-radius: var(--r-sm); background: var(--surface); border: 1px dashed var(--line-2); font-size: 12.5px; color: var(--ink-3); }
+.nb-previa canvas { display: block; height: auto; max-width: 100%; border-radius: 6px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .18), 0 2px 8px rgba(0, 0, 0, .12); image-rendering: pixelated; }
+.nb-ind .nb-ponto { position: absolute; right: 6px; bottom: 6px; width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 2px var(--surface); }
+.nb-ind.on .nb-ponto { background: var(--teal); }
+.nb-ind.off .nb-ponto { background: var(--rose-600); }
+
 /* ---------- Avisos (sino da barra de cima) ---------- */
 .topo-bt[hidden] { display: none; }
 .topo-badge { position: absolute; top: 3px; right: 3px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; display: grid; place-items: center; background: var(--rose-600); color: #fff; font-size: 10.5px; font-weight: 700; line-height: 1; box-shadow: 0 0 0 2px var(--surface); }
