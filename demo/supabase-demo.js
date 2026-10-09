@@ -117,9 +117,11 @@ export function criarSupabaseDemo(opcoes = {}) {
     window.addEventListener('storage', e => {
       if (e.key !== CHAVE || !e.newValue) return;
       const antes = new Set(db.pedidos.map(p => p.id)), toposAntes = JSON.stringify(db.topos_pedidos || []);
+      const statusAntes = new Map(db.pedidos.map(p => [p.id, p.status]));
       const avisosAntes = new Set((db.notificacoes || []).map(n => n.id)), vistosAntes = (db.notificacoes || []).filter(n => n.lida_em).length;
       db = JSON.parse(e.newValue);
       db.pedidos.filter(p => !antes.has(p.id)).forEach(p => emitir('INSERT', p));
+      db.pedidos.filter(p => antes.has(p.id) && statusAntes.get(p.id) !== p.status).forEach(p => emitir('UPDATE', p));   // status mudou noutra aba
       if (JSON.stringify(db.topos_pedidos || []) !== toposAntes) emitir('UPDATE', db.topos_pedidos?.[0] || {}, null, 'topos_pedidos');
       (db.notificacoes || []).filter(n => !avisosAntes.has(n.id)).forEach(n => emitir('INSERT', n, null, 'notificacoes'));
       if ((db.notificacoes || []).filter(n => n.lida_em).length !== vistosAntes) emitir('UPDATE', {}, null, 'notificacoes');

@@ -125,6 +125,21 @@ body.cupom .t.total { font-size: 16px; }
 body.cupom .t.sinal { padding: 4px 0; background: none; }
 body.cupom .bloco { font-size: 11.5px; padding: 6px 0; background: none; border-radius: 0; }
 body.cupom .bloco.aviso { border: 1px dashed #000; padding: 6px; }
+.det.kit { color: var(--ink); }
+/* Na térmica não existe cinza: texto claro, fino ou pequeno e linha pontilhada saem falhados.
+   No cupom impresso: tudo preto, em negrito, nada menor que 13 px e linhas cheias. */
+@media print {
+  body.cupom .recibo, body.cupom .recibo * { color: #000 !important; background: none !important; box-shadow: none !important; }
+  body.cupom .recibo { font-family: Tahoma, Verdana, "Segoe UI", Arial, sans-serif; font-size: 14px; font-weight: 700; }
+  body.cupom .recibo b, body.cupom .recibo strong, body.cupom .recibo h1, body.cupom .recibo h2, body.cupom .item-l .v { font-weight: 900; }
+  body.cupom .meta div, body.cupom .det, body.cupom .bloco, body.cupom .t, body.cupom .rodape p, body.cupom .selo { font-size: 13px; }
+  body.cupom .item-l { font-size: 14.5px; }
+  body.cupom .t.total { font-size: 18px; }
+  body.cupom .meta div { border-bottom: 1px solid #000; }
+  body.cupom .item { border-bottom: 1px solid #000; }
+  body.cupom .meta .retirada { border-top: 2px solid #000; border-bottom: 2px solid #000; }
+  body.cupom .bloco.aviso { border: 2px solid #000; }
+}
 .det.ref img { display: block; width: 110px; height: 110px; object-fit: cover; border-radius: 10px; margin-top: 6px; border: 1px solid rgba(0,0,0,.1); }
 .bloco.pix b { font-size: 1.15em; letter-spacing: .03em; }
 @media print { .det.ref img { width: 90px; height: 90px; } body.cupom .det.ref img { display: none; } }
@@ -166,7 +181,7 @@ body.cupom .bloco.aviso { border: 1px dashed #000; padding: 6px; }
 </main>
 
 <script type="module">
-import { conectar, formatarPreco as R, formatarPeso, formatarData, separarReferencia, PIX, pixDe } from './js/rita-api.js';
+import { conectar, formatarPreco as R, formatarPeso, formatarData, separarReferencia, PIX, pixDe, mapaKits, achatarCardapio, conteudoKit } from './js/rita-api.js';
 
 const LOGO_DEMO = null;
 const PEDIDO_DEMO = {
@@ -194,7 +209,7 @@ function estado(titulo, texto) {
   area.innerHTML = `<div class="estado"><h1>${esc(titulo)}</h1><p>${esc(texto)}</p></div>`;
 }
 
-function render(p, { urlLogo, interno, mostrarInterno, pix }) {
+function render(p, { urlLogo, interno, mostrarInterno, pix, kits }) {
   const pct = Number(p.percentual_sinal ?? 50).toLocaleString('pt-BR');
   const itens = (p.itens || []).map((i, n) => {
     const det = [];
@@ -202,6 +217,8 @@ function render(p, { urlLogo, interno, mostrarInterno, pix }) {
     if (i.massa) det.push(`<div class="det"><strong>Massa:</strong> ${esc(i.massa)}</div>`);
     if (i.formato) det.push(`<div class="det"><strong>Formato:</strong> ${esc(i.formato)}</div>`);
     if (i.segundo_recheio) det.push(`<div class="det"><strong>2º recheio:</strong> ${esc(i.segundo_recheio)}</div>`);
+    const kit = conteudoKit(i, kits);   // o que vem no kit (descrição do produto no cardápio)
+    if (kit) det.push(`<div class="det kit"><strong>Vem no kit:</strong> ${esc(kit)}</div>`);
     if (i.faixa_preco) det.push(`<div class="det"><strong>Faixa de preço:</strong> ${esc(i.faixa_preco)}</div>`);
     det.push(`<div class="det">Quantidade: ${i.quantidade} × ${R(i.preco_unitario)}</div>`);
     const obs = separarReferencia(i.observacao);
@@ -302,18 +319,23 @@ async function iniciar() {
   }
 
   try {
-    let pedido, interno = false, cfg;
-    // o Pix vem das configurações da loja (Ajustes > Loja): para o cliente, junto com o cardápio público
+    let pedido, interno = false, cfg, kits;
+    // o Pix vem das configurações da loja (Ajustes > Loja) e o conteúdo dos kits, do cardápio: para o cliente, do cardápio público
     if (id) {
       const perfil = await api.auth.perfil();
       if (!perfil) { estado('Entre no backoffice', 'Este recibo é da área da equipe. Faça login no backoffice e abra o pedido de novo.'); return; }
-      [pedido, cfg] = await Promise.all([api.admin.pedidos.obter(id), api.admin.configuracoes.obter().catch(() => null)]);
+      let prods;
+      [pedido, cfg, prods] = await Promise.all([api.admin.pedidos.obter(id), api.admin.configuracoes.obter().catch(() => null), api.admin.produtos.listarCompleto().catch(() => [])]);
+      kits = mapaKits(prods);
       interno = true;
     } else {
-      [pedido, cfg] = await Promise.all([api.pedidos.consultar(token), api.cardapio.obter().then(c => c?.configuracoes || null).catch(() => null)]);
+      let cardapio;
+      [pedido, cardapio] = await Promise.all([api.pedidos.consultar(token), api.cardapio.obter().catch(() => null)]);
+      cfg = cardapio?.configuracoes || null;
+      kits = mapaKits(achatarCardapio(cardapio));
     }
     if (!pedido) { estado('Pedido não encontrado', 'Confira se o link está completo ou fale com a Rita pelo WhatsApp.'); return; }
-    const opts = { urlLogo: api.urlImagem(pedido.loja?.logo_path), interno, mostrarInterno: false, pix: pixDe(cfg) };
+    const opts = { urlLogo: api.urlImagem(pedido.loja?.logo_path), interno, mostrarInterno: false, pix: pixDe(cfg), kits };
     render(pedido, opts); configurarBarra(pedido, opts);
     if (qs.has('imprimir')) setTimeout(() => window.print(), 400);
   } catch (e) {

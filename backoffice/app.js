@@ -6,7 +6,7 @@
  * Modo demonstração, sem banco: abra com ?demo
  */
 import { criarApi, conectar, formatarPreco as R, formatarPeso, formatarData, linkRecibo, linkWhatsApp, abrirWhatsApp, linkCompartilhavel, montarMensagemStatus, prepararAba,
-  separarReferencia, juntarReferencia, ehTopper, pixDe, textoPix } from '../js/rita-api.js';
+  separarReferencia, juntarReferencia, ehTopper, pixDe, textoPix, mapaKits, achatarCardapio, conteudoKit } from '../js/rita-api.js';
 import { AVATARES, avatarSVG, temAvatar } from './avatares.js';
 
 const DEMO = new URLSearchParams(location.search).has('demo');
@@ -352,6 +352,8 @@ async function aposLogin() {
   // topos e avisos: só ligam o tempo real se já existirem no banco (sql/topos.sql)
   if (podeTopos()) atualizarBadgeTopos().then(ok => { if (ok && perfil) ligarTempoRealTopos(); });
   if (!ehProdutor()) carregarAvisos().then(ok => { if (ok && perfil) ligarAvisos(); });
+  if (!ehProdutor()) mapaKitsLoja();   // conteúdo dos kits já pronto para a gaveta e a impressão
+  if (!ehProdutor() && impressaoAuto().ligada) toast('Impressão automática ligada neste aparelho: pedidos confirmados saem na impressora.', { tempo: 6000 });
 }
 
 function modalNovaSenha(titulo = 'Criar nova senha') {
@@ -592,7 +594,13 @@ function modalConta() {
       <div style="display:grid;gap:10px">
         <div><p class="secao-t" style="margin:0 0 8px" id="lblTema">Tema</p>
           <div class="tema-grade" role="radiogroup" aria-labelledby="lblTema">${TEMAS.map(t => `<button type="button" class="tema-op" role="radio" aria-checked="${t.id === temaEscolhido()}" data-tema="${t.id}" title="${esc(t.desc)}">${amostraTema(t)}${esc(t.nome)}</button>`).join('')}</div></div>
-        ${ehProdutor() ? '' : `<a class="btn ghost block" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}Abrir o site</a>
+        ${ehProdutor() ? '' : `<div class="imp-auto"><p class="secao-t" style="margin:4px 0 8px">Impressora deste aparelho</p>
+          ${inChk('impAuto', 'Imprimir sozinho cada pedido confirmado', impressaoAuto().ligada)}
+          <div class="imp-linha"><label class="sr" for="impFormato">O que imprimir</label>
+            <select class="sel" id="impFormato"><option value="etiqueta" ${impressaoAuto().formato !== 'pedido' ? 'selected' : ''}>Etiqueta para a caixa</option><option value="pedido" ${impressaoAuto().formato === 'pedido' ? 'selected' : ''}>Pedido completo</option></select>
+            <button type="button" class="btn ghost sm" data-imp-teste>${ic('imprimir')}Testar</button></div>
+          <p class="dica">Ligue só no computador da térmica, com o backoffice aberto. Para sair direto, sem a janela de impressão, abra o Chrome com <code>--kiosk-printing</code> e deixe a térmica como impressora padrão.</p></div>
+        <a class="btn ghost block" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}Abrir o site</a>
         <div style="display:flex;gap:8px"><a class="btn ghost" style="flex:1" href="${esc(urlPote())}" target="_blank" rel="noopener">${ic('pote')}Página do bolo no pote</a>
           <button type="button" class="btn ghost" data-copiar-pote aria-label="Copiar o link da página do bolo no pote" title="Copiar link">${ic('copiar')}</button></div>
         <a class="btn ghost block" href="${esc(urlQuadro())}" target="_blank" rel="noopener">${ic('tv')}Quadro da equipe (TV)</a>`}
@@ -601,6 +609,18 @@ function modalConta() {
       </div>`
   });
   m.$('[data-trocar-avatar]').addEventListener('click', () => { m.fechar(); modalAvatar(); });
+  const salvarImp = () => {
+    salvarImpressaoAuto({ ligada: chkDe(m, 'impAuto'), formato: valDe(m, 'impFormato') || 'etiqueta' });
+    if (chkDe(m, 'impAuto')) toast('Impressão automática ligada neste aparelho: cada pedido confirmado sai na impressora.');
+  };
+  m.$('#impAuto')?.addEventListener('change', salvarImp);
+  m.$('#impFormato')?.addEventListener('change', () => salvarImpressaoAuto({ ...impressaoAuto(), formato: valDe(m, 'impFormato') }));
+  m.$('[data-imp-teste]')?.addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    const { pedidos } = await api.admin.pedidos.listar({ porPagina: 1, ordenarPor: 'criado_em', crescente: false });
+    if (!pedidos.length) throw new Error('Ainda não há pedidos para usar no teste.');
+    const p = await api.admin.pedidos.obter(pedidos[0].id);
+    await (valDe(m, 'impFormato') === 'pedido' ? imprimirTermica(p) : imprimirEtiqueta(p));
+  }));
   m.$('[data-copiar-pote]')?.addEventListener('click', async () => {
     const url = new URL(urlPote(), location.href).href;
     try { await navigator.clipboard.writeText(url); toast('Link da página do bolo no pote copiado. É só colar para o cliente.'); }
@@ -699,6 +719,7 @@ let recarga = null;
 function ligarTempoReal() {
   pararTempoReal?.();
   pararTempoReal = api.admin.pedidos.aoMudar(({ tipo, pedido }) => {
+    if (tipo !== 'DELETE' && pedido?.status === 'confirmado') imprimirSeConfirmado(pedido).catch(erroToast);
     if (tipo === 'INSERT' && pedido?.origem === 'site') {
       tocarAviso();
       toast(`Novo pedido ${pedido.codigo || ''} de ${pedido.cliente_nome || 'cliente'}`, { tipo: 'novo', acao: { rotulo: 'Ver', fn: () => verPedido(pedido.id) }, tempo: 12000 });
@@ -1595,38 +1616,58 @@ async function modalTopo(p, i) {
   });
 }
 
-/* ---- Impressão na térmica (bobina de 80 mm, 72 mm de área de impressão) ---- */
+/* ---- Conteúdo dos kits: a descrição do produto no Cardápio (o pedido guarda só o nome do kit) ---- */
+let kitsCache = null;
+async function mapaKitsLoja() {
+  if (kitsCache && Date.now() - kitsCache.em < 5 * 60e3) return kitsCache.mapa;
+  let mapa;
+  try { mapa = mapaKits(await api.admin.produtos.listarCompleto()); }   // inclui kits que saíram do site
+  catch (e) { try { mapa = mapaKits(achatarCardapio(await carregarCardapioAtivo())); } catch (e2) { mapa = kitsCache?.mapa || new Map(); } }
+  kitsCache = { em: Date.now(), mapa };
+  return mapa;
+}
+const kitDoItem = i => conteudoKit(i, kitsCache?.mapa);
+
+/* ---- Impressão na térmica (bobina de 80 mm, 72 mm de área de impressão) ----
+   A térmica não tem tons de cinza (203 dpi): letra fina ou pequena, cinza e linha pontilhada saem
+   falhadas. Por isso: preto puro, tudo em negrito, nada menor que 13 px, Tahoma/Verdana (feitas para
+   baixa resolução) e linhas cheias. */
+const CSS_TERMICA = `
+    @page { size: 80mm auto; margin: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; color: #000 !important; }
+    html, body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { width: 80mm; padding: 3mm 4mm 8mm; font: 700 14px/1.35 Tahoma, Verdana, "Segoe UI", Arial, sans-serif; }
+    b, strong { font-weight: 900; }`;
 async function imprimirTermica(p) {
   const cfg = await configLoja(), loja = cfg || {}, pix = pixDe(cfg);
+  await mapaKitsLoja();
   const pct = Number(p.percentual_sinal ?? 50).toLocaleString('pt-BR');
   const falta = Math.max(0, Number(p.saldo ?? (p.total - p.valor_pago)));
   const l = (a, b, cls = '') => `<div class="l ${cls}"><span>${a}</span><span>${b}</span></div>`;
   const itens = p.itens.map(i => {
     const { texto, imagem } = separarReferencia(i.observacao);
     const det = [i.massa && `Massa: ${i.massa}`, i.formato && `Formato: ${i.formato}`, i.segundo_recheio && `2º recheio: ${i.segundo_recheio}`].filter(Boolean);
+    const kit = kitDoItem(i);
     return `<div class="it">${l(`<b class="n">${i.quantidade}x ${esc(i.nome)}${i.peso_kg ? ' ' + esc(formatarPeso(i.peso_kg)) : ''}</b>`, R(i.subtotal))}
       ${det.map(d => `<div class="d">${esc(d)}</div>`).join('')}
+      ${kit ? `<div class="d kit"><b>Vem no kit:</b> ${esc(kit)}</div>` : ''}
       ${i.quantidade > 1 ? `<div class="d">${i.quantidade} x ${R(i.preco_unitario)}</div>` : ''}
       ${texto ? `<div class="d ob">Obs: ${esc(texto)}</div>` : ''}${imagem ? '<div class="d ob">* Imagem de referência anexada (ver no sistema)</div>' : ''}</div>`;
   }).join('<div class="sep fino"></div>');
   const fixadas = (p.observacoes || []).filter(o => o.fixada);
-  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Pedido ${esc(p.codigo)}</title><style>
-    @page { size: 80mm auto; margin: 0; }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { background: #fff; color: #000; }
-    body { width: 80mm; padding: 3mm 4mm 8mm; font: 12.5px/1.35 Arial, Helvetica, sans-serif; }
-    .c { text-align: center; } .loja { font-size: 17px; font-weight: 900; } .sub { font-size: 11px; }
-    .cod { font-size: 24px; font-weight: 900; letter-spacing: .5px; margin-top: 4px; }
-    .sep { border-top: 1px dashed #000; margin: 6px 0; } .sep.fino { border-top-style: dotted; margin: 4px 0; } .sep.forte { border-top: 2px solid #000; }
-    .ret { border: 2px solid #000; padding: 5px 6px; margin: 6px 0; text-align: center; }
-    .ret small { display: block; font-size: 11px; font-weight: 700; letter-spacing: 1px; } .ret b { display: block; font-size: 18px; line-height: 1.2; }
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Pedido ${esc(p.codigo)}</title><style>${CSS_TERMICA}
+    .c { text-align: center; } .loja { font-size: 19px; font-weight: 900; } .sub { font-size: 13px; }
+    .cod { font-size: 28px; font-weight: 900; letter-spacing: 1px; margin-top: 4px; }
+    .sep { border-top: 2px solid #000; margin: 7px 0; } .sep.fino { border-top-width: 1px; margin: 5px 0; } .sep.forte { border-top-width: 3px; }
+    .ret { border: 3px solid #000; padding: 5px 6px; margin: 7px 0; text-align: center; }
+    .ret small { display: block; font-size: 13px; letter-spacing: 1px; } .ret b { display: block; font-size: 20px; line-height: 1.2; }
     .l { display: flex; justify-content: space-between; gap: 8px; } .l > span:last-child { white-space: nowrap; text-align: right; }
-    .t { font-size: 13px; font-weight: 800; letter-spacing: 1px; margin: 2px 0 4px; }
-    .it .n { font-size: 13.5px; } .it .d { font-size: 11.5px; margin-left: 12px; } .it .ob { font-weight: 700; }
-    .tot { font-size: 16px; font-weight: 900; } .falta { font-size: 15px; font-weight: 900; }
-    .box { border: 1px solid #000; padding: 4px 6px; margin: 5px 0; font-size: 12px; } .box b { display: block; }
-    .pix .k { display: block; font-size: 17px; font-weight: 900; letter-spacing: .5px; }
-    .pe { text-align: center; font-size: 10.5px; margin-top: 8px; }
+    .t { font-size: 15px; font-weight: 900; letter-spacing: 1px; margin: 2px 0 4px; }
+    .it .n { font-size: 15px; font-weight: 900; } .it .d { font-size: 13px; margin-left: 10px; } .it .ob, .it .kit { font-weight: 900; }
+    .tot { font-size: 18px; font-weight: 900; } .falta { font-size: 17px; font-weight: 900; }
+    .box { border: 2px solid #000; padding: 4px 6px; margin: 6px 0; font-size: 13px; } .box b { display: block; }
+    .pix .k { display: block; font-size: 19px; font-weight: 900; letter-spacing: .5px; }
+    .pe { text-align: center; font-size: 13px; margin-top: 8px; }
   </style></head><body>
     <div class="c loja">${esc(loja.nome_loja || 'Rita Bolos')}</div>
     <div class="c sub">${esc(loja.slogan || 'Bolos e sobremesas')}</div>
@@ -1648,17 +1689,100 @@ async function imprimirTermica(p) {
     ${falta > 0 && pix ? `<div class="box pix"><b>Pix${pix.tipo ? ` (${esc(pix.tipo)})` : ''}</b><span class="k">${esc(pix.chave)}</span>${esc(pix.nome)}</div>` : ''}
     <div class="pe">${loja.whatsapp_exibicao ? 'WhatsApp ' + esc(loja.whatsapp_exibicao) + '<br>' : ''}Impresso em ${esc(dataHora(new Date().toISOString()))}</div>
   </body></html>`;
-  $('#impTermica')?.remove();
-  const f = document.createElement('iframe');
-  f.id = 'impTermica'; f.title = 'Impressão'; f.setAttribute('aria-hidden', 'true'); f.tabIndex = -1;
-  f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
-  f.onload = () => setTimeout(() => { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { erroToast(e); } }, 120);
-  f.srcdoc = html;
-  document.body.appendChild(f);
+  return mandarParaTermica(html);
+}
+/** Uma impressão de cada vez (as automáticas podem chegar juntas). Resolve quando a impressão foi enviada. */
+let filaTermica = Promise.resolve();
+function mandarParaTermica(html) {
+  const vez = filaTermica.then(() => new Promise(fim => {
+    $('#impTermica')?.remove();
+    const f = document.createElement('iframe');
+    f.id = 'impTermica'; f.title = 'Impressão'; f.setAttribute('aria-hidden', 'true'); f.tabIndex = -1;
+    f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+    f.onload = () => setTimeout(() => {
+      try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { erroToast(e); }
+      setTimeout(fim, 600);
+    }, 120);
+    f.srcdoc = html;
+    document.body.appendChild(f);
+  }));
+  filaTermica = vez.catch(() => {});
+  return vez;
+}
+
+/* ---- Etiqueta do pedido (80 mm): para colar na caixa. Código e nome grandes, retirada e itens ---- */
+async function imprimirEtiqueta(p) {
+  const loja = await configLoja() || {};
+  await mapaKitsLoja();
+  const falta = Math.max(0, Number(p.saldo ?? (p.total - p.valor_pago)));
+  const itens = p.itens.map(i => {
+    const det = [i.peso_kg && formatarPeso(i.peso_kg), i.massa, i.formato, i.segundo_recheio && `2º recheio: ${i.segundo_recheio}`].filter(Boolean).join(' · ');
+    const obs = separarReferencia(i.observacao).texto, kit = kitDoItem(i);
+    return `<li><b>${i.quantidade}x ${esc(i.nome)}</b>${det ? `<span>${esc(det)}</span>` : ''}${kit ? `<span class="ob">Vem no kit: ${esc(kit)}</span>` : ''}${obs ? `<span class="ob">Obs: ${esc(obs)}</span>` : ''}</li>`;
+  }).join('');
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiqueta ${esc(p.codigo)}</title><style>${CSS_TERMICA}
+    body { padding-bottom: 6mm; }
+    .loja { text-align: center; font-size: 14px; letter-spacing: 1px; text-transform: uppercase; }
+    .cod { text-align: center; font-size: 36px; font-weight: 900; letter-spacing: 1px; line-height: 1.1; margin: 2px 0; }
+    .cli { text-align: center; font-size: 22px; font-weight: 900; line-height: 1.15; overflow-wrap: anywhere; }
+    .ret { border: 3px solid #000; padding: 5px 6px; margin: 7px 0; text-align: center; }
+    .ret small { display: block; font-size: 13px; letter-spacing: 1px; }
+    .ret b { display: block; font-size: 22px; line-height: 1.15; }
+    ul { list-style: none; border-top: 2px solid #000; padding-top: 5px; }
+    li { padding: 3px 0; } li b { font-size: 15px; } li span { display: block; font-size: 13px; margin-left: 10px; } li .ob { font-weight: 900; }
+    .pg { margin-top: 6px; border-top: 3px solid #000; padding-top: 5px; text-align: center; font-size: 19px; font-weight: 900; }
+    .obs { margin-top: 6px; border: 2px solid #000; padding: 4px 6px; font-size: 13px; }
+  </style></head><body>
+    <div class="loja">${esc(loja.nome_loja || 'Rita Bolos')}</div>
+    <div class="cod">${esc(p.codigo)}</div>
+    <div class="cli">${esc(p.cliente_nome)}</div>
+    <div class="ret"><small>RETIRADA</small><b>${esc(dataCurta(p.data_retirada).toUpperCase())}${p.hora_retirada ? ' · ' + esc(hora(p.hora_retirada)) : ''}</b></div>
+    <ul>${itens}</ul>
+    ${p.observacao_cliente ? `<div class="obs"><b>Obs. do cliente:</b> ${esc(p.observacao_cliente)}</div>` : ''}
+    <div class="pg">${falta > 0 ? `FALTA PAGAR ${esc(R(falta))}` : 'PAGO'}</div>
+  </body></html>`;
+  return mandarParaTermica(html);
+}
+
+/* ---- Impressão automática: cada pedido que vira "Confirmado" sai na térmica deste aparelho ----
+   Fica ligada só no computador da impressora (Minha conta). Sem a janela de impressão, só com o
+   Chrome aberto com --kiosk-printing (imprime direto na impressora padrão). */
+const CHAVE_AUTO_IMP = 'ritabolos.impressao-auto';
+function impressaoAuto() {
+  try { return JSON.parse(localStorage.getItem(CHAVE_AUTO_IMP) || 'null') || { ligada: false, formato: 'etiqueta' }; } catch (e) { return { ligada: false, formato: 'etiqueta' }; }
+}
+function salvarImpressaoAuto(c) { try { localStorage.setItem(CHAVE_AUTO_IMP, JSON.stringify(c)); } catch (e) { /* sem armazenamento */ } }
+/** Pedidos já impressos aqui (não imprime de novo quando o pedido muda por outro motivo). */
+function jaImpresso(id, marcar) {
+  let l = [];
+  try { l = JSON.parse(localStorage.getItem(CHAVE_AUTO_IMP + '.feitos') || '[]'); } catch (e) { l = []; }
+  if (!marcar) return l.includes(id);
+  try { localStorage.setItem(CHAVE_AUTO_IMP + '.feitos', JSON.stringify([...l.filter(x => x !== id), id].slice(-300))); } catch (e) { /* idem */ }
+  return true;
+}
+async function imprimirSeConfirmado(pedido) {
+  const cfg = impressaoAuto();
+  if (!cfg.ligada || ehProdutor() || pedido?.status !== 'confirmado' || !pedido.id) return;
+  // várias abas abertas neste computador: só uma imprime
+  const fazer = async () => {
+    if (jaImpresso(pedido.id)) return;
+    const p = await api.admin.pedidos.obter(pedido.id).catch(() => null);
+    if (!p || p.status !== 'confirmado') return;
+    // só o que acabou de ser confirmado (não reimprime pedido antigo que só teve outra alteração)
+    const conf = [...(p.historico || [])].reverse().find(h => h.status_novo === 'confirmado');
+    if (!conf || Date.now() - new Date(conf.alterado_em).getTime() > 10 * 60e3) return;
+    jaImpresso(p.id, true);
+    toast(`Imprimindo ${cfg.formato === 'pedido' ? 'o pedido' : 'a etiqueta do pedido'} ${p.codigo}…`);
+    await (cfg.formato === 'pedido' ? imprimirTermica(p) : imprimirEtiqueta(p));
+  };
+  if (navigator.locks?.request) await navigator.locks.request('ritabolos-impressao-auto', fazer);
+  else await fazer();
 }
 
 function renderGaveta(p) {
   pedidoAtual = p;
+  // conteúdo dos kits: na primeira vez ainda não carregou; quando chegar, redesenha
+  if (!kitsCache) mapaKitsLoja().then(() => { if (pedidoAtual?.id === p.id && $('#gaveta')?.classList.contains('on')) renderGaveta(pedidoAtual); });
   const g = $('#gaveta');
   const rolagem = g.querySelector('.gav-b')?.scrollTop || 0;
   const prox = proximoStatus(p);
@@ -1666,6 +1790,7 @@ function renderGaveta(p) {
       <div class="it-l"><span>${i.quantidade}× ${esc(i.nome)}${i.peso_kg ? ` <span style="color:var(--teal)">${esc(formatarPeso(i.peso_kg))}</span>` : ''}</span><span>${R(i.subtotal)}</span></div>
       ${i.massa || i.formato ? `<div class="it-d">${i.massa ? `<b>Massa:</b> ${esc(i.massa)}` : ''}${i.massa && i.formato ? ' · ' : ''}${i.formato ? `<b>Formato:</b> ${esc(i.formato)}` : ''}</div>` : ''}
       ${i.segundo_recheio ? `<div class="it-d"><b>2º recheio:</b> ${esc(i.segundo_recheio)}</div>` : ''}
+      ${kitDoItem(i) ? `<div class="it-d it-kit"><b>Vem no kit:</b> ${esc(kitDoItem(i))}</div>` : ''}
       ${i.faixa_preco ? `<div class="it-d"><b>Faixa de preço:</b> ${esc(i.faixa_preco)}</div>` : ''}
       <div class="it-d">${R(i.preco_unitario)} cada${i.preco_kg ? ` (${R(i.preco_kg)} o kg)` : ''}</div>
       ${itemReferencia(i)}
@@ -1681,6 +1806,7 @@ function renderGaveta(p) {
       <div class="acoes-topo">
         <a class="btn sm" href="${esc(urlReciboInterno(p.id))}" target="_blank" rel="noopener">${ic('imprimir')}Imprimir recibo</a>
         <button type="button" class="btn sm" data-gav="termica">${ic('imprimir')}Imprimir 80 mm</button>
+        <button type="button" class="btn sm" data-gav="etiqueta">${ic('imprimir')}Etiqueta</button>
         <button type="button" class="btn sm wa" data-gav="msg">${ic('wa')}Mandar mensagem</button>
         <button type="button" class="btn sm ghost" data-gav="link">${ic('copiar')}Link do recibo</button>
         ${isAdmin() ? `<button type="button" class="btn sm ghost" data-gav="prejuizo">${ic('alerta')}Lançar prejuízo</button>` : ''}
@@ -1771,6 +1897,7 @@ document.addEventListener('click', async e => {
     case 'pagar': modalPagamento(p); break;
     case 'prejuizo': modalPrejuizo(p); break;
     case 'termica': imprimirTermica(p); break;
+    case 'etiqueta': imprimirEtiqueta(p); break;
     case 'topo': { const i = p.itens.find(x => String(x.id) === b.dataset.item); if (i) modalTopo(p, i); break; }
     case 'topo-novo': { const i = p.itens.find(x => String(x.id) === b.dataset.item); if (i) novoTopoDoItem(p, i); break; }
     case 'topo-ver': abrirTopo(b.dataset.id, () => toposDaGaveta(pedidoAtual)); break;
@@ -2317,7 +2444,7 @@ async function carregarCadastro() {
     api.admin.faixasPreco.listar()
   ]);
   CAD = { categorias, grupos, produtos, faixas };
-  cardapioAtivo = null;
+  cardapioAtivo = null; kitsCache = null;
   return CAD;
 }
 
@@ -2381,7 +2508,7 @@ document.addEventListener('change', async e => {
       const r = await api.admin.produtos.atualizar(p.id, { preco: v });
       Object.assign(p, r); t.value = valorTxt(r.preco); t.classList.add('salvo'); setTimeout(() => t.classList.remove('salvo'), 1600);
       toast(`${p.rotulo || p.nome}: ${R(r.preco)}${SUFIXO_UN[p.unidade_preco] || ''}`);
-      cardapioAtivo = null;
+      cardapioAtivo = null; kitsCache = null;
     } catch (err) { erroToast(err); t.value = valorTxt(p.preco); }
   }
   if (t.dataset.ativoProd) {
@@ -2593,7 +2720,7 @@ function ligarSwitch(box, mapa) {
   box.onchange = async e => {
     for (const [attr, tabela] of Object.entries(mapa)) {
       const id = e.target.dataset['sw' + attr[0].toUpperCase() + attr.slice(1)]; if (id === undefined) continue;
-      try { await tabela.atualizar(attr === 'peso' ? Number(id) : id, { ativo: e.target.checked }); e.target.closest('.r').classList.toggle('off', !e.target.checked); cardapioAtivo = null; }
+      try { await tabela.atualizar(attr === 'peso' ? Number(id) : id, { ativo: e.target.checked }); e.target.closest('.r').classList.toggle('off', !e.target.checked); cardapioAtivo = null; kitsCache = null; }
       catch (err) { erroToast(err); e.target.checked = !e.target.checked; }
       return;
     }
@@ -2729,7 +2856,7 @@ async function ajLoja(box) {
     const topNum = digitosTel(valDe(fake, 'lTopNum'));
     if (topNum && topNum.length < 10) throw new Error('Informe o WhatsApp de quem faz os topos com DDD.');
     await salvarContatoTopos(topNum, valDe(fake, 'lTopNome'));
-    cacheLoja = null; cardapioAtivo = null; toast('Ajustes salvos. O site já mostra as mudanças.');
+    cacheLoja = null; cardapioAtivo = null; kitsCache = null; toast('Ajustes salvos. O site já mostra as mudanças.');
   }));
 }
 
@@ -2853,14 +2980,14 @@ async function ajBolos(box) {
       if (!(v > 0 && v < 100)) throw new Error('Informe um peso em kg, por exemplo 5,5.');
       if (pesos.some(p => Number(p.peso_kg) === v)) throw new Error('Esse peso já existe.');
       await api.admin.pesosBolo.criar({ peso_kg: v, ordem: Math.round(v * 10), ativo: true });
-      toast(`${formatarPeso(v)} adicionado.`); cardapioAtivo = null; ajBolos(box);
+      toast(`${formatarPeso(v)} adicionado.`); cardapioAtivo = null; kitsCache = null; ajBolos(box);
     });
   });
   box.onclick = async e => {
     const tp = e.target.closest('[data-tirar-peso]');
     if (tp) {
       if (!await confirmar(`Excluir ${formatarPeso(tp.dataset.tirarPeso)}?`, 'Esse peso deixa de aparecer na escolha do bolo.', { botao: 'Excluir', perigo: true })) return;
-      await ocupado(tp, async () => { await api.admin.pesosBolo.remover(Number(tp.dataset.tirarPeso)); cardapioAtivo = null; ajBolos(box); });
+      await ocupado(tp, async () => { await api.admin.pesosBolo.remover(Number(tp.dataset.tirarPeso)); cardapioAtivo = null; kitsCache = null; ajBolos(box); });
       return;
     }
     const bf = e.target.closest('[data-ed-formato],[data-novo-formato]');
@@ -2880,13 +3007,13 @@ async function ajBolos(box) {
       m.$('#fNome').addEventListener('input', () => { if (!manual) m.$('#fSlug').value = slugify(m.$('#fNome').value); });
       m.$('[data-del]')?.addEventListener('click', async () => {
         if (!await confirmar(`Excluir ${x.nome}?`, 'O formato deixa de aparecer na escolha do bolo. Pedidos antigos continuam com o formato escolhido.', { botao: 'Excluir', perigo: true })) return;
-        await ocupado(m.$('[data-del]'), async () => { await api.admin.formatosBolo.remover(x.id); m.fechar(); cardapioAtivo = null; ajBolos(box); });
+        await ocupado(m.$('[data-del]'), async () => { await api.admin.formatosBolo.remover(x.id); m.fechar(); cardapioAtivo = null; kitsCache = null; ajBolos(box); });
       });
       m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
         exigir(m, 'fNome', 'Informe o nome do formato.');
         const dados = { nome: valDe(m, 'fNome'), descricao: valDe(m, 'fDesc') || null, ordem: numDe(m, 'fOrd') || 0, slug: slugify(valDe(m, 'fSlug') || valDe(m, 'fNome')), ativo: chkDe(m, 'fAtivo') };
         if (novo) await api.admin.formatosBolo.criar(dados); else await api.admin.formatosBolo.atualizar(x.id, dados);
-        m.fechar(); toast('Formato salvo.'); cardapioAtivo = null; ajBolos(box);
+        m.fechar(); toast('Formato salvo.'); cardapioAtivo = null; kitsCache = null; ajBolos(box);
       }));
       return;
     }
@@ -2907,14 +3034,14 @@ async function ajBolos(box) {
     m.$('#mNome').addEventListener('input', () => { if (!manual) m.$('#mSlug').value = slugify(m.$('#mNome').value.replace(/^massa\s+/i, '')); });
     m.$('[data-del]')?.addEventListener('click', async () => {
       if (!await confirmar(`Excluir ${x.nome}?`, 'A massa deixa de aparecer na escolha do bolo.', { botao: 'Excluir', perigo: true })) return;
-      await ocupado(m.$('[data-del]'), async () => { await api.admin.massasBolo.remover(x.id); m.fechar(); cardapioAtivo = null; ajBolos(box); });
+      await ocupado(m.$('[data-del]'), async () => { await api.admin.massasBolo.remover(x.id); m.fechar(); cardapioAtivo = null; kitsCache = null; ajBolos(box); });
     });
     m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
       exigir(m, 'mNome', 'Informe o nome da massa.');
       const dados = { nome: valDe(m, 'mNome'), descricao: valDe(m, 'mDesc') || null, cor: valDe(m, 'mCor'), ordem: numDe(m, 'mOrd') || 0,
         slug: slugify(valDe(m, 'mSlug') || valDe(m, 'mNome').replace(/^massa\s+/i, '')), ativo: chkDe(m, 'mAtivo') };
       if (novo) await api.admin.massasBolo.criar(dados); else await api.admin.massasBolo.atualizar(x.id, dados);
-      m.fechar(); toast('Massa salva.'); cardapioAtivo = null; ajBolos(box);
+      m.fechar(); toast('Massa salva.'); cardapioAtivo = null; kitsCache = null; ajBolos(box);
     }));
   };
 }

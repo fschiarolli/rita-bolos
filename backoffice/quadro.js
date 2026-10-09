@@ -14,7 +14,7 @@
  *   ?dias=3       quantos dias aparecem nas colunas (padrão 1: só os pedidos de hoje)
  *   ?compacto=1   cartões sempre compactos (=0: nunca; sem o parâmetro, o quadro decide pela quantidade)
  */
-import { criarApi, conectar, formatarPreco as R, formatarPeso, separarReferencia } from '../js/rita-api.js';
+import { criarApi, conectar, formatarPreco as R, formatarPeso, separarReferencia, mapaKits, conteudoKit } from '../js/rita-api.js';
 
 const PARAMS = new URLSearchParams(location.search);
 const DEMO = PARAMS.has('demo');
@@ -208,6 +208,12 @@ async function criarCliente() {
 }
 const lotes = (lista, n = 80) => Array.from({ length: Math.ceil(lista.length / n) }, (_, i) => lista.slice(i * n, i * n + n));
 /** Itens de vários pedidos de uma vez. null = não deu (os cartões usam o resumo do pedido). */
+/* O que vem em cada kit: a descrição do produto no Cardápio (recarrega a cada 5 minutos) */
+let kits = { em: 0, mapa: new Map() };
+async function carregarKits() {
+  if (Date.now() - kits.em < 5 * 60e3) return;
+  try { kits = { em: Date.now(), mapa: mapaKits(await api.admin.produtos.listarCompleto()) }; } catch (e) { kits.em = Date.now(); }
+}
 async function carregarItens(ids) {
   const mapa = new Map();
   if (!ids.length) return mapa;
@@ -244,7 +250,7 @@ async function carregar() {
     ]);
     const ate = somarDias(hoje, DIAS_A_FRENTE - 1);
     const ids = abertos.pedidos.filter(p => p.data_retirada <= ate).map(p => p.id);
-    const [itens, notas] = await Promise.all([carregarItens(ids), carregarNotas(ids)]);
+    const [itens, notas] = await Promise.all([carregarItens(ids), carregarNotas(ids), carregarKits()]);
     STATUS = status;
     acharNovidades(abertos.pedidos);
     dados = { abertos: abertos.pedidos, hoje: doDia.pedidos, itens, notas, ordemCat: new Map(categorias.map((c, i) => [c.nome, i])) };
@@ -480,7 +486,7 @@ function itensDoCartao(p) {
     const det = detalheItem(i);
     return `<li class="c-item"><span class="c-qtd">${i.quantidade}×</span><span>
       <span class="c-prod">${esc(i.nome)}${i.peso_kg ? ` <span class="c-peso">${esc(formatarPeso(i.peso_kg))}</span>` : ''}</span>
-      ${det ? `<span class="c-det">${esc(det)}</span>` : ''}${(() => { const o = separarReferencia(i.observacao);   // o link da imagem de referência vira uma miniatura
+      ${det ? `<span class="c-det">${esc(det)}</span>` : ''}${(() => { const k = conteudoKit(i, kits.mapa); return k ? `<span class="c-kit">Vem no kit: ${esc(k)}</span>` : ''; })()}${(() => { const o = separarReferencia(i.observacao);   // o link da imagem de referência vira uma miniatura
         return `${o.texto ? `<span class="c-iobs">${esc(o.texto)}</span>` : ''}${o.imagem ? `<span class="c-ref"><img src="${esc(o.imagem)}" alt="">imagem de referência</span>` : ''}`; })()}</span></li>`;
   }).join('') + (itens.length > mostrar.length ? `<li class="c-mais">+ ${plural(itens.length - mostrar.length, 'item', 'itens')}</li>` : '');
 }

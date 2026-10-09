@@ -86,6 +86,28 @@ export function separarReferencia(obs) {
 /** Topper / topo de bolo (pede imagem de referência): pelo slug, nome ou grupo. */
 export const ehTopper = (...textos) => textos.some(t => /topper|^topos?\b|topo de bolo|topos de bolo/i.test(String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '')));
 
+/**
+ * Kits: o que vem dentro está na descrição do produto (Cardápio). O pedido guarda só o nome do kit,
+ * então a equipe vê o conteúdo por aqui. produtos: lista do cadastro (vw_produtos) ou do cardápio
+ * (achatarCardapio). Devolve um mapa usado por conteudoKit.
+ */
+export function mapaKits(produtos) {
+  const m = new Map();
+  for (const p of produtos || []) {
+    const kit = p.unidade_preco === 'kit' || /kit/i.test(p.categoria_slug || '') || p.categoria_layout === 'grade';
+    const txt = String(p.descricao || '').trim();
+    if (!kit || !txt) continue;
+    if (p.id) m.set(p.id, txt);
+    m.set('nome:' + String(p.nome || '').trim().toLowerCase(), txt);
+  }
+  return m;
+}
+/** Produtos do cardápio público (obter_cardapio) numa lista só, com a categoria de cada um. */
+export const achatarCardapio = c => (c?.categorias || []).flatMap(cat => [...(cat.grupos || []).flatMap(g => g.produtos || []), ...(cat.produtos || [])]
+  .map(p => ({ ...p, categoria_slug: cat.slug, categoria_layout: cat.layout })));
+/** O que vem no kit deste item do pedido (pelo produto; se não achar, pelo nome), ou null. */
+export const conteudoKit = (item, mapa) => mapa?.get(item?.produto_id) || mapa?.get('nome:' + String(item?.nome || '').trim().toLowerCase()) || null;
+
 export function formatarPreco(valor) {
   const n = Number(valor || 0);
   return 'R$\u00a0' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
