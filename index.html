@@ -1970,8 +1970,17 @@ function todayISO(offsetDays = 0) { const d = new Date(Date.now() + offsetDays *
 function antecedenciaSacola() { return Math.max(Number(CFG.antecedencia_minima_dias || 0), ...cart.map(l => ITEMS[l.id]?.antecedencia || 0)); }
 
 /* ---- Retirada: dia e horário escolhidos pelo cliente (nada vem preenchido) ----
-   Horários oferecidos nos botões; "Outro horário" aceita qualquer um. Ajuste à rotina da loja. */
-const RETIRADA = { dias: 14, inicio: '08:00', fim: '18:00', passoMin: 30, tardeDesde: '12:00' };
+   Os horários dos botões vêm de Ajustes > Loja (campos retirada_* das configurações);
+   "Outro horário" aceita qualquer um. RETIRADA_PADRAO vale enquanto o banco não tem esses campos. */
+const RETIRADA_PADRAO = { dias: 14, inicio: '08:00', fim: '18:00', passoMin: 30 };
+const TARDE_DESDE = '12:00';
+function retirada() {
+  const hm = v => /^\d\d:\d\d/.test(v || '') ? v.slice(0, 5) : null;
+  const num = (v, min, max, padrao) => { const n = Math.round(Number(v)); return v != null && n >= min && n <= max ? n : padrao; };
+  const inicio = hm(CFG.retirada_inicio), fim = hm(CFG.retirada_fim), ok = inicio && fim && minutosDe(fim) > minutosDe(inicio);
+  return { dias: num(CFG.retirada_dias, 1, 60, RETIRADA_PADRAO.dias), inicio: ok ? inicio : RETIRADA_PADRAO.inicio, fim: ok ? fim : RETIRADA_PADRAO.fim,
+    passoMin: num(CFG.retirada_intervalo_min, 5, 240, RETIRADA_PADRAO.passoMin) };
+}
 const SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const SEMANA_LONGA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
@@ -1979,19 +1988,22 @@ const minutosDe = hm => { const [h, m] = String(hm).split(':').map(Number); retu
 const hmDe = min => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
 const dataLocal = iso => { const [a, m, d] = iso.split('-').map(Number); return new Date(a, m - 1, d); };
 function campoRetirada(minD, ant) {
-  const hoje = todayISO(), amanha = todayISO(1);
+  const hoje = todayISO(), amanha = todayISO(1), rt = retirada();
   const dias = [];
-  for (let i = 0, d = dataLocal(minD); i < RETIRADA.dias; i++, d.setDate(d.getDate() + 1)) {
+  for (let i = 0, d = dataLocal(minD); i < rt.dias; i++, d.setDate(d.getDate() + 1)) {
     const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const rot = iso === hoje ? 'Hoje' : iso === amanha ? 'Amanhã' : SEMANA[d.getDay()];
     dias.push(`<button type="button" class="dia" role="radio" aria-checked="false" data-dia="${iso}" aria-label="${rot === 'Hoje' || rot === 'Amanhã' ? rot + ', ' : ''}${SEMANA_LONGA[d.getDay()]}, ${d.getDate()} de ${MESES[d.getMonth()]}">
       <span class="d-sem">${rot}</span><span class="d-num">${d.getDate()}</span><span class="d-mes">${MESES[d.getMonth()]}</span></button>`);
   }
   const slots = [];
-  for (let m = minutosDe(RETIRADA.inicio); m <= minutosDe(RETIRADA.fim); m += RETIRADA.passoMin) slots.push(hmDe(m));
-  const tarde = minutosDe(RETIRADA.tardeDesde);
+  for (let m = minutosDe(rt.inicio); m <= minutosDe(rt.fim); m += rt.passoMin) slots.push(hmDe(m));
+  const tarde = minutosDe(TARDE_DESDE);
   const botao = h => `<button type="button" class="hora" role="radio" aria-checked="false" data-hora="${h}">${h.replace(/^0/, '')}</button>`;
   const manha = slots.filter(h => minutosDe(h) < tarde), aTarde = slots.filter(h => minutosDe(h) >= tarde);
+  // "Outro horário" fica no último grupo (só manhã, se a loja fechar antes do meio-dia)
+  const outro = `<button type="button" class="hora outra" data-hora-outra aria-expanded="false" aria-controls="pickHoraOutra">Outro horário</button>`;
+  const grupo = (rot, hs, ultimo) => `<div class="horas-grupo"><span class="h-rot">${rot}</span><div class="horas">${hs.map(botao).join('')}${ultimo ? outro : ''}</div></div>`;
   return `<fieldset class="field" id="fsPick">
       <legend>Quando você vai retirar?<span class="req">obrigatório</span></legend>
       <p class="hint" style="margin-top:0">Escolha o dia e o horário em que você vem buscar.${ant ? ` Este pedido precisa de ${ant} ${ant === 1 ? 'dia' : 'dias'} de antecedência.` : ''}</p>
@@ -2003,9 +2015,8 @@ function campoRetirada(minD, ant) {
         <input class="input" type="date" id="cDateOutra" min="${minD}"></div>
       <div class="pick-sub" id="lblHora">${icon('clock')} Horário</div>
       <div class="horas-wrap" role="radiogroup" aria-labelledby="lblHora" aria-describedby="ePick">
-        ${manha.length ? `<div class="horas-grupo"><span class="h-rot">Manhã</span><div class="horas">${manha.map(botao).join('')}</div></div>` : ''}
-        ${aTarde.length ? `<div class="horas-grupo"><span class="h-rot">Tarde</span><div class="horas">${aTarde.map(botao).join('')}
-          <button type="button" class="hora outra" data-hora-outra aria-expanded="false" aria-controls="pickHoraOutra">Outro horário</button></div></div>` : ''}
+        ${manha.length ? grupo('Manhã', manha, !aTarde.length) : ''}
+        ${aTarde.length ? grupo('Tarde', aTarde, true) : ''}
       </div>
       <div class="pick-outra" id="pickHoraOutra" hidden><label class="lbl" for="cTimeOutra" style="font-size:13.5px;margin-bottom:6px">Outro horário</label>
         <input class="input" type="time" id="cTimeOutra"></div>
@@ -2107,7 +2118,7 @@ function openCheckout(opener) {
         <input class="input" id="cName" autocomplete="name" maxlength="120" placeholder="Como podemos te chamar?" value="${esc(store(NAME_KEY) || '')}" aria-describedby="eName">
         <p class="err" id="eName">Informe seu nome para a Rita saber de quem é o pedido.</p></div>
       <div class="field"><label class="lbl" for="cPhone">Seu WhatsApp</label>
-        <input class="input" id="cPhone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="(19) 99999-9999" value="${esc(store(PHONE_KEY) || '')}" aria-describedby="hPhone ePhone">
+        <input class="input" id="cPhone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="(19) 99999-9999" value="${esc(formatarTel(store(PHONE_KEY)))}" aria-describedby="hPhone ePhone">
         <p class="hint" id="hPhone">É por ele que avisamos cada etapa do pedido.</p>
         <p class="err" id="ePhone">Informe seu WhatsApp com DDD, por exemplo (19) 99999-9999.</p></div>
       ${campoRetirada(minD, ant)}
@@ -2119,12 +2130,39 @@ function openCheckout(opener) {
     </div>
     <div class="sheet-foot"><button type="button" class="btn btn-wa btn-block" data-act="send" ${obrig.length || semRef.length ? 'disabled' : ''}>${icon('send')}<span>Confirmar pedido</span></button></div>`, opener);
 }
+/* ---- Telefone com máscara: (DD) 9999-9999 ou (DD) 99999-9999 (a mesma do backoffice) ---- */
+/** Só os dígitos do telefone, sem o 55 do Brasil (no máximo DDD + 9 dígitos). */
+function digitosTel(v) {
+  let d = String(v || '').replace(/\D/g, '');
+  if (d.length > 11 && d.startsWith('55')) d = d.slice(2);
+  return d.replace(/^0+/, '').slice(0, 11);
+}
+function formatarTel(v) {
+  const d = digitosTel(v);
+  if (!d) return '';
+  if (d.length <= 2) return `(${d}`;
+  const n = d.slice(2), corte = n.length > 8 ? 5 : 4;   // 9 dígitos: celular
+  return `(${d.slice(0, 2)}) ${n.length > corte ? n.slice(0, corte) + '-' + n.slice(corte) : n}`;
+}
+/* Aplica a máscara enquanto digita (ou cola, ou o navegador preenche), sem tirar o cursor do lugar */
+document.addEventListener('input', e => {
+  const el = e.target;
+  if (el.id !== 'cPhone') return;
+  const pos = el.selectionStart ?? el.value.length;
+  const antes = el.value.slice(0, pos).replace(/\D/g, '').length;
+  const novo = formatarTel(el.value);
+  if (novo === el.value) return;
+  el.value = novo;
+  let i = 0, vistos = 0;
+  while (i < novo.length && vistos < antes) { if (/\d/.test(novo[i])) vistos++; i++; }
+  if (document.activeElement === el) el.setSelectionRange(i, i);
+});
 function validateCheckout() {
   const name = $('#cName'), d = $('#cDate'), t = $('#cTime'), minD = sheetState.minDate || todayISO();
   let ok = true, first = null;
   const nOk = !!name.value.trim(); name.setAttribute('aria-invalid', String(!nOk)); $('#eName').classList.toggle('show', !nOk); if (!nOk) { ok = false; first = first || name; }
-  const ph = $('#cPhone'), dig = ph.value.replace(/\D/g, '');
-  const pOk = dig.length >= 10 && dig.length <= 13; ph.setAttribute('aria-invalid', String(!pOk)); $('#ePhone').classList.toggle('show', !pOk); if (!pOk) { ok = false; first = first || ph; }
+  const ph = $('#cPhone'), dig = digitosTel(ph.value);
+  const pOk = dig.length === 10 || dig.length === 11; ph.setAttribute('aria-invalid', String(!pOk)); $('#ePhone').classList.toggle('show', !pOk); if (!pOk) { ok = false; first = first || ph; }
   const agora = new Date(), jaPassou = d.value === todayISO() && t.value && minutosDe(t.value) <= agora.getHours() * 60 + agora.getMinutes();
   const dOk = !!d.value && d.value >= minD, tOk = !!t.value && !jaPassou;
   $('#ePick').textContent = d.value && d.value < todayISO() ? 'A data de retirada não pode ser no passado.'
@@ -2149,7 +2187,7 @@ function validateCheckout() {
 let enviando = false;
 async function sendOrder() {
   if (enviando || !validateCheckout()) return;
-  const name = $('#cName').value.trim(), phone = $('#cPhone').value.trim(), pd = $('#cDate').value, pt = $('#cTime').value;
+  const name = $('#cName').value.trim(), phone = formatarTel($('#cPhone').value), pd = $('#cDate').value, pt = $('#cTime').value;
   store(NAME_KEY, name); store(PHONE_KEY, phone);
   const payload = {
     chave_idempotencia: sheetState.chave, cliente_nome: name, cliente_telefone: phone || null, data_retirada: pd, hora_retirada: pt,
@@ -2183,7 +2221,7 @@ async function sendOrder() {
 }
 function pedidoRegistrado(pedido, ctx, aba) {
   const urlRecibo = U.linkRecibo(pedido.token, CFG.url_site || undefined) + (DEMO ? '&demo' : '');
-  const msg = U.montarMensagemWhatsApp(pedido, urlRecibo);
+  const msg = U.montarMensagemWhatsApp(pedido, urlRecibo, CFG);
   const waUrl = waLink(pedido.loja?.whatsapp_numero || CFG.whatsapp_numero, msg);
   const abriu = !!aba?.ir(waUrl);
   store(ULTIMO_KEY, JSON.stringify({ codigo: pedido.codigo, token: pedido.token, waUrl, recibo: urlRecibo, total: pedido.total,
@@ -2219,14 +2257,15 @@ function ligarLinksWa(numero) {
   const u = waLink(numero);
   $$('a[data-wa-link], a[data-wa]').forEach(a => { a.href = u; if (/^whatsapp:/i.test(u)) a.removeAttribute('target'); else { a.target = '_blank'; a.rel = 'noopener'; } });
 }
-/* Pix do sinal (o mesmo de js/rita-api.js; repetido aqui para o plano B sem servidor) */
-const pix = () => U?.PIX || { chave: '06954518808', tipo: 'CPF', nome: 'Valdemir Schiarolli' };
+/* Pix do sinal: vem de Ajustes > Loja (pixDe, em js/rita-api.js). null: sem Pix para mostrar. */
+const pix = () => U?.pixDe ? U.pixDe(DADOS ? CFG : null) : null;
 function pixHTML(valor) {
   const p = pix();
+  if (!p) return '';
   return `<div class="pix-box"><span class="pix-t">${icon('coins')}Pague o sinal${valor ? ` de ${fmt(valor)}` : ''} por Pix</span>
-    <div class="pix-l"><span><small>Chave Pix (${esc(p.tipo)})</small><strong>${esc(p.chave)}</strong></span>
+    <div class="pix-l"><span><small>Chave Pix${p.tipo ? ` (${esc(p.tipo)})` : ''}</small><strong>${esc(p.chave)}</strong></span>
       <button type="button" class="btn btn-ghost pix-copiar" data-copiar="${esc(p.chave)}">${icon('copy')}Copiar</button></div>
-    <span class="pix-n">${esc(p.nome)}</span>
+    ${p.nome ? `<span class="pix-n">${esc(p.nome)}</span>` : ''}
     <span class="pix-d">Depois, mande o comprovante no WhatsApp da Rita.</span></div>`;
 }
 document.addEventListener('click', async e => {
@@ -2248,7 +2287,8 @@ function sendDirect() {
     if (l.ref) m += `   _Imagem de referência:_ ${/^https?:/i.test(l.ref) ? l.ref : '(imagem anexada no pedido)'}\n`;
   });
   m += `\n----------------------------\n*Total:* ${fmt(total)}\n*Sinal mínimo (${pctTxt()}):* ${fmt(sinalDe(total))}`;
-  m += `\n\n*Pix (${pix().tipo}):* ${pix().chave}\n*Nome:* ${pix().nome}`;
+  const px = pix();
+  if (px) m += `\n\n${U.textoPix(px)}`;
   abrirWa(waLink(CFG.whatsapp_numero, m));
 }
 function openClearConfirm(opener) {

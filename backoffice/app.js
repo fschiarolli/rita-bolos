@@ -6,7 +6,7 @@
  * Modo demonstração, sem banco: abra com ?demo
  */
 import { criarApi, conectar, formatarPreco as R, formatarPeso, formatarData, linkRecibo, linkWhatsApp, abrirWhatsApp, linkCompartilhavel, montarMensagemStatus, prepararAba,
-  separarReferencia, juntarReferencia, ehTopper, PIX } from '../js/rita-api.js';
+  separarReferencia, juntarReferencia, ehTopper, pixDe, textoPix } from '../js/rita-api.js';
 import { AVATARES, avatarSVG, temAvatar } from './avatares.js';
 
 const DEMO = new URLSearchParams(location.search).has('demo');
@@ -31,6 +31,10 @@ const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 const ic = (id, cls = 'ic') => `<svg class="${cls}" aria-hidden="true"><use href="#i-${id}"/></svg>`;
 const isAdmin = () => perfil?.papel === 'admin';
+/** Quem produz topos e personalizados: entra no backoffice, mas só vê o módulo de topos (sql/topos.sql). */
+const ehProdutor = () => perfil?.papel === 'personalizados';
+const podeTopos = () => isAdmin() || ehProdutor();
+const telaInicial = () => (ehProdutor() ? 'topos' : 'painel');
 const hojeISO = (dias = 0) => new Intl.DateTimeFormat('en-CA', { timeZone: FUSO }).format(new Date(Date.now() + dias * 864e5));
 const hora = t => (t ? String(t).slice(0, 5) : '');
 const DIAS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
@@ -83,7 +87,8 @@ function formatarTel(v) {
 }
 /** Vazio é aceito (telefone opcional); preenchido precisa ter DDD + 8 ou 9 dígitos. */
 const telOk = v => { const n = digitosTel(v).length; return n === 0 || n === 10 || n === 11; };
-const ATTR_TEL = 'type="tel" inputmode="tel" data-tel maxlength="16" placeholder="(19) 99999-9999" autocomplete="off"';
+// maxlength com folga: colar "+55 19 99999-9999" (como o WhatsApp mostra) não pode cortar o último dígito
+const ATTR_TEL = 'type="tel" inputmode="tel" data-tel maxlength="20" placeholder="(19) 99999-9999" autocomplete="off"';
 /* Aplica a máscara enquanto digita (ou cola), sem tirar o cursor do lugar */
 document.addEventListener('input', e => {
   const el = e.target;
@@ -106,6 +111,7 @@ function telefoneWa(tel) {
 const ORIGENS = { site: 'Site', backoffice: 'Backoffice', whatsapp: 'WhatsApp', balcao: 'Balcão' };
 const FORMAS = { pix: 'Pix', dinheiro: 'Dinheiro', cartao_debito: 'Cartão de débito', cartao_credito: 'Cartão de crédito', transferencia: 'Transferência', outro: 'Outro' };
 const TIPOS_PGTO = { sinal: 'Sinal', restante: 'Restante', outro: 'Outro' };
+const TIPOS_PIX = ['CPF', 'CNPJ', 'Celular', 'E-mail', 'Chave aleatória'];
 const urlReciboInterno = (id, imprimir) => `${RAIZ_SITE}recibo.html?id=${encodeURIComponent(id)}${imprimir ? '&imprimir' : ''}${DEMO ? '&demo' : ''}`;
 const urlSite = () => `${RAIZ_SITE}index.html${DEMO ? '?demo' : ''}`;
 const urlQuadro = () => `quadro.html${DEMO ? '?demo' : ''}`;
@@ -305,7 +311,7 @@ function telaLogin(aviso = '') {
       <button type="submit" class="btn primary block">Entrar</button>
       <p style="text-align:center;margin:14px 0 0"><button type="button" class="link" id="lEsqueci">Esqueci minha senha</button></p>
     </form>
-    ${DEMO ? '<div class="demo-note">Modo demonstração: entre com qualquer e-mail e senha. Tudo fica salvo só neste navegador.</div>' : ''}
+    ${DEMO ? '<div class="demo-note">Modo demonstração: entre com qualquer e-mail e senha. Tudo fica salvo só neste navegador. Para ver como quem produz os topos enxerga, entre com <b>topos@demo.com.br</b>.</div>' : ''}
   </div></div>`;
   const erro = msg => { const p = $('#lErro'); p.textContent = msg; p.hidden = !msg; };
   $('#fLogin').addEventListener('submit', async e => {
@@ -337,12 +343,15 @@ async function aposLogin() {
     telaLogin('Esta conta não tem acesso ao backoffice. Peça para a administradora liberar o seu e-mail em Ajustes > Equipe.');
     return;
   }
-  try { STATUS = await api.admin.status.listar(); } catch (e) { STATUS = []; }
+  if (!ehProdutor()) { try { STATUS = await api.admin.status.listar(); } catch (e) { STATUS = []; } }
   telaShell();
-  ligarTempoReal();
-  if (!location.hash || location.hash === '#') history.replaceState(null, '', '#painel');
+  if (!ehProdutor()) ligarTempoReal();
+  if (!location.hash || location.hash === '#') history.replaceState(null, '', '#' + telaInicial());
   rotear(true);
-  atualizarBadge();
+  if (!ehProdutor()) atualizarBadge();
+  // topos e avisos: só ligam o tempo real se já existirem no banco (sql/topos.sql)
+  if (podeTopos()) atualizarBadgeTopos().then(ok => { if (ok && perfil) ligarTempoRealTopos(); });
+  if (!ehProdutor()) carregarAvisos().then(ok => { if (ok && perfil) ligarAvisos(); });
 }
 
 function modalNovaSenha(titulo = 'Criar nova senha') {
@@ -368,12 +377,15 @@ const NAV = [
   { id: 'painel', rot: 'Painel', ic: 'painel' },
   { id: 'hoje', rot: 'Hoje', ic: 'hoje' },
   { id: 'pedidos', rot: 'Pedidos', ic: 'pedidos', badge: true },
+  { id: 'topos', rot: 'Topos', ic: 'topo', topos: true },
   { id: 'relatorio', rot: 'Relatório', ic: 'grafico', admin: true },
   { id: 'prejuizos', rot: 'Prejuízos', ic: 'alerta', admin: true },
   { id: 'cardapio', rot: 'Cardápio', ic: 'bolo', admin: true },
   { id: 'ajustes', rot: 'Ajustes', ic: 'config', admin: true }
 ];
-const iniciais = nome => String(nome || '?').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0].toUpperCase()).join('') || '?';
+/** Quem vê cada item do menu: Topos para a Administração e quem produz personalizados (que só vê Topos). */
+const podeVerNav = n => (ehProdutor() ? !!n.topos : n.topos ? isAdmin() : (!n.admin || isAdmin()));
+const iniciais = nome => String(nome || '?').trim().split(/\s+/).filter(p => /^\p{L}/u.test(p)).slice(0, 2).map(p => p[0].toUpperCase()).join('') || '?';
 
 /* ---- Avatar do perfil: personagem escolhido (backoffice/avatares.js) ou as iniciais ---- */
 // Sem o sql/avatar-perfil.sql rodado, a escolha fica guardada só neste aparelho
@@ -429,21 +441,21 @@ function modalAvatar() {
     toast(soAqui ? 'Avatar salvo neste aparelho. Para valer em todos, rode sql/avatar-perfil.sql no Supabase.' : 'Avatar atualizado.', soAqui ? { tempo: 8000 } : {});
   }));
 }
-const papelTxt = () => (perfil.papel === 'admin' ? 'Administração' : 'Atendimento');
+const papelTxt = () => ({ admin: 'Administração', personalizados: 'Topos e personalizados' })[perfil.papel] || 'Atendimento';
 function telaShell() {
-  const itens = NAV.filter(n => !n.admin || isAdmin());
-  const link = (n, cls) => `<a class="${cls}" href="#${n.id}" data-nav="${n.id}">${ic(n.ic)}<span>${n.rot}</span>${n.badge ? '<span class="nav-badge" data-badge hidden></span>' : ''}</a>`;
+  const itens = NAV.filter(podeVerNav), prod = ehProdutor();
+  const link = (n, cls) => `<a class="${cls}" href="#${n.id}" data-nav="${n.id}">${ic(n.ic)}<span>${n.rot}</span>${n.badge ? '<span class="nav-badge" data-badge hidden></span>' : ''}${n.topos ? '<span class="nav-badge" data-badge-topos hidden></span>' : ''}</a>`;
   const principais = itens.filter(n => !n.admin), gestao = itens.filter(n => n.admin);
   app.innerHTML = `<div class="shell">
     <aside class="side" aria-label="Menu principal">
-      <a class="brand" href="#painel"><img src="${esc(LOGO)}" alt=""><div><strong>Rita Bolos</strong><span>Backoffice${DEMO ? ' · demo' : ''}</span></div></a>
+      <a class="brand" href="#${telaInicial()}"><img src="${esc(LOGO)}" alt=""><div><strong>Rita Bolos</strong><span>Backoffice${DEMO ? ' · demo' : ''}</span></div></a>
       <nav class="side-nav">
         <p class="side-sec">Principal</p>${principais.map(n => link(n, 'nav-a')).join('')}
         ${gestao.length ? `<p class="side-sec">Gestão</p>${gestao.map(n => link(n, 'nav-a')).join('')}` : ''}
-        <p class="side-sec">Atalhos</p>
+        ${prod ? '' : `<p class="side-sec">Atalhos</p>
         <a class="nav-a" href="${esc(urlQuadro())}" target="_blank" rel="noopener">${ic('tv')}<span>Quadro da equipe</span>${ic('externo', 'ic ext')}</a>
         <a class="nav-a" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}<span>Ver o site</span>${ic('externo', 'ic ext')}</a>
-        <a class="nav-a" href="${esc(urlPote())}" target="_blank" rel="noopener">${ic('pote')}<span>Página do bolo no pote</span>${ic('externo', 'ic ext')}</a>
+        <a class="nav-a" href="${esc(urlPote())}" target="_blank" rel="noopener">${ic('pote')}<span>Página do bolo no pote</span>${ic('externo', 'ic ext')}</a>`}
       </nav>
       <div class="side-foot">
         <button type="button" class="user-card" data-act="conta" aria-label="Minha conta">${avatarHTML(perfil, 'aria-hidden="true" data-eu')}
@@ -453,26 +465,27 @@ function telaShell() {
     </aside>
     <div class="coluna">
       <header class="topo">
-        <a class="topo-marca" href="#painel"><img src="${esc(LOGO)}" alt="">Rita Bolos${DEMO ? '<small>demo</small>' : ''}</a>
-        <form class="topo-busca" id="topoBusca" role="search">${ic('busca')}<label class="sr" for="topoBuscaIn">Buscar pedido</label>
-          <input id="topoBuscaIn" type="search" placeholder="Buscar pedido: nome, telefone ou código" autocomplete="off"><kbd aria-hidden="true">/</kbd></form>
+        <a class="topo-marca" href="#${telaInicial()}"><img src="${esc(LOGO)}" alt="">Rita Bolos${DEMO ? '<small>demo</small>' : ''}</a>
+        ${prod ? '' : `<form class="topo-busca" id="topoBusca" role="search">${ic('busca')}<label class="sr" for="topoBuscaIn">Buscar pedido</label>
+          <input id="topoBuscaIn" type="search" placeholder="Buscar pedido: nome, telefone ou código" autocomplete="off"><kbd aria-hidden="true">/</kbd></form>`}
         <div class="topo-acts">
+          ${prod ? '' : `<button type="button" class="topo-bt" data-act="avisos" aria-haspopup="dialog" aria-expanded="false" aria-label="Avisos" title="Avisos" hidden>${ic('sino')}<span class="topo-badge" data-badge-avisos hidden></span></button>`}
           <button type="button" class="topo-bt" data-act="tema" aria-haspopup="menu" aria-expanded="false">${ic(temaDe(temaAtual()).icone)}</button>
-          <a class="topo-bt" data-tv href="${esc(urlQuadro())}" target="_blank" rel="noopener" aria-label="Abrir o quadro da equipe (TV)" title="Quadro da equipe (TV)">${ic('tv')}</a>
+          ${prod ? '' : `<a class="topo-bt" data-tv href="${esc(urlQuadro())}" target="_blank" rel="noopener" aria-label="Abrir o quadro da equipe (TV)" title="Quadro da equipe (TV)">${ic('tv')}</a>`}
           <button type="button" class="topo-av" data-act="conta" aria-label="Minha conta" title="${esc(perfil.nome)}">${avatarHTML(perfil, 'data-eu')}</button>
         </div>
       </header>
       <main class="conteudo" id="conteudo" tabindex="-1"></main>
       <footer class="rodape"><span>© ${new Date().getFullYear()} Rita Bolos · Backoffice${DEMO ? ' (demonstração)' : ''}</span>
-        <span><a href="${esc(urlSite())}" target="_blank" rel="noopener">Site</a><a href="${esc(urlQuadro())}" target="_blank" rel="noopener">Quadro da equipe</a></span></footer>
+        ${prod ? '' : `<span><a href="${esc(urlSite())}" target="_blank" rel="noopener">Site</a><a href="${esc(urlQuadro())}" target="_blank" rel="noopener">Quadro da equipe</a></span>`}</footer>
     </div>
-    <nav class="nav-mob" aria-label="Menu principal">${itens.map(n => link(n, '')).join('')}</nav>
+    ${itens.length > 1 ? `<nav class="nav-mob" aria-label="Menu principal">${itens.map(n => link(n, '')).join('')}</nav>` : ''}
   </div>
   <div class="veu" id="veu"></div>
   <aside class="gaveta" id="gaveta" role="dialog" aria-modal="true" aria-labelledby="gavTitulo" inert></aside>`;
   $('#veu').addEventListener('click', () => fecharGaveta());
   atualizarBotaoTema();
-  $('#topoBusca').addEventListener('submit', e => {
+  $('#topoBusca')?.addEventListener('submit', e => {
     e.preventDefault();
     const termo = $('#topoBuscaIn').value.trim(); if (!termo) return;
     Object.assign(filtro, { busca: termo, status: 'todos', periodo: 'todas', extra: null });
@@ -579,16 +592,16 @@ function modalConta() {
       <div style="display:grid;gap:10px">
         <div><p class="secao-t" style="margin:0 0 8px" id="lblTema">Tema</p>
           <div class="tema-grade" role="radiogroup" aria-labelledby="lblTema">${TEMAS.map(t => `<button type="button" class="tema-op" role="radio" aria-checked="${t.id === temaEscolhido()}" data-tema="${t.id}" title="${esc(t.desc)}">${amostraTema(t)}${esc(t.nome)}</button>`).join('')}</div></div>
-        <a class="btn ghost block" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}Abrir o site</a>
+        ${ehProdutor() ? '' : `<a class="btn ghost block" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}Abrir o site</a>
         <div style="display:flex;gap:8px"><a class="btn ghost" style="flex:1" href="${esc(urlPote())}" target="_blank" rel="noopener">${ic('pote')}Página do bolo no pote</a>
           <button type="button" class="btn ghost" data-copiar-pote aria-label="Copiar o link da página do bolo no pote" title="Copiar link">${ic('copiar')}</button></div>
-        <a class="btn ghost block" href="${esc(urlQuadro())}" target="_blank" rel="noopener">${ic('tv')}Quadro da equipe (TV)</a>
+        <a class="btn ghost block" href="${esc(urlQuadro())}" target="_blank" rel="noopener">${ic('tv')}Quadro da equipe (TV)</a>`}
         ${DEMO ? `<button type="button" class="btn ghost block" data-reiniciar>${ic('atualizar')}Recomeçar a demonstração</button>` : `<button type="button" class="btn ghost block" data-senha>Trocar senha</button>`}
         <button type="button" class="btn danger block" data-sair>${ic('sair')}Sair</button>
       </div>`
   });
   m.$('[data-trocar-avatar]').addEventListener('click', () => { m.fechar(); modalAvatar(); });
-  m.$('[data-copiar-pote]').addEventListener('click', async () => {
+  m.$('[data-copiar-pote]')?.addEventListener('click', async () => {
     const url = new URL(urlPote(), location.href).href;
     try { await navigator.clipboard.writeText(url); toast('Link da página do bolo no pote copiado. É só colar para o cliente.'); }
     catch (e) { prompt('Copie o link da página do bolo no pote:', url); }
@@ -609,18 +622,19 @@ function modalConta() {
 let gavetaPorClique = false;
 function rotear(forcar = false) {
   if (!perfil) return;
-  const [rota, pedidoId] = decodeURIComponent(location.hash.slice(1) || 'painel').split('@');
+  const [rota, pedidoId] = decodeURIComponent(location.hash.slice(1) || telaInicial()).split('@');
   let [tela, sub] = rota.split('/');
-  if (!NAV.some(n => n.id === tela && (!n.admin || isAdmin()))) tela = 'painel';
+  if (!NAV.some(n => n.id === tela && podeVerNav(n))) tela = telaInicial();
   if (forcar || rota !== rotaAtual) {
     rotaAtual = rota; telaAtual = tela;
     $$('[data-nav]').forEach(a => { if (a.dataset.nav === tela) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
     const el = $('#conteudo');
     document.title = `${NAV.find(n => n.id === tela)?.rot || 'Painel'} — Backoffice Rita Bolos`;
-    ({ painel: telaPainel, hoje: telaHoje, pedidos: telaPedidos, relatorio: telaRelatorio, prejuizos: telaPrejuizos, cardapio: telaCardapio, ajustes: telaAjustes })[tela](el, sub);
+    if (tela !== 'topos') sairTvTopos();
+    ({ painel: telaPainel, hoje: telaHoje, pedidos: telaPedidos, topos: telaTopos, relatorio: telaRelatorio, prejuizos: telaPrejuizos, cardapio: telaCardapio, ajustes: telaAjustes })[tela](el, sub);
     window.scrollTo(0, 0);
   }
-  if (pedidoId) abrirGaveta(pedidoId); else fecharGaveta(true);
+  if (pedidoId && !ehProdutor()) abrirGaveta(pedidoId); else fecharGaveta(true);
 }
 window.addEventListener('hashchange', () => rotear());
 
@@ -647,13 +661,14 @@ function recarregarTela() {
   if (telaAtual === 'painel') telaPainel($('#conteudo'), sub, true);
   if (telaAtual === 'pedidos') carregarPedidos(false, true);
   if (telaAtual === 'hoje') recarregarHoje();
+  if (telaAtual === 'topos') carregarTopos(true);
 }
 
 /* Cabeçalho padrão das telas */
 function cabecalho(titulo, acoes = '', subtitulo = '') {
   const secao = NAV.find(n => n.id === telaAtual)?.rot || titulo;
   return `<div class="page-head"><div class="ph-txt">
-      <nav class="trilha" aria-label="Você está em"><a href="#painel" aria-label="Início">${ic('casa')}</a>${ic('seta', 'ic sep')}<span>${esc(secao)}</span></nav>
+      <nav class="trilha" aria-label="Você está em"><a href="#${telaInicial()}" aria-label="Início">${ic('casa')}</a>${ic('seta', 'ic sep')}<span>${esc(secao)}</span></nav>
       <h1>${esc(titulo)}</h1>${subtitulo ? `<p class="ph-sub">${subtitulo}</p>` : ''}</div>
     <div class="acts">${acoes}</div></div>`;
 }
@@ -669,6 +684,7 @@ document.addEventListener('click', e => {
     case 'conta': modalConta(); break;
     case 'novo-pedido': modalNovoPedido(); break;
     case 'tema': abrirMenuTema(a); break;
+    case 'avisos': abrirAvisos(a); break;
     case 'sair':
       confirmar('Sair da conta?', 'Você volta para a tela de entrada do backoffice.', { botao: 'Sair' })
         .then(ok => { if (ok) api.auth.sair().catch(() => {}); });
@@ -714,7 +730,7 @@ async function iniciar() {
     return;
   }
   api.auth.aoMudar((evento) => {
-    if (evento === 'SIGNED_OUT') { perfil = null; pararTempoReal?.(); pararTempoReal = null; fecharGaveta(true); telaLogin(); }
+    if (evento === 'SIGNED_OUT') { perfil = null; pararTempoReal?.(); pararTempoReal = null; pararToposTempoReal?.(); pararToposTempoReal = null; pararAvisos?.(); pararAvisos = null; fecharAvisos(); sairTvTopos(); fecharGaveta(true); telaLogin(); }
     if (evento === 'PASSWORD_RECOVERY') setTimeout(() => modalNovaSenha(), 300);
   });
   let usuario = null;
@@ -1499,12 +1515,14 @@ function itemReferencia(i) {
   const obs = texto ? `<div class="it-d"><b>Obs.:</b> ${esc(texto)}</div>` : '';
   if (!imagem && !topper) return obs;
   const inp = `<input type="file" accept="image/*" id="refIt-${esc(i.id)}" data-ref-item="${esc(i.id)}" class="sr" tabindex="-1">`;
+  // módulo de topos: "Criar pedido de topo" ou o status do que já foi criado (preenchido por toposDaGaveta)
+  const vaga = topper && isAdmin() ? `<span class="it-topo" data-topo-vinc="${esc(i.id)}"></span>` : '';
   return obs + (imagem
     ? `<div class="it-ref"><a class="it-ref-img" href="${esc(imagem)}" target="_blank" rel="noopener" title="Abrir a imagem"><img src="${esc(imagem)}" alt="Imagem de referência de ${esc(i.nome)}" loading="lazy"></a>
         <div class="it-ref-acoes"><span>Imagem de referência</span>
           <button type="button" class="btn sm wa" data-gav="topo" data-item="${esc(i.id)}">${ic('wa')}Enviar para quem faz o topo</button>
-          <label class="btn sm ghost" for="refIt-${esc(i.id)}">${ic('foto')}Trocar imagem</label></div></div>${inp}`
-    : `<div class="it-ref sem"><span>${ic('alerta')}Sem imagem de referência</span><label class="btn sm ghost" for="refIt-${esc(i.id)}">${ic('foto')}Anexar imagem</label></div>${inp}`);
+          <label class="btn sm ghost" for="refIt-${esc(i.id)}">${ic('foto')}Trocar imagem</label>${vaga}</div></div>${inp}`
+    : `<div class="it-ref sem"><span>${ic('alerta')}Sem imagem de referência</span><label class="btn sm ghost" for="refIt-${esc(i.id)}">${ic('foto')}Anexar imagem</label>${vaga}</div>${inp}`);
 }
 /** Reduz a foto antes de enviar (até 1600 px, JPEG). */
 async function reduzirImagem(arquivo, max = 1600) {
@@ -1579,7 +1597,7 @@ async function modalTopo(p, i) {
 
 /* ---- Impressão na térmica (bobina de 80 mm, 72 mm de área de impressão) ---- */
 async function imprimirTermica(p) {
-  const loja = await configLoja() || {};
+  const cfg = await configLoja(), loja = cfg || {}, pix = pixDe(cfg);
   const pct = Number(p.percentual_sinal ?? 50).toLocaleString('pt-BR');
   const falta = Math.max(0, Number(p.saldo ?? (p.total - p.valor_pago)));
   const l = (a, b, cls = '') => `<div class="l ${cls}"><span>${a}</span><span>${b}</span></div>`;
@@ -1627,7 +1645,7 @@ async function imprimirTermica(p) {
     ${l(falta > 0 ? 'FALTA PAGAR' : 'PAGO', falta > 0 ? R(falta) : 'OK', 'falta')}
     ${p.observacao_cliente ? `<div class="box"><b>Observação do cliente</b>${esc(p.observacao_cliente)}</div>` : ''}
     ${fixadas.length ? `<div class="box"><b>Anotações</b>${fixadas.map(o => esc(o.texto)).join('<br>')}</div>` : ''}
-    ${falta > 0 ? `<div class="box pix"><b>Pix (${esc(PIX.tipo)})</b><span class="k">${esc(PIX.chave)}</span>${esc(PIX.nome)}</div>` : ''}
+    ${falta > 0 && pix ? `<div class="box pix"><b>Pix${pix.tipo ? ` (${esc(pix.tipo)})` : ''}</b><span class="k">${esc(pix.chave)}</span>${esc(pix.nome)}</div>` : ''}
     <div class="pe">${loja.whatsapp_exibicao ? 'WhatsApp ' + esc(loja.whatsapp_exibicao) + '<br>' : ''}Impresso em ${esc(dataHora(new Date().toISOString()))}</div>
   </body></html>`;
   $('#impTermica')?.remove();
@@ -1721,6 +1739,7 @@ function renderGaveta(p) {
       ${isAdmin() ? `<div style="text-align:center;margin-top:18px"><button type="button" class="btn danger sm" data-gav="excluir">${ic('lixo')}Excluir pedido</button></div>` : ''}
     </div>`;
   g.querySelector('.gav-b').scrollTop = rolagem;
+  if (isAdmin()) toposDaGaveta(p);
   $('#fObs').addEventListener('submit', e => {
     e.preventDefault();
     const txt = $('#obsTxt').value.trim();
@@ -1753,6 +1772,8 @@ document.addEventListener('click', async e => {
     case 'prejuizo': modalPrejuizo(p); break;
     case 'termica': imprimirTermica(p); break;
     case 'topo': { const i = p.itens.find(x => String(x.id) === b.dataset.item); if (i) modalTopo(p, i); break; }
+    case 'topo-novo': { const i = p.itens.find(x => String(x.id) === b.dataset.item); if (i) novoTopoDoItem(p, i); break; }
+    case 'topo-ver': abrirTopo(b.dataset.id, () => toposDaGaveta(pedidoAtual)); break;
     case 'msg':
       if (!telefoneWa(p.cliente_telefone)) toast('Este pedido não tem o telefone do cliente.', { acao: { rotulo: 'Incluir telefone', fn: () => modalEditarPedido(p) } });
       else modalMensagem(p);
@@ -1792,7 +1813,7 @@ async function urlReciboCliente(p) {
 async function campoAvisoWa(p, status) {
   if (!telefoneWa(p.cliente_telefone)) return `<p class="dica" style="margin:14px 0 0">Este pedido não tem o WhatsApp do cliente, então ninguém será avisado. Para avisar, inclua o telefone editando o pedido.</p>`;
   const nome = String(p.cliente_nome || '').trim().split(/\s+/)[0] || 'o cliente';
-  const msg = montarMensagemStatus(p, status, await urlReciboCliente(p));
+  const msg = montarMensagemStatus(p, status, await urlReciboCliente(p), await configLoja());
   return `<div style="margin-top:14px">${inChk('avWa', `Avisar ${esc(nome)} no WhatsApp`, true)}
     <div id="avWaBox" style="margin-top:6px">${inTa('avWaMsg', 'Mensagem <span style="font-weight:400;color:var(--ink-3)">(pode editar antes de enviar)</span>', msg, { attrs: 'maxlength="2000" style="min-height:170px"' })}</div></div>`;
 }
@@ -1820,8 +1841,9 @@ function avisoWa(m, p) {
    Modelos prontos com os dados do pedido; a equipe edita e o WhatsApp
    abre na conversa do cliente com o texto escrito.
 ========================================================= */
-function modelosMensagem(p, urlRecibo) {
+function modelosMensagem(p, urlRecibo, pix) {
   const nome = String(p.cliente_nome || '').trim().split(/\s+/)[0] || '';
+  const comPix = pix ? `\n\n${textoPix(pix)}` : '';
   const ola = `Olá${nome ? ', ' + nome : ''}! Aqui é da ${p.loja?.nome || 'Rita Bolos'}.`;
   const v = x => R(x).replace(/ /g, ' ');
   const ped = `*${p.codigo}*`;
@@ -1834,10 +1856,10 @@ function modelosMensagem(p, urlRecibo) {
   const st = statusDe(p.status);
   const modelos = [
     { id: 'oi', rot: 'Saudação', txt: `${ola}\n\nEstou falando sobre o seu pedido ${ped}.` },
-    faltaSinal > 0 && !st.finalizado && { id: 'sinal', rot: 'Lembrar do sinal', txt: `${ola}\n\nPara confirmar o seu pedido ${ped}, falta o sinal de *${v(faltaSinal)}*. Pode mandar o comprovante por aqui mesmo.\n\nAgradecemos!` },
+    faltaSinal > 0 && !st.finalizado && { id: 'sinal', rot: 'Lembrar do sinal', txt: `${ola}\n\nPara confirmar o seu pedido ${ped}, falta o sinal de *${v(faltaSinal)}*. Pode mandar o comprovante por aqui mesmo.${comPix}\n\nAgradecemos!` },
     !st.finalizado && { id: 'retirada', rot: 'Lembrar da retirada', txt: `${ola}\n\nPassando para lembrar: a retirada do seu pedido ${ped} é ${quando}.\n\n${itens}${saldo > 0 ? `\n\nNa retirada, falta pagar *${v(saldo)}*.` : ''}` },
     !st.finalizado && { id: 'pronto', rot: 'Pedido pronto', txt: `${ola}\n\nSeu pedido ${ped} está *pronto para retirada*!${p.hora_retirada || d ? ` Combinamos ${quando}.` : ''}${saldo > 0 ? `\n\nFalta pagar *${v(saldo)}*: pode ser na retirada.` : '\n\nEstá tudo pago, é só vir buscar.'}` },
-    saldo > 0 && faltaSinal <= 0 && { id: 'saldo', rot: 'Saldo a pagar', txt: `${ola}\n\nO restante do seu pedido ${ped} é *${v(saldo)}*. Pode pagar na retirada ou mandar o comprovante por aqui.` },
+    saldo > 0 && faltaSinal <= 0 && { id: 'saldo', rot: 'Saldo a pagar', txt: `${ola}\n\nO restante do seu pedido ${ped} é *${v(saldo)}*. Pode pagar na retirada ou mandar o comprovante por aqui.${comPix}` },
     urlRecibo && { id: 'recibo', rot: 'Enviar recibo', txt: `${ola}\n\nAqui está o recibo do seu pedido ${ped}, com os itens e os valores:\n${urlRecibo}` },
     { id: 'livre', rot: 'Escrever do zero', txt: `${ola}\n\n` }
   ].filter(Boolean);
@@ -1848,7 +1870,7 @@ function modelosMensagem(p, urlRecibo) {
 }
 async function modalMensagem(p) {
   const wa = telefoneWa(p.cliente_telefone); if (!wa) return;
-  const { modelos, sugerido } = modelosMensagem(p, await urlReciboCliente(p).catch(() => ''));
+  const { modelos, sugerido } = modelosMensagem(p, await urlReciboCliente(p).catch(() => ''), pixDe(await configLoja()));
   const nome = String(p.cliente_nome || '').trim().split(/\s+/)[0] || 'cliente';
   const m = abrirModal({
     titulo: `Mensagem para ${nome}`,
@@ -2579,10 +2601,65 @@ function ligarSwitch(box, mapa) {
 }
 
 /* ---- Loja ---- */
+const PASSOS_RETIRADA = [[15, '15 minutos'], [20, '20 minutos'], [30, '30 minutos'], [45, '45 minutos'], [60, '1 hora']];
+const hm5 = v => /^\d\d:\d\d/.test(v || '') ? String(v).slice(0, 5) : '';
+/** Horários que o site oferece na retirada, como o cliente vê (index.html, campoRetirada). */
+function horariosRetirada(ini, fim, passo) {
+  const min = hm => { const [h, m] = hm.split(':').map(Number); return h * 60 + m; };
+  const hs = [];
+  for (let m = min(ini); passo > 0 && m <= min(fim); m += passo) hs.push(`${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`);
+  return hs;
+}
+/* Chave Pix conferida antes de salvar: um número trocado mandaria o sinal para outra pessoa */
+function cpfValido(d) {
+  if (!/^\d{11}$/.test(d) || /^(\d)\1{10}$/.test(d)) return false;
+  const dv = n => { let s = 0; for (let i = 0; i < n; i++) s += d[i] * (n + 1 - i); return (s * 10) % 11 % 10; };
+  return dv(9) === +d[9] && dv(10) === +d[10];
+}
+/** CNPJ com dígito verificador; aceita o formato novo da Receita, com letras nas 12 primeiras posições. */
+function cnpjValido(d) {
+  if (!/^[0-9A-Z]{12}\d{2}$/.test(d) || /^(.)\1{13}$/.test(d)) return false;
+  const v = ch => ch.charCodeAt(0) - 48, pesos = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const dv = n => { let s = 0; for (let i = 0; i < n; i++) s += v(d[i]) * pesos[i + 13 - n]; return s % 11 < 2 ? 0 : 11 - s % 11; };
+  return dv(12) === v(d[12]) && dv(13) === v(d[13]);
+}
+/** A chave no formato de cada tipo (CPF só números, celular com +55...), ou erro. */
+function chavePix(tipo, chave) {
+  if (tipo === 'CPF') { const d = chave.replace(/\D/g, ''); if (!cpfValido(d)) throw new Error('Confira a chave Pix: esse CPF não é válido.'); return d; }
+  if (tipo === 'CNPJ') { const d = chave.toUpperCase().replace(/[^0-9A-Z]/g, ''); if (!cnpjValido(d)) throw new Error('Confira a chave Pix: esse CNPJ não é válido.'); return d; }
+  if (tipo === 'Celular') { const d = digitosTel(chave); if (d.length !== 10 && d.length !== 11) throw new Error('Informe o celular da chave Pix com DDD.'); return '+55' + d; }
+  if (tipo === 'E-mail') { if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(chave)) throw new Error('Confira o e-mail da chave Pix.'); return chave.toLowerCase(); }
+  if (tipo === 'Chave aleatória') {
+    const h = chave.toLowerCase().replace(/[\s-]/g, '');
+    if (!/^[0-9a-f]{32}$/.test(h)) throw new Error('A chave aleatória tem 32 letras e números, como aparece no app do banco.');
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  }
+  return chave;
+}
+/** Pix e horários de retirada do formulário, já conferidos (sql/ajustes-loja.sql). */
+function ajustesPixRetirada(f) {
+  const falha = (id, msg) => { const el = f.$('#' + id); el?.setAttribute('aria-invalid', 'true'); el?.focus(); throw new Error(msg); };
+  ['lPixChave', 'lRetIni', 'lRetFim', 'lRetDias'].forEach(id => f.$('#' + id)?.removeAttribute('aria-invalid'));
+  const tipo = valDe(f, 'lPixTipo'), chave = valDe(f, 'lPixChave');
+  let pixChave = null;
+  if (chave) { try { pixChave = chavePix(tipo, chave); } catch (e) { falha('lPixChave', e.message); } }
+  const ini = valDe(f, 'lRetIni'), fim = valDe(f, 'lRetFim'), dias = numDe(f, 'lRetDias');
+  if (!ini) falha('lRetIni', 'Informe o primeiro horário de retirada.');
+  if (!fim || fim <= ini) falha('lRetFim', 'O último horário de retirada precisa ser depois do primeiro.');
+  if (!(dias >= 1 && dias <= 60)) falha('lRetDias', 'Os dias para escolher no site precisam ficar entre 1 e 60.');
+  return { pix_chave: pixChave, pix_tipo: tipo || null, pix_nome: valDe(f, 'lPixNome') || null,
+    retirada_inicio: ini, retirada_fim: fim, retirada_intervalo_min: Number(valDe(f, 'lRetPasso')) || 30, retirada_dias: Math.round(dias) };
+}
 async function ajLoja(box) {
   let c;
   const topos = await contatoTopos();
   try { c = await configLoja(true); if (!c) throw new Error('Configurações não encontradas. Rode o seed.sql.'); } catch (e) { box.innerHTML = `<div class="vazio"><h2>Não foi possível carregar</h2><p>${esc(e.message)}</p></div>`; return; }
+  // Pix e horários de retirada: campos do sql/ajustes-loja.sql (antes ficavam escritos no código)
+  const temAjustes = 'pix_chave' in c && 'retirada_inicio' in c, so = temAjustes ? '' : 'disabled';
+  const pix = temAjustes ? { chave: c.pix_chave || '', tipo: c.pix_tipo || 'CPF', nome: c.pix_nome || '' } : pixDe({});
+  const ret = { ini: hm5(c.retirada_inicio) || '08:00', fim: hm5(c.retirada_fim) || '18:00', passo: Number(c.retirada_intervalo_min) || 30, dias: Number(c.retirada_dias) || 14 };
+  const passos = PASSOS_RETIRADA.some(([v]) => v === ret.passo) ? PASSOS_RETIRADA : [...PASSOS_RETIRADA, [ret.passo, `${ret.passo} minutos`]].sort((a, b) => a[0] - b[0]);
+  const tipos = [...new Set([...TIPOS_PIX, pix.tipo].filter(Boolean))].map(t => [t, t]);
   box.innerHTML = `
     <div class="pausa ${c.aceitando_pedidos ? 'on' : 'off'}" id="ajPausa">
       <input type="checkbox" class="switch" id="lAceita" ${c.aceitando_pedidos ? 'checked' : ''} aria-describedby="lAceitaTxt">
@@ -2593,15 +2670,39 @@ async function ajLoja(box) {
       ${inTa('lPausa', 'Mensagem quando os pedidos estiverem pausados', c.mensagem_pausa || '', { attrs: 'maxlength="300" style="min-height:60px" placeholder="Ex.: Estamos de férias até 10/01. Voltamos logo!"' })}
       <div class="grid2">${inTxt('lNome', 'Nome da loja', c.nome_loja, { attrs: 'maxlength="60"' })}${inTxt('lSlogan', 'Slogan', c.slogan || '', { attrs: 'maxlength="80"' })}</div>
       <div class="grid2">${inTxt('lWa', 'WhatsApp da loja (DDD + número)', formatarTel(c.whatsapp_numero), { attrs: ATTR_TEL.replace('99999-9999', '3845-1550'), dica: 'É o número que recebe os pedidos do site.' })}${inTxt('lWaEx', 'WhatsApp como aparece no site', formatarTel(c.whatsapp_exibicao) || c.whatsapp_exibicao || '', { attrs: ATTR_TEL.replace('99999-9999', '3845-1550'), dica: 'Em branco, usa o mesmo número de cima.' })}</div>
-      <div class="grid3">${inNum('lSinal', 'Sinal (%)', c.percentual_sinal, { attrs: 'min="0" max="100" step="1"' })}${inNum('lAnt', 'Antecedência mínima (dias)', c.antecedencia_minima_dias, { attrs: 'min="0"' })}${inNum('lTol', 'Tolerância de peso do bolo (g)', c.tolerancia_peso_bolo_g, { attrs: 'min="0" step="50"' })}</div>
-      <div class="grid2">${inNum('lDias', 'Retirada sugerida (dias depois do pedido)', c.dias_retirada_sugerida, { attrs: 'min="0"', dica: 'Só para pedidos lançados aqui pela equipe. No site, o cliente escolhe o dia.' })}${campo('lHora', 'Horário sugerido', `<input class="in" id="lHora" type="time" value="${esc(hora(c.hora_retirada_sugerida))}">`, 'Idem: no site, o cliente escolhe o horário.')}</div>
       ${inTxt('lUrl', 'Endereço do site', c.url_site || '', { attrs: 'type="url" placeholder="https://ritabolos.com.br/"', dica: 'Usado no link do recibo que vai no WhatsApp.' })}
-      <div class="grid2">${inTxt('lTopNum', 'WhatsApp de quem faz os topos', formatarTel(topos.numero), { attrs: ATTR_TEL, dica: 'Usado no botão “Enviar para quem faz o topo”, ao lado da imagem de referência.' })}${inTxt('lTopNome', 'Nome de quem faz os topos', topos.nome, { attrs: 'maxlength="60"' })}</div>
       ${fotoCampo('lLogo', 'Logotipo', c.logo_path)}
+
+      <p class="secao-t linha">Pedidos e sinal</p>
+      <div class="grid3">${inNum('lSinal', 'Sinal (%)', c.percentual_sinal, { attrs: 'min="0" max="100" step="1"' })}${inNum('lAnt', 'Antecedência mínima (dias)', c.antecedencia_minima_dias, { attrs: 'min="0"' })}${inNum('lTol', 'Tolerância de peso do bolo (g)', c.tolerancia_peso_bolo_g, { attrs: 'min="0" step="50"' })}</div>
+
+      <p class="secao-t linha">Pix do sinal</p>
+      ${temAjustes ? '' : '<div class="aviso-box">Rode no Supabase o arquivo <code>sql/ajustes-loja.sql</code> para mudar o Pix e os horários de retirada por aqui. Até lá, valem os de sempre (mostrados abaixo).</div>'}
+      <div class="grid3">${inSel('lPixTipo', 'Tipo da chave', tipos, pix.tipo, { attrs: so })}${inTxt('lPixChave', 'Chave Pix', pix.chave, { attrs: `maxlength="80" autocomplete="off" spellcheck="false" ${so}` })}${inTxt('lPixNome', 'Nome de quem recebe', pix.nome, { attrs: `maxlength="80" ${so}` })}</div>
+      <p class="ajuste-dica">Aparece no fim do pedido no site, nas mensagens do WhatsApp, no recibo e na impressão. Com a chave em branco, o Pix não aparece.</p>
+
+      <p class="secao-t linha">Retirada</p>
+      <div class="grid2">${campo('lRetIni', 'Primeiro horário no site', `<input class="in" id="lRetIni" type="time" value="${ret.ini}" ${so}>`)}${campo('lRetFim', 'Último horário no site', `<input class="in" id="lRetFim" type="time" value="${ret.fim}" ${so}>`)}</div>
+      <div class="grid2">${inSel('lRetPasso', 'Intervalo entre os horários', passos, ret.passo, { attrs: so })}${inNum('lRetDias', 'Dias para escolher no site', ret.dias, { attrs: `min="1" max="60" ${so}` })}</div>
+      <p class="ajuste-dica" id="lRetPrev" aria-live="polite"></p>
+      <div class="grid2">${inNum('lDias', 'Retirada sugerida (dias depois do pedido)', c.dias_retirada_sugerida, { attrs: 'min="0"', dica: 'Só para pedidos lançados aqui pela equipe. No site, o cliente escolhe o dia.' })}${campo('lHora', 'Horário sugerido', `<input class="in" id="lHora" type="time" value="${esc(hora(c.hora_retirada_sugerida))}">`, 'Idem: no site, o cliente escolhe o horário.')}</div>
+
+      <p class="secao-t linha">Topos de bolo</p>
+      <div class="grid2">${inTxt('lTopNum', 'WhatsApp de quem faz os topos', formatarTel(topos.numero), { attrs: ATTR_TEL, dica: 'Usado no botão “Enviar para quem faz o topo”, ao lado da imagem de referência.' })}${inTxt('lTopNome', 'Nome de quem faz os topos', topos.nome, { attrs: 'maxlength="60"' })}</div>
       <div style="display:flex;justify-content:flex-end"><button type="button" class="btn primary" id="lSalvar">Salvar ajustes</button></div>
     </div>`;
   const fake = { $: s => box.querySelector(s), $$: s => [...box.querySelectorAll(s)] };
   ligarFotos(fake, 'marca');
+  // prévia dos horários que o cliente vai ver
+  const previaRetirada = () => {
+    const ini = valDe(fake, 'lRetIni'), fim = valDe(fake, 'lRetFim'), dias = numDe(fake, 'lRetDias'), el = box.querySelector('#lRetPrev');
+    if (!ini || !fim || fim <= ini) { el.textContent = 'O último horário precisa ser depois do primeiro.'; return; }
+    const hs = horariosRetirada(ini, fim, Number(valDe(fake, 'lRetPasso')));
+    el.textContent = `No site aparecem ${hs.length} ${hs.length === 1 ? 'horário' : 'horários'} (${hs.length > 6 ? `${hs.slice(0, 3).join(', ')} … ${hs.at(-1)}` : hs.join(', ')})`
+      + `${dias >= 1 ? `, nos próximos ${dias} ${dias === 1 ? 'dia' : 'dias'}` : ''}. O cliente ainda pode digitar outro horário.`;
+  };
+  previaRetirada();
+  box.oninput = e => { if (/^lRet/.test(e.target.id)) previaRetirada(); };
   box.querySelector('#lAceita').addEventListener('change', async e => {
     const on = e.target.checked;
     try {
@@ -2616,13 +2717,15 @@ async function ajLoja(box) {
     const sinal = numDe(fake, 'lSinal');
     if (!(sinal >= 0 && sinal <= 100)) throw new Error('O sinal precisa ficar entre 0 e 100%.');
     exigir(fake, 'lNome', 'Informe o nome da loja.');
+    const pixRetirada = temAjustes ? ajustesPixRetirada(fake) : {};
     await api.admin.configuracoes.salvar({
       mensagem_pausa: valDe(fake, 'lPausa') || null, nome_loja: valDe(fake, 'lNome'), slogan: valDe(fake, 'lSlogan') || null,
       whatsapp_numero: wa, whatsapp_exibicao: valDe(fake, 'lWaEx') || formatarTel(waDig), percentual_sinal: sinal,
       antecedencia_minima_dias: numDe(fake, 'lAnt') || 0, tolerancia_peso_bolo_g: numDe(fake, 'lTol') || 0,
       dias_retirada_sugerida: numDe(fake, 'lDias') || 0, hora_retirada_sugerida: valDe(fake, 'lHora') || '10:00',
-      url_site: valDe(fake, 'lUrl') || null, logo_path: fotoDe(fake, 'lLogo')
+      url_site: valDe(fake, 'lUrl') || null, logo_path: fotoDe(fake, 'lLogo'), ...pixRetirada
     });
+    if (temAjustes) fake.$('#lPixChave').value = pixRetirada.pix_chave || '';   // como ficou gravada (CPF só com números etc.)
     const topNum = digitosTel(valDe(fake, 'lTopNum'));
     if (topNum && topNum.length < 10) throw new Error('Informe o WhatsApp de quem faz os topos com DDD.');
     await salvarContatoTopos(topNum, valDe(fake, 'lTopNome'));
@@ -2855,15 +2958,20 @@ async function ajStatus(box) {
 }
 
 /* ---- Equipe ---- */
+const PAPEIS = { admin: 'Administração', atendente: 'Atendimento', personalizados: 'Topos e personalizados' };
 async function ajEquipe(box) {
-  let lista;
-  try { lista = await api.admin.equipe.listar(); }
+  let equipe, prods;
+  try { equipe = await api.admin.equipe.listar(); }
   catch (e) { box.innerHTML = `<div class="aviso-box">${esc(e.message)}${/não existe no banco/.test(e.message) ? ' (arquivo <code>20261003000100_equipe.sql</code>)' : ''}</div>`; return; }
+  // quem produz os personalizados fica numa lista à parte (sql/topos.sql): não enxerga os pedidos da loja
+  try { prods = await api.admin.personalizados.listar(); } catch (e) { prods = null; }
+  const lista = [...equipe, ...(prods || []).filter(p => !equipe.some(a => a.user_id === p.user_id)).map(p => ({ ...p, papel: 'personalizados' }))];
   box.innerHTML = `<div class="aviso-box"><b>Para dar acesso a alguém:</b> 1) no Supabase, crie o usuário em Authentication → Users → Add user (com e-mail e senha);
-      2) aqui, toque em “Liberar acesso” e use o mesmo e-mail. <b>Atendimento</b> vê só pedidos; <b>Administração</b> vê tudo.</div>
+      2) aqui, toque em “Liberar acesso” e use o mesmo e-mail. <b>Atendimento</b> vê só pedidos; <b>Administração</b> vê tudo;
+      <b>Topos e personalizados</b> vê só o módulo de topos${prods ? '' : ' (para liberar, rode antes o <code>sql/topos.sql</code>)'}.</div>
     <div class="page-head" style="margin-bottom:10px"><span></span><button type="button" class="btn primary sm" data-novo-membro>${ic('mais')}Liberar acesso</button></div>
     <div class="tbl">${lista.map(a => linhaTbl({ id: a.user_id, attr: 'membro', titulo: `${a.nome}${a.user_id === perfil.user_id ? ' (você)' : ''}`,
-      sub: `${a.email || 'sem e-mail'} · ${a.papel === 'admin' ? 'Administração' : 'Atendimento'}${a.ativo ? '' : ' · bloqueado'}${a.ultimo_acesso ? ' · último acesso ' + dataHora(a.ultimo_acesso) : ''}` })).join('')}</div>`;
+      sub: `${a.email || 'sem e-mail'} · ${PAPEIS[a.papel] || a.papel}${a.ativo ? '' : ' · bloqueado'}${a.ultimo_acesso ? ' · último acesso ' + dataHora(a.ultimo_acesso) : ''}` })).join('')}</div>`;
   box.onclick = e => {
     const b = e.target.closest('[data-ed-membro],[data-novo-membro]'); if (!b) return;
     const a = lista.find(x => x.user_id === b.dataset.edMembro) || { papel: 'atendente', ativo: true };
@@ -2872,20 +2980,468 @@ async function ajEquipe(box) {
       titulo: novo ? 'Liberar acesso' : 'Editar acesso',
       corpo: `${inTxt('eEmail', 'E-mail', a.email || '', { attrs: `type="email" ${novo ? '' : 'readonly'}`, dica: novo ? 'O mesmo e-mail do usuário criado no Supabase.' : '' })}
         ${inTxt('eNome', 'Nome', a.nome || '', { attrs: 'maxlength="60"' })}
-        ${inSel('ePapel', 'Acesso', [['atendente', 'Atendimento (só pedidos)'], ['admin', 'Administração (tudo)']], a.papel, { attrs: eu ? 'disabled' : '' })}
+        ${inSel('ePapel', 'Acesso', [['atendente', 'Atendimento (só pedidos)'], ['admin', 'Administração (tudo)'], ...(prods ? [['personalizados', 'Topos e personalizados (só o módulo de topos)']] : [])], a.papel, { attrs: eu ? 'disabled' : '' })}
         ${eu ? '' : inChk('eAtivo', 'Acesso liberado', a.ativo)}`,
       rodape: `${novo || eu ? '' : `<button type="button" class="btn danger esq" data-del>${ic('lixo')}Tirar acesso</button>`}<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>Salvar</button>`
     });
     m.$('[data-del]')?.addEventListener('click', async () => {
       if (!await confirmar(`Tirar o acesso de ${a.nome}?`, 'A pessoa não consegue mais entrar no backoffice. O usuário continua existindo no Supabase.', { botao: 'Tirar acesso', perigo: true })) return;
-      await ocupado(m.$('[data-del]'), async () => { await api.admin.equipe.remover(a.user_id); m.fechar(); ajEquipe(box); });
+      await ocupado(m.$('[data-del]'), async () => {
+        await (a.papel === 'personalizados' ? api.admin.personalizados : api.admin.equipe).remover(a.user_id);
+        m.fechar(); ajEquipe(box);
+      });
     });
     m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
       exigir(m, 'eEmail', 'Informe o e-mail.'); exigir(m, 'eNome', 'Informe o nome.');
-      await api.admin.equipe.salvar({ email: valDe(m, 'eEmail'), nome: valDe(m, 'eNome'), papel: eu ? 'admin' : valDe(m, 'ePapel'), ativo: eu ? true : chkDe(m, 'eAtivo') });
+      const dados = { email: valDe(m, 'eEmail'), nome: valDe(m, 'eNome'), papel: eu ? 'admin' : valDe(m, 'ePapel'), ativo: eu ? true : chkDe(m, 'eAtivo') };
+      if (dados.papel === 'personalizados') {
+        await api.admin.personalizados.salvar(dados);
+        if (!novo && a.papel !== 'personalizados') await api.admin.equipe.remover(a.user_id);   // saiu da equipe da loja
+      } else {
+        await api.admin.equipe.salvar(dados);
+        if (!novo && a.papel === 'personalizados') await api.admin.personalizados.remover(a.user_id);
+      }
       m.fechar(); toast('Acesso salvo.'); ajEquipe(box);
     }));
   };
 }
+
+/* =========================================================
+   TOPOS E PERSONALIZADOS (sql/topos.sql)
+   Pedidos próprios de topos de bolo e personalizados (caixinhas, tags...), feitos por quem produz.
+   Acesso: Administração e o perfil "Topos e personalizados". Quadro por status, como o da equipe:
+   arrastar o cartão ou tocar no botão dele muda o status.
+========================================================= */
+const TOPO_STATUS = [
+  { codigo: 'novo', nome: 'Novo', cor: '#B9476A', acao: 'Começar' },
+  { codigo: 'em_producao', nome: 'Em produção', cor: '#C9A15A', acao: 'Marcar como pronto' },
+  { codigo: 'pronto', nome: 'Pronto', cor: '#2B7465', acao: 'Marcar como entregue' },
+  { codigo: 'entregue', nome: 'Entregue', cor: '#6E4B3A' },
+  { codigo: 'cancelado', nome: 'Cancelado', cor: '#8A8A8A' }
+];
+const ABERTOS_TOPO = ['novo', 'em_producao', 'pronto'];
+const TOPO_TIPOS = { topo: 'Topo de bolo', personalizado: 'Personalizado' };
+const SUGESTOES_TOPO = ['Topo de papel', 'Topo 3D em camadas', 'Topo de acrílico', 'Topo com nome', 'Caixinhas para doces', 'Tags', 'Rótulos', 'Toppers para docinhos', 'Forminhas', 'Kit festa'];
+const topoStatus = c => TOPO_STATUS.find(s => s.codigo === c) || { codigo: c, nome: c, cor: '#6E4B3A' };
+const proxTopo = c => { const i = TOPO_STATUS.findIndex(s => s.codigo === c); return i >= 0 && i < 3 ? TOPO_STATUS[i + 1] : null; };
+const codigoTopo = t => `TP-${String(t?.numero ?? '').padStart(4, '0')}`;
+/** Quando entregar, com destaque para hoje, amanhã e atrasado (atrasado: ainda não ficou pronto e a data passou). */
+function entregaTopo(t) {
+  const hoje = hojeISO(), atraso = ['novo', 'em_producao'].includes(t.status) && t.data_entrega < hoje;
+  const cls = atraso ? 'atraso' : !['novo', 'em_producao', 'pronto'].includes(t.status) ? '' : t.data_entrega === hoje ? 'hoje' : t.data_entrega === hojeISO(1) ? 'amanha' : '';
+  return { cls, txt: `${dataCurta(t.data_entrega)}${t.hora_entrega ? ' às ' + hora(t.hora_entrega) : ''}${atraso ? ' · atrasado' : ''}` };
+}
+const filtroTopos = { status: 'abertos', busca: '' };
+let toposCache = [], pararToposTempoReal = null, recargaTopos = null;
+
+function erroTopos(e) {
+  const semTabela = /topos_pedidos|42P01|PGRST205|schema cache|does not exist|não existe/i.test(`${e?.message} ${e?.codigo}`);
+  return `<div class="vazio"><h2>${semTabela ? 'O módulo de topos ainda não está no banco' : 'Não foi possível carregar'}</h2>
+    <p>${semTabela ? 'Rode no Supabase o arquivo <code>sql/topos.sql</code> (SQL Editor). Depois, é só voltar aqui.' : esc(e?.message || 'Tente de novo.')}</p></div>`;
+}
+
+async function telaTopos(el, sub) {
+  const lista = sub === 'lista';
+  const acoes = `<div class="vista-sel" role="group" aria-label="Ver como">
+      <a class="btn sm ${lista ? 'ghost' : 'primary'}" href="#topos" ${lista ? '' : 'aria-current="page"'}>${ic('painel')}Quadro</a>
+      <a class="btn sm ${lista ? 'primary' : 'ghost'}" href="#topos/lista" ${lista ? 'aria-current="page"' : ''}>${ic('pedidos')}Lista</a></div>
+    ${lista ? '' : `<button type="button" class="btn ghost" data-topos-tv>${ic('tv')}Tela cheia</button>`}
+    <button type="button" class="btn primary" data-topo-novo>${ic('mais')}Novo pedido</button>`;
+  const chips = [['abertos', 'Em aberto'], ...TOPO_STATUS.map(s => [s.codigo, s.nome, s.cor]), ['todos', 'Todos']];
+  el.innerHTML = cabecalho('Topos e personalizados', acoes, 'Topos de bolo e personalizados, do pedido à entrega.') + `
+    <div class="tq-tvbar" aria-hidden="true"><strong>Topos e personalizados</strong><span id="tqRelogio"></span>
+      <button type="button" class="btn sm ghost" data-topos-tv-sair>${ic('x')}Sair da tela cheia</button></div>
+    ${lista ? `<div class="filtros">
+      <div class="linha"><div class="busca">${ic('busca')}<label class="sr" for="tBusca">Buscar</label>
+        <input class="in" id="tBusca" type="search" placeholder="O que fazer, tema, nome, cliente ou pedido" value="${esc(filtroTopos.busca)}" autocomplete="off"></div></div>
+      <div class="chips" role="group" aria-label="Filtrar por status">${chips.map(([v, t, cor]) => `<button type="button" class="chip" data-tfst="${v}" aria-pressed="${v === filtroTopos.status}">${cor ? `<span class="dot" style="background:${cor}"></span>` : ''}${t}</button>`).join('')}</div>
+    </div>` : ''}
+    <div id="toposCorpo">${lista ? '<div class="skel" style="height:280px"></div>' : '<div class="tq">' + '<div class="skel" style="height:320px"></div>'.repeat(4) + '</div>'}</div>`;
+  if (lista) {
+    let t;
+    $('#tBusca').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => { filtroTopos.busca = e.target.value; carregarTopos(); }, 300); });
+  }
+  await carregarTopos();
+}
+
+async function carregarTopos() {
+  const corpo = $('#toposCorpo'); if (!corpo) return;
+  const lista = rotaAtual === 'topos/lista';
+  try {
+    if (lista) {
+      const st = filtroTopos.status === 'abertos' ? ABERTOS_TOPO : filtroTopos.status === 'todos' ? null : filtroTopos.status;
+      toposCache = await api.admin.topos.listar({ status: st, busca: filtroTopos.busca, crescente: filtroTopos.status === 'abertos' || ABERTOS_TOPO.includes(filtroTopos.status), limite: 300 });
+      corpo.innerHTML = listaTopos(toposCache);
+    } else {
+      // quadro: tudo em aberto, mais o que foi entregue nos últimos dias
+      const [abertos, entregues] = await Promise.all([api.admin.topos.listar({ status: ABERTOS_TOPO }), api.admin.topos.listar({ status: 'entregue', entregaDesde: hojeISO(-2) })]);
+      toposCache = [...abertos, ...entregues];
+      corpo.innerHTML = quadroTopos(toposCache);
+    }
+  } catch (e) { corpo.innerHTML = erroTopos(e); return; }
+  atualizarBadgeTopos();
+}
+
+function quadroTopos(lista) {
+  const vazios = { novo: 'Nenhum pedido novo.', em_producao: 'Nada em produção agora.', pronto: 'Nada pronto esperando entrega.', entregue: 'Nada entregue nos últimos dias.' };
+  return `<div class="tq">${TOPO_STATUS.slice(0, 4).map(s => {
+    const itens = lista.filter(t => t.status === s.codigo);
+    if (s.codigo === 'entregue') itens.sort((a, b) => (a.atualizado_em < b.atualizado_em ? 1 : -1));
+    return `<section class="tq-col" style="${corVars(s.cor)}" aria-labelledby="tqc-${s.codigo}">
+      <header class="tq-h"><span class="dot" aria-hidden="true"></span><h2 id="tqc-${s.codigo}">${esc(s.nome)}</h2><span class="tq-n" aria-label="${itens.length} pedidos">${itens.length}</span></header>
+      <div class="tq-cards" data-drop="${s.codigo}">${itens.length ? itens.map(cartaoTopo).join('') : `<p class="tq-vazio">${vazios[s.codigo]}</p>`}</div>
+    </section>`;
+  }).join('')}</div>`;
+}
+
+function cartaoTopo(t) {
+  const s = topoStatus(t.status), prox = proxTopo(t.status), e = entregaTopo(t), img = t.referencias?.[0];
+  const quem = [t.cliente_nome, t.pedido_codigo].filter(Boolean).join(' · ');
+  return `<article class="tq-card ${e.cls}" draggable="true" data-topo-card="${esc(t.id)}">
+    <button type="button" class="tq-abrir" data-topo="${esc(t.id)}" aria-label="Abrir ${codigoTopo(t)}: ${esc(t.titulo)}">
+      ${img ? `<img class="tq-img" src="${esc(img)}" alt="" loading="lazy">` : ''}
+      <span class="tq-top"><b class="tq-cod">${codigoTopo(t)}</b><span class="tag ${t.tipo === 'personalizado' ? 'tp-pers' : 'cinza'}">${esc(TOPO_TIPOS[t.tipo] || t.tipo)}</span></span>
+      <strong class="tq-tit">${t.quantidade > 1 ? `${t.quantidade}× ` : ''}${esc(t.titulo)}</strong>
+      ${t.tema ? `<span class="tq-l"><b>Tema:</b> ${esc(t.tema)}</span>` : ''}
+      ${t.texto ? `<span class="tq-l tq-txt">“${esc(t.texto)}”</span>` : ''}
+      <span class="tq-quando ${e.cls}">${ic('relogio')}${esc(e.txt)}</span>
+      ${quem ? `<span class="tq-l tq-cli">${esc(quem)}</span>` : ''}
+    </button>
+    ${prox ? `<button type="button" class="btn sm teal tq-avancar" data-topo-avancar="${esc(t.id)}" data-para="${prox.codigo}">${ic('ok')}${esc(s.acao)}</button>` : ''}
+  </article>`;
+}
+
+function listaTopos(lista) {
+  if (!lista.length) return `<div class="card"><p class="vazio">${filtroTopos.busca ? 'Nada encontrado com essa busca.' : 'Nenhum pedido aqui.'}</p></div>`;
+  return `<section class="card tabela" aria-label="Pedidos de topos e personalizados">
+    <div class="tab-cab" aria-hidden="true"><span>Entrega</span><span>O que fazer</span><span>Status e valor</span></div>
+    <div class="lista-ped">${lista.map(t => {
+      const s = topoStatus(t.status), e = entregaTopo(t);
+      const det = [TOPO_TIPOS[t.tipo], t.tema && `Tema: ${t.tema}`, t.texto && `“${t.texto}”`, t.cliente_nome, t.pedido_codigo].filter(Boolean).join(' · ');
+      return `<button type="button" class="ped" data-topo="${esc(t.id)}" aria-label="${codigoTopo(t)}: ${esc(t.titulo)}, entrega ${esc(e.txt)}">
+        <span class="quando ${e.cls}">${esc(dataCurta(t.data_entrega))}${e.cls === 'atraso' ? ' (atrasado)' : ''}<small>${t.hora_entrega ? esc(hora(t.hora_entrega)) : 'sem horário'}</small></span>
+        <span class="meio"><span class="nome">${t.quantidade > 1 ? `${t.quantidade}× ` : ''}${esc(t.titulo)} <span class="cod">${codigoTopo(t)}</span></span><span class="itens">${esc(det)}</span></span>
+        <span class="dir">${pill(s.nome, s.cor)}${Number(t.valor) > 0 ? `<span class="total">${R(t.valor)}</span>${t.pago ? `<span class="tag pago">${ic('ok')}Pago</span>` : '<span class="tag pend">A receber</span>'}` : ''}</span>
+      </button>`;
+    }).join('')}</div></section>`;
+}
+
+/** Muda o status (botão do cartão, arrastar no quadro ou a ficha do pedido). */
+async function mudarStatusTopo(id, para, btn) {
+  const t = toposCache.find(x => x.id === id);
+  if (t && t.status === para) return true;
+  if (para === 'cancelado' && !await confirmar('Cancelar este pedido?', `${t ? codigoTopo(t) + ': ' + t.titulo : 'O pedido'} sai do quadro. Dá para voltar o status depois.`, { botao: 'Cancelar pedido', perigo: true })) return false;
+  return ocupado(btn, async () => {
+    const r = await api.admin.topos.alterarStatus(id, para);
+    toast(`${codigoTopo(r)}: ${topoStatus(para).nome}.`);
+    if (telaAtual === 'topos') await carregarTopos();
+    else atualizarBadgeTopos();
+    return true;
+  });
+}
+
+/* Cliques e arrastar do módulo (quadro, lista, botões do cabeçalho) */
+document.addEventListener('click', e => {
+  if (!perfil || !podeTopos()) return;
+  const b = e.target.closest('[data-topo-novo],[data-topos-tv],[data-topos-tv-sair],[data-topo-avancar],[data-topo],[data-tfst]');
+  if (!b || b.closest('.modal-veu')) return;
+  if (b.dataset.topoNovo !== undefined) modalTopoForm();
+  else if (b.dataset.toposTv !== undefined) entrarTvTopos();
+  else if (b.dataset.toposTvSair !== undefined) sairTvTopos();
+  else if (b.dataset.topoAvancar) mudarStatusTopo(b.dataset.topoAvancar, b.dataset.para, b);
+  else if (b.dataset.topo) abrirTopo(b.dataset.topo);
+  else if (b.dataset.tfst) { filtroTopos.status = b.dataset.tfst; $$('[data-tfst]').forEach(x => x.setAttribute('aria-pressed', String(x === b))); carregarTopos(); }
+});
+document.addEventListener('dragstart', e => {
+  const c = e.target.closest?.('[data-topo-card]'); if (!c) return;
+  e.dataTransfer.setData('text/plain', c.dataset.topoCard); e.dataTransfer.effectAllowed = 'move';
+  c.classList.add('arrastando');
+});
+document.addEventListener('dragend', e => { e.target.closest?.('[data-topo-card]')?.classList.remove('arrastando'); $$('.tq-cards.sobre').forEach(x => x.classList.remove('sobre')); });
+document.addEventListener('dragover', e => {
+  const z = e.target.closest?.('[data-drop]'); if (!z) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+  if (!z.classList.contains('sobre')) { $$('.tq-cards.sobre').forEach(x => x.classList.remove('sobre')); z.classList.add('sobre'); }
+});
+document.addEventListener('drop', e => {
+  const z = e.target.closest?.('[data-drop]'); if (!z) return;
+  e.preventDefault(); z.classList.remove('sobre');
+  const id = e.dataTransfer.getData('text/plain');
+  if (id && toposCache.some(t => t.id === id)) mudarStatusTopo(id, z.dataset.drop, null);
+});
+
+/* ---- Ficha do pedido de topo ---- */
+async function abrirTopo(id, depois) {
+  let t, hist;
+  try { [t, hist] = await Promise.all([api.admin.topos.obter(id), api.admin.topos.historico(id).catch(() => [])]); }
+  catch (e) { erroToast(e); return; }
+  const s = topoStatus(t.status), prox = proxTopo(t.status), e = entregaTopo(t), tel = telefoneWa(t.cliente_telefone);
+  const refs = t.referencias || [];
+  const m = abrirModal({
+    titulo: `${codigoTopo(t)} · ${t.titulo}`, largo: true,
+    corpo: `<div class="tp-det">
+      <div class="status-sel" role="group" aria-label="Mudar status">${TOPO_STATUS.map(x => `<button type="button" class="st-btn" data-topo-st="${x.codigo}" ${x.codigo === t.status ? `aria-current="true" style="background:${x.cor};color:${corTexto(x.cor)}"` : ''}><span class="dot" style="background:${x.cor}"></span>${esc(x.nome)}</button>`).join('')}</div>
+      ${prox ? `<button type="button" class="btn teal block prox" data-topo-st="${prox.codigo}">${ic('ok')}${esc(s.acao)}</button>` : ''}
+      ${refs.length ? `<p class="secao-t">Imagens de referência</p><div class="tp-refs">${refs.map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener" title="Abrir a imagem"><img src="${esc(u)}" alt="Referência ${i + 1}" loading="lazy"></a>`).join('')}</div>`
+        : '<p class="aviso-box" style="margin:16px 0 0">Sem imagem de referência. Dá para anexar em Editar.</p>'}
+      <p class="secao-t">Detalhes</p>
+      <dl class="kv">
+        <dt>Tipo</dt><dd>${esc(TOPO_TIPOS[t.tipo] || t.tipo)}${t.quantidade > 1 ? ` · ${t.quantidade} unidades` : ''}</dd>
+        <dt>Entrega</dt><dd><span class="tq-quando ${e.cls}">${esc(formatarData(t.data_entrega))} (${esc(dataCurta(t.data_entrega))})${t.hora_entrega ? ' às ' + esc(hora(t.hora_entrega)) : ''}</span></dd>
+        ${t.tema ? `<dt>Tema</dt><dd>${esc(t.tema)}</dd>` : ''}
+        ${t.texto ? `<dt>Texto</dt><dd>“${esc(t.texto)}”</dd>` : ''}
+        ${t.detalhes ? `<dt>Detalhes</dt><dd style="white-space:pre-line;text-align:left">${esc(t.detalhes)}</dd>` : ''}
+        ${t.cliente_nome || t.cliente_telefone ? `<dt>Cliente</dt><dd>${esc(t.cliente_nome || '')}${t.cliente_telefone ? `${t.cliente_nome ? ' · ' : ''}<a href="tel:${esc(String(t.cliente_telefone).replace(/[^\d+]/g, ''))}">${esc(formatarTel(t.cliente_telefone) || t.cliente_telefone)}</a>` : ''}</dd>` : ''}
+        ${t.pedido_codigo ? `<dt>Pedido da loja</dt><dd>${isAdmin() && t.pedido_id ? `<button type="button" class="link" data-topo-pedido="${esc(t.pedido_id)}">${esc(t.pedido_codigo)}</button>` : esc(t.pedido_codigo)}</dd>` : ''}
+        <dt>Valor</dt><dd>${Number(t.valor) > 0 ? `${R(t.valor)} · ${t.pago ? 'pago' : 'a receber'}` : '—'}</dd>
+      </dl>
+      <p class="secao-t">Histórico</p>
+      <ul class="hist">${hist.slice().reverse().map(h => `<li style="--c:${esc(topoStatus(h.status_novo).cor)}"><b>${esc(topoStatus(h.status_novo).nome)}</b>
+        <small>${esc(dataHora(h.criado_em))}${h.autor_nome ? ' · ' + esc(h.autor_nome) : ''}</small></li>`).join('') || '<li><small>Sem registros.</small></li>'}</ul>
+    </div>`,
+    rodape: `${isAdmin() ? `<button type="button" class="btn danger esq" data-topo-excluir>${ic('lixo')}Excluir</button>` : ''}
+      ${tel ? `<button type="button" class="btn wa" data-topo-wa>${ic('wa')}WhatsApp</button>` : ''}
+      <button type="button" class="btn ghost" data-topo-editar>${ic('editar')}Editar</button><button type="button" class="btn primary" data-fechar>Fechar</button>`
+  });
+  const mudou = () => { depois?.(); if (telaAtual === 'topos') carregarTopos(); else atualizarBadgeTopos(); };
+  m.$$('[data-topo-st]').forEach(b => b.addEventListener('click', async () => {
+    toposCache = toposCache.some(x => x.id === t.id) ? toposCache : [...toposCache, t];
+    const ok = await mudarStatusTopo(t.id, b.dataset.topoSt, b);
+    if (ok) { m.fechar(); depois?.(); abrirTopo(t.id, depois); }
+  }));
+  m.$('[data-topo-editar]').addEventListener('click', () => { m.fechar(); modalTopoForm(t, {}, mudou); });
+  m.$('[data-topo-pedido]')?.addEventListener('click', ev => { m.fechar(); location.hash = '#pedidos@' + ev.currentTarget.dataset.topoPedido; });
+  m.$('[data-topo-wa]')?.addEventListener('click', () => {
+    const nome = String(t.cliente_nome || '').trim().split(/\s+/)[0];
+    const oQue = `${t.quantidade > 1 ? t.quantidade + '× ' : ''}${t.titulo}${t.tema ? ` (${t.tema})` : ''}`;
+    const msg = t.status === 'pronto'
+      ? `Olá${nome ? ', ' + nome : ''}! Aqui é da Rita Bolos. Seu pedido ${codigoTopo(t)}, ${oQue}, está *pronto*!`
+      : `Olá${nome ? ', ' + nome : ''}! Aqui é da Rita Bolos. Estou falando sobre o seu pedido ${codigoTopo(t)}: ${oQue}, para ${formatarData(t.data_entrega)}.`;
+    abrirWhatsApp(linkWhatsApp(tel, msg));
+  });
+  m.$('[data-topo-excluir]')?.addEventListener('click', async () => {
+    if (!await confirmar(`Excluir ${codigoTopo(t)}?`, 'O pedido e o histórico dele serão apagados de vez. Para desistências, prefira o status “Cancelado”.', { botao: 'Excluir de vez', perigo: true })) return;
+    await ocupado(m.$('[data-topo-excluir]'), async () => { await api.admin.topos.remover(t.id); m.fechar(); toast(`${codigoTopo(t)} excluído.`); mudou(); });
+  });
+}
+
+/* ---- Novo pedido / editar. base: dados já preenchidos (ex.: vindo do pedido do bolo) ---- */
+function modalTopoForm(t = null, base = {}, depois) {
+  const novo = !t;
+  const d = t || { tipo: 'topo', quantidade: 1, referencias: [], valor: 0, pago: false, data_entrega: hojeISO(1), ...base };
+  let refs = [...(d.referencias || [])];
+  const m = abrirModal({
+    titulo: novo ? 'Novo pedido de topo ou personalizado' : `Editar ${codigoTopo(t)}`, largo: true,
+    corpo: `${d.pedido_codigo && d.pedido_id ? `<div class="aviso-box">Para o pedido <b>${esc(d.pedido_codigo)}</b>${d.cliente_nome ? ` de ${esc(d.cliente_nome)}` : ''}.</div>` : ''}
+      <div class="grid3">${inSel('tfTipo', 'Tipo', Object.entries(TOPO_TIPOS), d.tipo)}${inTxt('tfTitulo', 'O que fazer', d.titulo || '', { attrs: 'maxlength="80" list="tfSugestoes" placeholder="Ex.: Topo de papel" autocomplete="off"' })}${inNum('tfQtd', 'Quantidade', d.quantidade || 1, { attrs: 'min="1" max="9999"' })}</div>
+      <datalist id="tfSugestoes">${SUGESTOES_TOPO.map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist>
+      <div class="grid2">${inTxt('tfTema', 'Tema', d.tema || '', { attrs: 'maxlength="80" placeholder="Ex.: Safari, Frozen, futebol"' })}${inTxt('tfTexto', 'Texto', d.texto || '', { attrs: 'maxlength="120" placeholder="Ex.: Theo, 1 ano"', dica: 'Nome, idade ou frase que vai escrito.' })}</div>
+      ${inTa('tfDet', 'Detalhes', d.detalhes || '', { attrs: 'maxlength="1500" style="min-height:70px" placeholder="Cores, tamanho, acabamento…"' })}
+      <div class="field"><span class="lbl">Imagens de referência</span><div class="tf-refs" id="tfRefs"></div></div>
+      <div class="grid2">${campo('tfData', 'Data de entrega', `<input class="in" id="tfData" type="date" value="${esc(d.data_entrega || '')}">`, d.pedido_id ? 'Topo de bolo: até a retirada do bolo.' : '')}${campo('tfHora', 'Horário', `<input class="in" id="tfHora" type="time" value="${esc(hora(d.hora_entrega))}">`)}</div>
+      <div class="grid2">${inTxt('tfCli', 'Cliente', d.cliente_nome || '', { attrs: 'maxlength="120"' })}${inTxt('tfTel', 'Telefone (DDD + número)', formatarTel(d.cliente_telefone) || '', { attrs: ATTR_TEL })}</div>
+      ${d.pedido_id ? '' : inTxt('tfPed', 'Pedido da loja (opcional)', d.pedido_codigo || '', { attrs: 'maxlength="20" placeholder="Ex.: RB-01042"', dica: 'Código do pedido do bolo, quando o topo é para um bolo da loja.' })}
+      <div class="grid2">${inDin('tfValor', 'Valor', d.valor, { dica: 'Opcional.' })}<div class="field tf-pago">${inChk('tfPago', 'Já está pago', d.pago)}</div></div>`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>${novo ? 'Criar pedido' : 'Salvar'}</button>`
+  });
+  const desenharRefs = () => {
+    m.$('#tfRefs').innerHTML = refs.map((u, i) => `<span class="tf-ref"><img src="${esc(u)}" alt="Referência ${i + 1}"><button type="button" class="btn icon sm" data-tirar-ref="${i}" aria-label="Tirar a imagem ${i + 1}">${ic('x')}</button></span>`).join('')
+      + `<label class="tf-add">${ic('foto')}<span>${refs.length ? 'Mais uma' : 'Anexar imagem'}</span><input type="file" accept="image/*" multiple class="sr" id="tfArq"></label>`;
+  };
+  desenharRefs();
+  m.$('#tfRefs').addEventListener('click', e => { const b = e.target.closest('[data-tirar-ref]'); if (b) { refs.splice(Number(b.dataset.tirarRef), 1); desenharRefs(); } });
+  m.$('#tfRefs').addEventListener('change', async e => {
+    if (e.target.id !== 'tfArq') return;
+    const arquivos = [...e.target.files]; if (!arquivos.length) return;
+    const rot = m.$('.tf-add span'); rot.textContent = 'Enviando…';
+    try {
+      for (const a of arquivos) {
+        if (!/^image\//.test(a.type || '')) throw new Error('Escolha arquivos de imagem.');
+        refs.push((await api.referencias.enviar(await reduzirImagem(a))).url);
+      }
+    } catch (err) { erroToast(err); }
+    desenharRefs();
+  });
+  m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    exigir(m, 'tfTitulo', 'Diga o que fazer (ex.: Topo de papel).');
+    exigir(m, 'tfData', 'Informe a data de entrega.');
+    const qtd = numDe(m, 'tfQtd');
+    if (!(qtd >= 1)) throw new Error('A quantidade precisa ser pelo menos 1.');
+    if (!telOk(valDe(m, 'tfTel'))) throw new Error('Telefone incompleto: informe DDD + número, ex.: (19) 99999-9999.');
+    const valor = lerValor(valDe(m, 'tfValor'));
+    if (Number.isNaN(valor) || valor < 0) throw new Error('Confira o valor (ex.: 25,00).');
+    const dados = {
+      tipo: valDe(m, 'tfTipo'), titulo: valDe(m, 'tfTitulo'), quantidade: Math.round(qtd), tema: valDe(m, 'tfTema') || null, texto: valDe(m, 'tfTexto') || null,
+      detalhes: valDe(m, 'tfDet') || null, referencias: refs, data_entrega: valDe(m, 'tfData'), hora_entrega: valDe(m, 'tfHora') || null,
+      cliente_nome: valDe(m, 'tfCli') || null, cliente_telefone: formatarTel(valDe(m, 'tfTel')) || null, valor: valor || 0, pago: chkDe(m, 'tfPago'),
+      pedido_id: d.pedido_id || null, pedido_codigo: d.pedido_id ? d.pedido_codigo : (valDe(m, 'tfPed').toUpperCase() || null), pedido_item_id: d.pedido_item_id || null
+    };
+    // a Administração pode ligar pelo código a um pedido da loja (quem produz não vê os pedidos)
+    if (!dados.pedido_id && dados.pedido_codigo && isAdmin()) {
+      const { pedidos } = await api.admin.pedidos.listar({ busca: dados.pedido_codigo, porPagina: 5 }).catch(() => ({ pedidos: [] }));
+      const p = pedidos.find(x => String(x.codigo).toUpperCase() === dados.pedido_codigo);
+      if (p) dados.pedido_id = p.id;
+    }
+    const r = novo ? await api.admin.topos.criar(dados) : await api.admin.topos.atualizar(t.id, dados);
+    m.fechar();
+    toast(novo ? `Pedido ${codigoTopo(r)} criado.` : `${codigoTopo(r)} salvo.`, novo ? { acao: { rotulo: 'Ver', fn: () => abrirTopo(r.id, depois) } } : {});
+    depois?.();
+    if (telaAtual === 'topos') carregarTopos(); else atualizarBadgeTopos();
+  }));
+}
+
+/* ---- Ligação com o pedido do bolo (gaveta do pedido, só a Administração) ---- */
+/** Nos itens de topper do pedido aberto: o status do pedido de topo já criado, ou o botão para criar. */
+async function toposDaGaveta(p) {
+  if (!p || !isAdmin() || !$$('#gaveta [data-topo-vinc]').length) return;
+  let lista;
+  try { lista = await api.admin.topos.listar({ pedidoId: p.id }); } catch (e) { return; }   // sem o sql/topos.sql: fica como antes
+  if (pedidoAtual?.id !== p.id) return;
+  $$('#gaveta [data-topo-vinc]').forEach(v => {
+    const ligados = lista.filter(t => t.pedido_item_id === v.dataset.topoVinc && t.status !== 'cancelado');
+    v.innerHTML = ligados.length
+      ? ligados.map(t => `<button type="button" class="btn sm ghost" data-gav="topo-ver" data-id="${esc(t.id)}" style="${corVars(topoStatus(t.status).cor)}">${ic('topo')}${codigoTopo(t)} · <span class="pill">${esc(topoStatus(t.status).nome)}</span></button>`).join('')
+      : `<button type="button" class="btn sm ghost" data-gav="topo-novo" data-item="${esc(v.dataset.topoVinc)}">${ic('topo')}Criar pedido de topo</button>`;
+  });
+}
+function novoTopoDoItem(p, i) {
+  const { texto, imagem } = separarReferencia(i.observacao);
+  modalTopoForm(null, { tipo: 'topo', titulo: i.nome, quantidade: i.quantidade || 1, detalhes: texto || null, referencias: imagem ? [imagem] : [],
+    data_entrega: p.data_retirada, hora_entrega: p.hora_retirada || null, cliente_nome: p.cliente_nome, cliente_telefone: p.cliente_telefone || null,
+    pedido_id: p.id, pedido_codigo: p.codigo, pedido_item_id: String(i.id) }, () => toposDaGaveta(pedidoAtual));
+}
+
+/* ---- Contador de pedidos novos no menu e tempo real ---- */
+async function atualizarBadgeTopos() {
+  if (!podeTopos()) return false;
+  try {
+    const n = (await api.admin.topos.listar({ status: 'novo' })).length;
+    $$('[data-badge-topos]').forEach(b => { b.textContent = n > 99 ? '99+' : n; b.hidden = !n; b.title = `${n} pedido(s) de topo novo(s)`; });
+    return true;
+  } catch (e) { return false; }
+}
+function ligarTempoRealTopos() {
+  pararToposTempoReal?.();
+  pararToposTempoReal = api.admin.topos.aoMudar(({ tipo, topo }) => {
+    if (tipo === 'INSERT' && topo?.id && topo.criado_por !== perfil?.user_id) {
+      tocarAviso();
+      toast(`Novo pedido de topo ${codigoTopo(topo)}: ${topo.titulo || ''}`, { tipo: 'novo', acao: { rotulo: 'Ver', fn: () => abrirTopo(topo.id) }, tempo: 12000 });
+    }
+    clearTimeout(recargaTopos);
+    recargaTopos = setTimeout(() => {
+      if (telaAtual === 'topos') carregarTopos(); else atualizarBadgeTopos();
+      if (pedidoAtual && $('#gaveta')?.classList.contains('on')) toposDaGaveta(pedidoAtual);
+    }, 500);
+  });
+}
+
+/* ---- Tela cheia (TV na bancada): esconde o menu, cartões maiores, relógio e atualização sozinha ---- */
+let tvTopos = null;
+async function entrarTvTopos() {
+  if (rotaAtual !== 'topos') return;
+  document.body.classList.add('tv-topos');
+  try { await document.documentElement.requestFullscreen?.(); } catch (e) { /* segue sem tela cheia de verdade */ }
+  let trava = null;
+  try { trava = await navigator.wakeLock?.request('screen'); } catch (e) { trava = null; }
+  const relogio = () => {
+    const r = $('#tqRelogio'); if (!r) return;
+    const s = new Date().toLocaleString('pt-BR', { timeZone: FUSO, weekday: 'long', hour: '2-digit', minute: '2-digit' });
+    r.textContent = s.charAt(0).toUpperCase() + s.slice(1);
+  };
+  relogio();
+  tvTopos = { trava, timers: [setInterval(relogio, 15e3), setInterval(() => carregarTopos(), 60e3)] };
+}
+function sairTvTopos() {
+  if (!tvTopos && !document.body.classList.contains('tv-topos')) return;
+  document.body.classList.remove('tv-topos');
+  tvTopos?.timers.forEach(clearInterval);
+  tvTopos?.trava?.release?.().catch?.(() => {});
+  tvTopos = null;
+  if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+}
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && tvTopos) sairTvTopos(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && tvTopos && !pilhaModais.length) sairTvTopos(); });
+
+/* =========================================================
+   AVISOS (sino da barra de cima), criados pelo banco (sql/topos.sql).
+   Ex.: "O topo do pedido RB-01005 está pronto". Ficam até alguém da equipe marcar como visto.
+========================================================= */
+let avisos = [], pararAvisos = null;
+function tempoAtras(iso) {
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 6e4);
+  if (min < 1) return 'agora';
+  if (min < 60) return `há ${min} min`;
+  if (min < 24 * 60) return `há ${Math.floor(min / 60)} h`;
+  return dataHora(iso);
+}
+/** Recarrega a lista e o contador do sino. false: o banco ainda não tem os avisos (o sino fica escondido). */
+async function carregarAvisos() {
+  let ok = true;
+  try { avisos = await api.admin.notificacoes.listar({ limite: 30 }); } catch (e) { avisos = []; ok = false; }
+  const n = avisos.filter(a => !a.lida_em).length;
+  $$('[data-badge-avisos]').forEach(b => { b.textContent = n > 9 ? '9+' : n; b.hidden = !n; });
+  $$('[data-act="avisos"]').forEach(b => { b.hidden = !ok; b.setAttribute('aria-label', n ? `Avisos: ${n} ${n === 1 ? 'novo' : 'novos'}` : 'Avisos'); b.title = b.getAttribute('aria-label'); });
+  desenharAvisos();
+  return ok;
+}
+function ligarAvisos() {
+  pararAvisos?.();
+  pararAvisos = api.admin.notificacoes.aoMudar(({ tipo, aviso }) => {
+    if (tipo === 'INSERT' && aviso?.id) {
+      tocarAviso();
+      toast(aviso.texto || aviso.titulo, { tipo: 'novo', acao: { rotulo: 'Ver', fn: () => abrirDoAviso(aviso) }, tempo: 15000 });
+    }
+    carregarAvisos();
+  });
+}
+function desenharAvisos() {
+  const menu = $('#avisosMenu'); if (!menu) return;
+  const novos = avisos.filter(a => !a.lida_em).length;
+  menu.innerHTML = `<div class="av-cab"><p class="tema-menu-t">Avisos</p>${novos ? '<button type="button" class="link" data-avisos-todos>Marcar todos como vistos</button>' : ''}</div>
+    ${avisos.length ? avisos.map(a => `<button type="button" class="aviso-it ${a.lida_em ? '' : 'novo'}" data-aviso="${esc(a.id)}">${ic(a.tipo === 'topo_pronto' ? 'topo' : 'sino')}
+      <span><strong>${esc(a.titulo)}${a.lida_em ? '' : '<i class="av-ponto" aria-label="novo"></i>'}</strong><small>${esc(a.texto || '')}</small><em>${esc(tempoAtras(a.criado_em))}</em></span></button>`).join('')
+      : '<p class="av-vazio">Nenhum aviso por enquanto. Quando um topo ficar pronto, ele aparece aqui.</p>'}`;
+}
+function abrirAvisos(botao) {
+  if ($('#avisosMenu')) { fecharAvisos(true); return; }
+  fecharMenuTema();
+  const menu = document.createElement('div');
+  menu.id = 'avisosMenu'; menu.className = 'tema-menu avisos-menu'; menu.setAttribute('role', 'dialog'); menu.setAttribute('aria-label', 'Avisos');
+  document.body.appendChild(menu);
+  desenharAvisos(); posicionarAvisos();
+  botao.setAttribute('aria-expanded', 'true');
+  (menu.querySelector('button') || menu).focus?.();
+  carregarAvisos();
+}
+function posicionarAvisos() {
+  const menu = $('#avisosMenu'), b = $('.topo [data-act="avisos"]'); if (!menu || !b) return;
+  const r = b.getBoundingClientRect();
+  menu.style.top = `${Math.round(r.bottom + 8)}px`;
+  menu.style.right = `${Math.max(8, Math.round(innerWidth - r.right))}px`;
+}
+function fecharAvisos(devolverFoco) {
+  const menu = $('#avisosMenu'); if (!menu) return;
+  menu.remove();
+  const b = $('.topo [data-act="avisos"]'); b?.setAttribute('aria-expanded', 'false');
+  if (devolverFoco) b?.focus();
+}
+/** Abre o que o aviso fala: o pedido do bolo (ou a ficha do topo, se não tiver pedido ligado). */
+function abrirDoAviso(a) {
+  if (!a.lida_em) api.admin.notificacoes.marcarVista(a.id).then(carregarAvisos).catch(() => {});
+  if (a.pedido_id) verPedido(a.pedido_id);
+  else if (a.topo_id && podeTopos()) abrirTopo(a.topo_id);
+}
+document.addEventListener('click', async e => {
+  if ($('#avisosMenu') && !e.target.closest('#avisosMenu, [data-act="avisos"]')) { fecharAvisos(); return; }
+  if (e.target.closest('[data-avisos-todos]')) {
+    await ocupado(e.target.closest('button'), async () => { await api.admin.notificacoes.marcarVista(); await carregarAvisos(); });
+    return;
+  }
+  const it = e.target.closest('[data-aviso]'); if (!it) return;
+  const a = avisos.find(x => String(x.id) === it.dataset.aviso); if (!a) return;
+  fecharAvisos(); abrirDoAviso(a);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#avisosMenu')) { e.stopPropagation(); fecharAvisos(true); } }, true);
+addEventListener('resize', posicionarAvisos);
 
 iniciar();

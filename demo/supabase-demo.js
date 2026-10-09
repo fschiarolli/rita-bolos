@@ -11,7 +11,19 @@ import { DADOS_DEMO } from './dados-demo.js';
 
 const CHAVE = 'ritabolos.demo.v2';
 const USUARIO_DEMO = { id: '00000000-0000-4000-8000-000000000001', email: 'rita@demo.com.br' };
-const TABELAS_COM_ATUALIZADO = ['configuracoes', 'categorias', 'grupos', 'produtos', 'bolo_massas', 'bolo_formatos', 'banners', 'avisos', 'pedidos', 'pedido_observacoes'];
+const TABELAS_COM_ATUALIZADO = ['configuracoes', 'categorias', 'grupos', 'produtos', 'bolo_massas', 'bolo_formatos', 'banners', 'avisos', 'pedidos', 'pedido_observacoes', 'topos_pedidos'];
+/* Quem produz os personalizados na demonstração: entre com topos@demo.com.br para ver o backoffice como ela vê */
+const PRODUTORA_DEMO = { user_id: '00000000-0000-4000-8000-000000000002', nome: 'Bia Andrade', email: 'topos@demo.com.br', ativo: true, avatar: null };
+const TABELAS_TOPOS = ['topos_pedidos', 'topos_historico'];
+/** Aviso "topo pronto" para a equipe da loja (o mesmo texto do gatilho em sql/topos.sql). */
+function avisoTopoPronto(lista, t) {
+  const cod = 'TP-' + String(t.numero).padStart(4, '0'), oque = t.tipo === 'personalizado' ? 'personalizado' : 'topo', qtd = t.quantidade > 1 ? `${t.quantidade}× ` : '';
+  lista.push({ id: lista.reduce((m, n) => Math.max(m, n.id), 0) + 1, tipo: 'topo_pronto', titulo: oque === 'topo' ? 'Topo pronto' : 'Personalizado pronto',
+    texto: t.pedido_codigo ? `O ${oque} do pedido ${t.pedido_codigo}${t.cliente_nome ? ` (${t.cliente_nome})` : ''} está pronto: ${qtd}${t.titulo} · ${cod}.`
+      : `O ${oque} ${cod} (${qtd}${t.titulo})${t.cliente_nome ? ` de ${t.cliente_nome}` : ''} está pronto.`,
+    pedido_id: t.pedido_id || null, topo_id: t.id, criado_em: new Date().toISOString(), lida_em: null });
+  return lista[lista.length - 1];
+}
 const UNICOS = { categorias: ['slug'], produtos: ['slug'], bolo_massas: ['slug'], bolo_formatos: ['slug'], status_pedido: ['codigo'], bolo_pesos: ['peso_kg'] };
 const CHAVES = { status_pedido: 'codigo', bolo_pesos: 'peso_kg', administradores: 'user_id' };
 
@@ -48,6 +60,14 @@ export function criarSupabaseDemo(opcoes = {}) {
   /** Acrescenta ao banco (novo ou salvo) o que veio depois: prejuízos e finalização do bolo (igual a sql/finalizacao-bolo.sql). */
   function migrar(b) {
     b.prejuizos = b.prejuizos || [];
+    // Pix e horários de retirada em Ajustes > Loja (igual a sql/ajustes-loja.sql)
+    const cf = b.configuracoes?.[0];
+    if (cf && !('pix_chave' in cf)) Object.assign(cf, { pix_chave: '06954518808', pix_tipo: 'CPF', pix_nome: 'Valdemir Schiarolli' });
+    if (cf && !('retirada_inicio' in cf)) Object.assign(cf, { retirada_inicio: '08:00:00', retirada_fim: '18:00:00', retirada_intervalo_min: 30, retirada_dias: 14 });
+    // Topos e personalizados (igual a sql/topos.sql), com alguns pedidos de exemplo
+    b.produtores_personalizados = b.produtores_personalizados || [{ ...PRODUTORA_DEMO, criado_em: agora() }];
+    if (!b.topos_pedidos) semearTopos(b);
+    if (!b.notificacoes) { b.notificacoes = []; b.topos_pedidos.filter(t => t.status === 'pronto').forEach(t => avisoTopoPronto(b.notificacoes, t)); }
     const adic = (b.categorias || []).find(c => c.slug === 'adicionais');
     if (adic) {
       [['finalizacao-colorida', 'Finalização colorida', 'Colorido', 'Cobertura ou decoração colorida.', 90],
@@ -72,19 +92,42 @@ export function criarSupabaseDemo(opcoes = {}) {
     }
     return b;
   }
+  function semearTopos(b) {
+    b._seqTopo = 0; b.topos_historico = [];
+    const t = o => ({ id: novoId(), numero: ++b._seqTopo, tipo: 'topo', titulo: 'Topo de papel', tema: null, texto: null, quantidade: 1, detalhes: null, referencias: [],
+      cliente_nome: null, cliente_telefone: null, pedido_id: null, pedido_codigo: null, pedido_item_id: null, hora_entrega: null, status: 'novo', valor: 0, pago: false,
+      criado_por: USUARIO_DEMO.id, criado_em: agora(), atualizado_em: agora(), ...o });
+    b.topos_pedidos = [
+      t({ tema: 'Safari', texto: 'Theo, 1 ano', detalhes: 'Bichinhos em volta do nome, tons de verde e bege.', data_entrega: hojeSP(0), hora_entrega: '09:00:00', status: 'pronto', valor: 25, cliente_nome: 'Maria Souza' }),
+      t({ titulo: 'Topo 3D em camadas', tema: 'Frozen', texto: 'Alice, 5 anos', data_entrega: hojeSP(0), hora_entrega: '14:00:00', status: 'em_producao', valor: 35, cliente_nome: 'Ana Lima' }),
+      t({ tema: 'Futebol (verde e branco)', texto: 'Parabéns, Pedro!', data_entrega: hojeSP(1), hora_entrega: '10:00:00', valor: 20, cliente_nome: 'João Pereira' }),
+      t({ tipo: 'personalizado', titulo: 'Caixinhas para doces', tema: 'Chá de bebê, tons de verde', texto: 'Chá da Helena', quantidade: 30, data_entrega: hojeSP(3), valor: 90,
+        cliente_nome: 'Juliana Prado', cliente_telefone: '(19) 99812-3344', detalhes: 'Caixinha milk com laço de cetim.' }),
+      t({ tipo: 'personalizado', titulo: 'Tags para lembrancinhas', tema: 'Batizado', texto: 'Batizado do Miguel', quantidade: 50, data_entrega: hojeSP(-1), status: 'entregue', valor: 60, pago: true,
+        cliente_nome: 'Marcos Silva', cliente_telefone: '(19) 98111-2233' })
+    ];
+    const caminho = { novo: ['novo'], em_producao: ['novo', 'em_producao'], pronto: ['novo', 'em_producao', 'pronto'], entregue: ['novo', 'em_producao', 'pronto', 'entregue'] };
+    b.topos_pedidos.forEach(p => (caminho[p.status] || ['novo']).forEach((s, i, l) => b.topos_historico.push({ id: b.topos_historico.length + 1, topo_id: p.id,
+      status_anterior: i ? l[i - 1] : null, status_novo: s, autor_id: i ? PRODUTORA_DEMO.user_id : USUARIO_DEMO.id, autor_nome: i ? PRODUTORA_DEMO.nome : 'Rita', criado_em: agora() })));
+  }
   function salvar() { try { localStorage.setItem(CHAVE, JSON.stringify(db)); } catch (e) {} }
 
   // Outras abas (site demo ↔ backoffice demo) avisam sobre pedidos novos
   if (typeof window !== 'undefined') {
     window.addEventListener('storage', e => {
       if (e.key !== CHAVE || !e.newValue) return;
-      const antes = new Set(db.pedidos.map(p => p.id));
+      const antes = new Set(db.pedidos.map(p => p.id)), toposAntes = JSON.stringify(db.topos_pedidos || []);
+      const avisosAntes = new Set((db.notificacoes || []).map(n => n.id)), vistosAntes = (db.notificacoes || []).filter(n => n.lida_em).length;
       db = JSON.parse(e.newValue);
       db.pedidos.filter(p => !antes.has(p.id)).forEach(p => emitir('INSERT', p));
+      if (JSON.stringify(db.topos_pedidos || []) !== toposAntes) emitir('UPDATE', db.topos_pedidos?.[0] || {}, null, 'topos_pedidos');
+      (db.notificacoes || []).filter(n => !avisosAntes.has(n.id)).forEach(n => emitir('INSERT', n, null, 'notificacoes'));
+      if ((db.notificacoes || []).filter(n => n.lida_em).length !== vistosAntes) emitir('UPDATE', {}, null, 'notificacoes');
     });
   }
-  function emitir(tipo, novo, antigo) {
-    canais.forEach(c => c.ouvintes.forEach(o => { try { o({ eventType: tipo, new: novo || {}, old: antigo || {} }); } catch (e) {} }));
+  /** Avisa os canais de tempo real que ouvem a tabela (pedidos, se nenhuma for dita). */
+  function emitir(tipo, novo, antigo, tabela = 'pedidos') {
+    canais.forEach(c => c.ouvintes.forEach(([t, o]) => { if (t && t !== tabela) return; try { o({ eventType: tipo, new: novo || {}, old: antigo || {} }); } catch (e) {} }));
   }
 
   /* ----------------------- regras (gatilhos) ----------------------- */
@@ -101,8 +144,12 @@ export function criarSupabaseDemo(opcoes = {}) {
     db.pedido_historico.push({ id: db.pedido_historico.length + 1, pedido_id: pedidoId, status_anterior: de, status_novo: para,
       comentario: comentario || null, alterado_por: sessao ? USUARIO_DEMO.id : null, alterado_em: agora() });
   }
-  const equipe = () => !!sessao;
-  const nomeAdmin = id => db.administradores.find(a => a.user_id === id)?.nome || null;
+  // como as regras do banco: a equipe é quem está em administradores; quem produz personalizados só mexe nos topos
+  const usuarioId = () => sessao?.user?.id || null;
+  const equipe = () => !!sessao && db.administradores.some(a => a.user_id === usuarioId() && a.ativo);
+  const adminLoja = () => !!sessao && db.administradores.some(a => a.user_id === usuarioId() && a.ativo && a.papel === 'admin');
+  const podeTopos = () => adminLoja() || (db.produtores_personalizados || []).some(p => p.user_id === usuarioId() && p.ativo);
+  const nomeAdmin = id => db.administradores.find(a => a.user_id === id)?.nome || (db.produtores_personalizados || []).find(p => p.user_id === id)?.nome || null;
 
   /* ----------------------- vistas ----------------------- */
   function vista(nome) {
@@ -146,6 +193,7 @@ export function criarSupabaseDemo(opcoes = {}) {
       },
       order(c, o = {}) { q.ordens.push([c, o.ascending !== false, o.nullsFirst]); return api; },
       range(a, b) { q.faixa = [a, b]; return api; },
+      limit(n) { q.faixa = [0, n - 1]; return api; },
       single() { q.unico = 'single'; return api; },
       maybeSingle() { q.unico = 'maybe'; return api; },
       then(ok, falha) { return Promise.resolve().then(() => executar(tabela, q)).then(ok, falha); }
@@ -157,6 +205,19 @@ export function criarSupabaseDemo(opcoes = {}) {
     const fonte = vista(tabela);
     if (!fonte) return erro(`Tabela ${tabela} não existe na demonstração.`, '42P01');
     const filtrar = r => q.filtros.every(f => f(r));
+    if (TABELAS_TOPOS.includes(tabela)) {
+      if (!podeTopos()) return q.op === 'select' ? finalizar([], q, 0) : erro('new row violates row-level security policy', '42501');
+      if (q.op === 'delete' && !adminLoja()) return finalizar([], q, 0);   // excluir: só a Administração
+      if (tabela === 'topos_historico' && q.op !== 'select') return erro('new row violates row-level security policy', '42501');
+    }
+    if (tabela === 'notificacoes') {   // só a equipe da loja vê e marca como visto; quem cria é o gatilho
+      if (!equipe()) return q.op === 'select' ? finalizar([], q, 0) : erro('new row violates row-level security policy', '42501');
+      if (q.op === 'insert' || q.op === 'delete') return erro('new row violates row-level security policy', '42501');
+    }
+    if (tabela === 'produtores_personalizados' && q.op === 'select') {
+      const linhas = fonte.filter(filtrar).filter(r => adminLoja() || r.user_id === usuarioId());
+      return finalizar(clone(linhas.sort((a, b) => a.nome.localeCompare(b.nome))), q, linhas.length);
+    }
     if (q.op === 'select') {
       let linhas = fonte.filter(filtrar);
       for (const [c, asc, nf] of [...q.ordens].reverse()) {
@@ -172,7 +233,7 @@ export function criarSupabaseDemo(opcoes = {}) {
       if (q.faixa) linhas = linhas.slice(q.faixa[0], q.faixa[1] + 1);
       return finalizar(clone(linhas), q, total);
     }
-    if (!equipe() && tabela !== 'pedidos') return erro('new row violates row-level security policy', '42501');
+    if (!equipe() && tabela !== 'pedidos' && !TABELAS_TOPOS.includes(tabela)) return erro('new row violates row-level security policy', '42501');
     if (q.op === 'insert') {
       const novos = (Array.isArray(q.dados) ? q.dados : [q.dados]).map(d => ({ ...padroes(tabela), ...clone(d) }));
       for (const n of novos) {
@@ -221,8 +282,10 @@ export function criarSupabaseDemo(opcoes = {}) {
       avisos: { ativo: true, ordem: 0 }, bolo_massas: { ativo: true, ordem: 0 }, bolo_formatos: { ativo: true, ordem: 0 }, bolo_pesos: { ativo: true, ordem: 0 },
       status_pedido: { ativo: true, ordem: 0, finalizado: false }, administradores: { ativo: true, papel: 'admin' },
       pedido_observacoes: { fixada: false, autor_id: USUARIO_DEMO.id }, pedido_pagamentos: { tipo: 'sinal', forma: 'pix', pago_em: agora() },
-      prejuizos: { quantidade: 1, data: hojeSP(), registrado_por: USUARIO_DEMO.id }
+      prejuizos: { quantidade: 1, data: hojeSP(), registrado_por: USUARIO_DEMO.id },
+      topos_pedidos: { tipo: 'topo', quantidade: 1, referencias: [], status: 'novo', valor: 0, pago: false, criado_por: usuarioId() }
     }[tabela] || {};
+    if (tabela === 'topos_pedidos') extra.numero = db._seqTopo = (db._seqTopo || 0) + 1;
     if (tabela === 'pedido_observacoes' || tabela === 'pedido_historico') id.id = Date.now() + Math.floor(Math.random() * 1000);
     return { ...base, ...id, ...extra };
   }
@@ -241,6 +304,20 @@ export function criarSupabaseDemo(opcoes = {}) {
       if (p) { recalcularPedido(p); emitir('UPDATE', p); }
     }
     if (tabela === 'pedido_observacoes' && novo && !antigo) novo.autor_nome = nomeAdmin(novo.autor_id);
+    if (tabela === 'topos_pedidos') {
+      // gatilho do banco: histórico de status com quem mexeu
+      if (novo && (!antigo || novo.status !== antigo.status))
+        db.topos_historico.push({ id: db.topos_historico.length + 1, topo_id: novo.id, status_anterior: antigo?.status ?? null, status_novo: novo.status,
+          autor_id: usuarioId(), autor_nome: nomeAdmin(usuarioId()), criado_em: agora() });
+      if (!novo && antigo) {
+        db.topos_historico = db.topos_historico.filter(h => h.topo_id !== antigo.id);
+        db.notificacoes = (db.notificacoes || []).filter(n => n.topo_id !== antigo.id);
+      }
+      emitir(!antigo ? 'INSERT' : novo ? 'UPDATE' : 'DELETE', novo, antigo, 'topos_pedidos');
+      // gatilho do banco: virou "pronto" → aviso para a equipe
+      if (novo?.status === 'pronto' && antigo?.status !== 'pronto') emitir('INSERT', avisoTopoPronto(db.notificacoes = db.notificacoes || [], novo), null, 'notificacoes');
+    }
+    if (tabela === 'notificacoes' && novo) emitir('UPDATE', novo, antigo, 'notificacoes');
   }
 
   /* ----------------------- funções da API (rpc) ----------------------- */
@@ -445,9 +522,23 @@ export function criarSupabaseDemo(opcoes = {}) {
   Object.assign(RPC, {
     listar_equipe: () => { exigirEquipe(); return listarEquipe(); },
     definir_avatar: ({ p_avatar }) => {
-      exigirEquipe();
-      const a = db.administradores.find(x => x.user_id === USUARIO_DEMO.id && x.ativo); if (!a) throw 'Só a equipe pode escolher um avatar.';
+      const a = db.administradores.find(x => x.user_id === usuarioId() && x.ativo) || (db.produtores_personalizados || []).find(x => x.user_id === usuarioId() && x.ativo);
+      if (!a) throw 'Só a equipe pode escolher um avatar.';
       a.avatar = p_avatar || null; salvar(); return null;
+    },
+    salvar_produtor_personalizados: ({ p_email, p_nome, p_ativo }) => {
+      if (!adminLoja()) throw ['Só a Administração pode liberar acesso.', '42501'];
+      const email = String(p_email || '').trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw 'Informe um e-mail válido.';
+      if (!String(p_nome || '').trim()) throw 'Informe o nome.';
+      let p = db.produtores_personalizados.find(x => x.email === email);
+      if (!p) { p = { user_id: novoId(), email, avatar: null, criado_em: agora() }; db.produtores_personalizados.push(p); }
+      Object.assign(p, { nome: String(p_nome).trim(), ativo: p_ativo !== false });
+      salvar(); return clone(p);
+    },
+    remover_produtor_personalizados: ({ p_user_id }) => {
+      if (!adminLoja()) throw ['Só a Administração pode tirar acesso.', '42501'];
+      db.produtores_personalizados = db.produtores_personalizados.filter(p => p.user_id !== p_user_id); salvar(); return null;
     },
     salvar_membro_equipe: ({ p_email, p_nome, p_papel, p_ativo }) => {
       exigirEquipe();
@@ -480,7 +571,9 @@ export function criarSupabaseDemo(opcoes = {}) {
     async signInWithPassword({ email, password }) {
       await new Promise(r => setTimeout(r, 200));
       if (!email || !password) return { data: { user: null }, error: { message: 'Invalid login credentials' } };
-      sessao = { user: { ...USUARIO_DEMO, email } };
+      // e-mail de quem produz personalizados (ex.: topos@demo.com.br) entra como essa pessoa; qualquer outro, como a Rita
+      const prod = (db.produtores_personalizados || []).find(p => p.email === String(email).trim().toLowerCase());
+      sessao = { user: prod ? { id: prod.user_id, email: prod.email } : { ...USUARIO_DEMO, email } };
       try { localStorage.setItem(CHAVE + '.sessao', JSON.stringify(sessao)); } catch (e) {}
       ouvintesAuth.forEach(f => f('SIGNED_IN', sessao));
       return { data: { user: sessao.user, session: sessao }, error: null };
@@ -514,7 +607,7 @@ export function criarSupabaseDemo(opcoes = {}) {
 
   /* ----------------------- tempo real ----------------------- */
   function channel() {
-    const c = { ouvintes: [], on(_t, _f, cb) { c.ouvintes.push(cb); return c; }, subscribe() { canais.add(c); return c; } };
+    const c = { ouvintes: [], on(_t, filtro, cb) { c.ouvintes.push([filtro?.table || null, cb]); return c; }, subscribe(f) { canais.add(c); setTimeout(() => f?.('SUBSCRIBED'), 0); return c; } };
     return c;
   }
 

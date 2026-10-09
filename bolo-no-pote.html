@@ -441,15 +441,17 @@ const CACHE_KEY = 'ritabolos.cardapio.v1' + (DEMO ? '.demo' : '');
 /* Esta página é o canal de atacado: usa a categoria "Bolo no pote (atacado)" (R$ 12,00, ver sql/bolo-no-pote-atacado.sql),
    que não aparece no cardápio do site. Enquanto ela não existir, usa o bolo no pote do cardápio normal. */
 const CAT_SLUGS = ['bolo-no-pote-atacado', 'bolo-no-pote', 'pote'];
-/* Horários de retirada: mesmos do site (index.html, const RETIRADA) */
-const RETIRADA = { dias: 14, inicio: '08:00', fim: '18:00', passoMin: 30, tardeDesde: '12:00' };
+/* Horários de retirada: vêm de Ajustes > Loja, como no site (index.html, retirada()).
+   RETIRADA_PADRAO vale enquanto o banco não tem esses campos. */
+const RETIRADA_PADRAO = { dias: 14, inicio: '08:00', fim: '18:00', passoMin: 30 };
+const TARDE_DESDE = '12:00';
 
 const CFG_PADRAO = { nome_loja: 'Rita Bolos', whatsapp_numero: '551938451550', whatsapp_exibicao: '(19) 3845-1550',
   percentual_sinal: 50, antecedencia_minima_dias: 0, aceitando_pedidos: true, mensagem_pausa: null, url_site: null };
 let API = null, U = null, CFG = { ...CFG_PADRAO }, CAT = null, ITENS = [];
 let qtd = lerCarrinho();
 const ret = { dia: '', hora: '' };
-let chave = null, enviando = false, minData = '';
+let chave = null, enviando = false, minData = '', retMontada = '';
 
 /* ---------- utilidades ---------- */
 const $ = (s, el = document) => el.querySelector(s);
@@ -463,6 +465,31 @@ function lerCarrinho() { try { const o = JSON.parse(store(CARRINHO_KEY) || '{}')
 const pct = () => Number(CFG.percentual_sinal ?? 50);
 const sinalDe = v => Math.round(v * pct()) / 100;
 const potes = n => `${n} ${n === 1 ? 'pote' : 'potes'}`;
+/* Telefone com máscara: (DD) 9999-9999 ou (DD) 99999-9999 (a mesma do site e do backoffice) */
+function digitosTel(v) {   // só os dígitos, sem o 55 do Brasil (no máximo DDD + 9 dígitos)
+  let d = String(v || '').replace(/\D/g, '');
+  if (d.length > 11 && d.startsWith('55')) d = d.slice(2);
+  return d.replace(/^0+/, '').slice(0, 11);
+}
+function formatarTel(v) {
+  const d = digitosTel(v);
+  if (!d) return '';
+  if (d.length <= 2) return `(${d}`;
+  const n = d.slice(2), corte = n.length > 8 ? 5 : 4;   // 9 dígitos: celular
+  return `(${d.slice(0, 2)}) ${n.length > corte ? n.slice(0, corte) + '-' + n.slice(corte) : n}`;
+}
+document.addEventListener('input', e => {   // aplica a máscara enquanto digita (ou cola), sem tirar o cursor do lugar
+  const el = e.target;
+  if (el.id !== 'cFone') return;
+  const pos = el.selectionStart ?? el.value.length;
+  const antes = el.value.slice(0, pos).replace(/\D/g, '').length;
+  const novo = formatarTel(el.value);
+  if (novo === el.value) return;
+  el.value = novo;
+  let i = 0, vistos = 0;
+  while (i < novo.length && vistos < antes) { if (/\d/.test(novo[i])) vistos++; i++; }
+  if (document.activeElement === el) el.setSelectionRange(i, i);
+});
 
 /* WhatsApp: no celular abre direto o aplicativo; no computador, o WhatsApp Web.
    (O wa.me passa pelo site whatsapp.com, que às vezes cai com "Sorry, something went wrong".) Igual ao js/rita-api.js. */
@@ -684,25 +711,35 @@ const minutosDe = hm => { const [h, m] = String(hm).split(':').map(Number); retu
 const hmDe = m => `${p2(Math.floor(m / 60))}:${p2(m % 60)}`;
 const antecedencia = () => Math.max(Number(CFG.antecedencia_minima_dias || 0), Number(CAT?.antecedencia_minima_dias || 0),
   ...linhas().map(l => l.it.antecedencia), 0);
+function retirada() {
+  const hm = v => /^\d\d:\d\d/.test(v || '') ? v.slice(0, 5) : null;
+  const num = (v, min, max, padrao) => { const n = Math.round(Number(v)); return v != null && n >= min && n <= max ? n : padrao; };
+  const inicio = hm(CFG.retirada_inicio), fim = hm(CFG.retirada_fim), ok = inicio && fim && minutosDe(fim) > minutosDe(inicio);
+  return { dias: num(CFG.retirada_dias, 1, 60, RETIRADA_PADRAO.dias), inicio: ok ? inicio : RETIRADA_PADRAO.inicio, fim: ok ? fim : RETIRADA_PADRAO.fim,
+    passoMin: num(CFG.retirada_intervalo_min, 5, 240, RETIRADA_PADRAO.passoMin) };
+}
 
 function montarRetirada() {
   if (!$("#retirada")) return;
-  const ant = antecedencia(), min = hojeISO(ant);
-  if (min === minData && $('#retirada').childElementCount) return;
-  minData = min;
+  const ant = antecedencia(), min = hojeISO(ant), rt = retirada(), montagem = min + JSON.stringify(rt);
+  if (montagem === retMontada && $('#retirada').childElementCount) return;   // redesenha se mudar a antecedência ou os horários
+  minData = min; retMontada = montagem;
   if (ret.dia && ret.dia < min) ret.dia = '';
   $('#retDica').textContent = 'Escolha o dia e o horário em que você vem buscar.' + (ant ? ` Este pedido precisa de ${ant} ${ant === 1 ? 'dia' : 'dias'} de antecedência.` : '');
   const hoje = hojeISO(), amanha = hojeISO(1), dias = [];
-  for (let i = 0, d = dataLocal(min); i < RETIRADA.dias; i++, d.setDate(d.getDate() + 1)) {
+  for (let i = 0, d = dataLocal(min); i < rt.dias; i++, d.setDate(d.getDate() + 1)) {
     const iso = isoDe(d), rot = iso === hoje ? 'Hoje' : iso === amanha ? 'Amanhã' : SEMANA[d.getDay()];
     dias.push(`<button type="button" class="dia" role="radio" aria-checked="false" data-dia="${iso}" aria-label="${rot === 'Hoje' || rot === 'Amanhã' ? rot + ', ' : ''}${SEMANA_LONGA[d.getDay()]}, ${d.getDate()} de ${MESES[d.getMonth()]}">
       <span class="d-sem">${rot}</span><span class="d-num">${d.getDate()}</span><span class="d-mes">${MESES[d.getMonth()]}</span></button>`);
   }
   const slots = [];
-  for (let m = minutosDe(RETIRADA.inicio); m <= minutosDe(RETIRADA.fim); m += RETIRADA.passoMin) slots.push(hmDe(m));
-  const tarde = minutosDe(RETIRADA.tardeDesde);
+  for (let m = minutosDe(rt.inicio); m <= minutosDe(rt.fim); m += rt.passoMin) slots.push(hmDe(m));
+  const tarde = minutosDe(TARDE_DESDE);
   const botao = h => `<button type="button" class="hora" role="radio" aria-checked="false" data-hora="${h}">${h.replace(/^0/, '')}</button>`;
   const manha = slots.filter(h => minutosDe(h) < tarde), aTarde = slots.filter(h => minutosDe(h) >= tarde);
+  // "Outro horário" fica no último grupo (só manhã, se a loja fechar antes do meio-dia)
+  const outro = `<button type="button" class="hora outra" data-hora-outra aria-expanded="false" aria-controls="caixaHora">Outro horário</button>`;
+  const grupo = (rot, hs, ultimo) => `<div class="horas-grupo"><span class="h-rot">${rot}</span><div class="horas">${hs.map(botao).join('')}${ultimo ? outro : ''}</div></div>`;
   $('#retirada').innerHTML = `
     <div class="sub" id="lblDia">${icon('cal')} Dia</div>
     <div class="dias" role="radiogroup" aria-labelledby="lblDia" aria-describedby="eRet">${dias.join('')}
@@ -710,9 +747,8 @@ function montarRetirada() {
     <div class="outra-caixa" id="caixaData" hidden><label class="lbl" for="cDataOutra" style="font-size:14px">Outra data</label><input class="input" type="date" id="cDataOutra" min="${min}"></div>
     <div class="sub" id="lblHora">${icon('clock')} Horário</div>
     <div class="horas-wrap" role="radiogroup" aria-labelledby="lblHora" aria-describedby="eRet">
-      ${manha.length ? `<div class="horas-grupo"><span class="h-rot">Manhã</span><div class="horas">${manha.map(botao).join('')}</div></div>` : ''}
-      <div class="horas-grupo"><span class="h-rot">Tarde</span><div class="horas">${aTarde.map(botao).join('')}
-        <button type="button" class="hora outra" data-hora-outra aria-expanded="false" aria-controls="caixaHora">Outro horário</button></div></div>
+      ${manha.length ? grupo('Manhã', manha, !aTarde.length) : ''}
+      ${aTarde.length ? grupo('Tarde', aTarde, true) : ''}
     </div>
     <div class="outra-caixa" id="caixaHora" hidden><label class="lbl" for="cHoraOutra" style="font-size:14px">Outro horário</label><input class="input" type="time" id="cHoraOutra"></div>
     <div class="ret-resumo" id="retResumo" aria-live="polite" hidden></div>`;
@@ -797,7 +833,7 @@ function validar() {
   let ok = true, primeiro = null;
   const nome = $('#cNome'), fone = $('#cFone');
   const nOk = !!nome.value.trim(); nome.setAttribute('aria-invalid', String(!nOk)); $('#eNome').classList.toggle('mostra', !nOk); if (!nOk) { ok = false; primeiro = nome; }
-  const dig = fone.value.replace(/\D/g, ''), fOk = dig.length >= 10 && dig.length <= 13;
+  const dig = digitosTel(fone.value), fOk = dig.length === 10 || dig.length === 11;
   fone.setAttribute('aria-invalid', String(!fOk)); $('#eFone').classList.toggle('mostra', !fOk); if (!fOk) { ok = false; primeiro = primeiro || fone; }
   const agora = new Date(), passou = ret.dia === hojeISO() && ret.hora && minutosDe(ret.hora) <= agora.getHours() * 60 + agora.getMinutes();
   const dOk = !!ret.dia && ret.dia >= minData, hOk = !!ret.hora && !passou;
@@ -819,7 +855,7 @@ async function enviar() {
     return;
   }
   if (!validar()) return;
-  const nome = $('#cNome').value.trim(), fone = $('#cFone').value.trim(), obs = $('#cObs').value.trim();
+  const nome = $('#cNome').value.trim(), fone = formatarTel($('#cFone').value), obs = $('#cObs').value.trim();
   store(NAME_KEY, nome); store(PHONE_KEY, fone);
   chave = chave || (U?.novaChave ? U.novaChave() : String(Date.now()));
   const payload = {
@@ -848,7 +884,8 @@ async function enviar() {
 }
 function registrado(pedido, aba) {
   const recibo = U.linkRecibo(pedido.token, CFG.url_site || undefined) + (DEMO ? '&demo' : '');
-  const waUrl = waLink(pedido.loja?.whatsapp_numero || CFG.whatsapp_numero, U.montarMensagemWhatsApp(pedido, recibo));
+  const waUrl = waLink(pedido.loja?.whatsapp_numero || CFG.whatsapp_numero, U.montarMensagemWhatsApp(pedido, recibo, CFG));
+  const px = U.pixDe(CFG);
   const abriu = !!aba?.ir(waUrl);
   const hora = String(pedido.hora_retirada || ret.hora).slice(0, 5);
   store(ULTIMO_KEY, JSON.stringify({ codigo: pedido.codigo, token: pedido.token, waUrl, recibo, total: pedido.total, data: pedido.data_retirada, hora, em: Date.now() }));
@@ -861,10 +898,10 @@ function registrado(pedido, aba) {
       Ela responde para combinar o sinal de ${fmt(pedido.valor_sinal)}.</p>
     <div class="feito-res"><span>Total</span><strong>${fmt(pedido.total)}</strong>
       <span>Retirada</span><strong>${String(pedido.data_retirada).split('-').reverse().join('/')} às ${esc(hora)}</strong></div>
-    <div class="pix"><span class="pix-t">Pague o sinal de ${fmt(pedido.valor_sinal)} por Pix</span>
-      <div class="pix-l"><span><small>Chave Pix (${esc(U.PIX.tipo)})</small><strong>${esc(U.PIX.chave)}</strong></span>
-        <button type="button" class="btn btn-ghost" data-copiar="${esc(U.PIX.chave)}">Copiar</button></div>
-      <span class="pix-n">${esc(U.PIX.nome)}</span></div>
+    ${px ? `<div class="pix"><span class="pix-t">Pague o sinal de ${fmt(pedido.valor_sinal)} por Pix</span>
+      <div class="pix-l"><span><small>Chave Pix${px.tipo ? ` (${esc(px.tipo)})` : ''}</small><strong>${esc(px.chave)}</strong></span>
+        <button type="button" class="btn btn-ghost" data-copiar="${esc(px.chave)}">Copiar</button></div>
+      ${px.nome ? `<span class="pix-n">${esc(px.nome)}</span>` : ''}</div>` : ''}
     <div class="pilha">
       <a class="btn btn-wa btn-block" href="${esc(waUrl)}" ${waAlvo(waUrl)}>${icon('wa')}${abriu ? 'Abrir o WhatsApp de novo' : 'Enviar pelo WhatsApp'}</a>
       <a class="btn btn-ghost btn-block" href="${esc(recibo)}" target="_blank" rel="noopener">Ver recibo do pedido</a>
@@ -881,6 +918,8 @@ function enviarDireto() {
   linhas().forEach((l, i) => { m += `\n${i + 1}. *${l.it.nome}*\n   Qtd: ${l.q} x ${fmt(l.unit)} = ${fmt(l.q * l.unit)}\n`; });
   if (obs) m += `\n*Observação:* ${obs}\n`;
   m += `\n----------------------------\n*Total:* ${fmt(tot)}\n*Sinal mínimo (${pct().toLocaleString('pt-BR')}%):* ${fmt(sinalDe(tot))}`;
+  const px = U?.pixDe ? U.pixDe(CFG) : null;
+  if (px) m += `\n\n${U.textoPix(px)}`;
   abrirWa(waLink(CFG.whatsapp_numero, m));
 }
 
@@ -893,7 +932,7 @@ async function atualizarCardapio() {
 }
 ligarLinksWa(CFG.whatsapp_numero);
 $('#cNome').value = store(NAME_KEY) || '';
-$('#cFone').value = store(PHONE_KEY) || '';
+$('#cFone').value = formatarTel(store(PHONE_KEY));
 (async () => {
   try { const c = JSON.parse(store(CACHE_KEY) || 'null'); if (c) aplicarDados(c); } catch (e) { /* cache inválido */ }
   try { await atualizarCardapio(); }

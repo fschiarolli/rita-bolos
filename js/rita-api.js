@@ -56,9 +56,21 @@ function conferir({ data, error }, contexto) {
    Utilidades (também exportadas para o site)
 ================================================================ */
 
-/** Pix para o pagamento do sinal: aparece no fim do pedido, nas mensagens do WhatsApp e no recibo. */
+/**
+ * Pix para o pagamento do sinal: aparece no fim do pedido, nas mensagens do WhatsApp, no recibo e na impressão.
+ * Vem de Ajustes > Loja (campos pix_* das configurações, sql/ajustes-loja.sql). PIX é o Pix de antes,
+ * usado só enquanto o banco não tem esses campos.
+ */
 export const PIX = { chave: '06954518808', tipo: 'CPF', nome: 'Valdemir Schiarolli' };
-export const PIX_TEXTO = `*Pix (${PIX.tipo}):* ${PIX.chave}\n*Nome:* ${PIX.nome}`;
+/** Pix das configurações: { chave, tipo, nome }, ou null (chave em branco, ou configurações que não carregaram). */
+export function pixDe(cfg) {
+  if (!cfg) return null;   // sem as configurações, melhor não mostrar um Pix que pode estar desatualizado
+  if (!('pix_chave' in cfg)) return PIX;
+  const chave = String(cfg.pix_chave ?? '').trim();
+  return chave ? { chave, tipo: String(cfg.pix_tipo ?? '').trim(), nome: String(cfg.pix_nome ?? '').trim() } : null;
+}
+/** Pix nas mensagens do WhatsApp ('' sem Pix). */
+export const textoPix = pix => pix ? `*Pix${pix.tipo ? ` (${pix.tipo})` : ''}:* ${pix.chave}${pix.nome ? `\n*Nome:* ${pix.nome}` : ''}` : '';
 
 /**
  * Imagem de referência (ex.: modelo do topper) enviada pelo cliente: vai na observação do item,
@@ -129,9 +141,9 @@ export function linkRecibo(token, baseSite) {
   return `${base}recibo.html?t=${encodeURIComponent(token)}`;
 }
 
-/** Mensagem do WhatsApp montada a partir do pedido gravado (preços do servidor). */
-export function montarMensagemWhatsApp(pedido, urlRecibo) {
-  const p = pedido;
+/** Mensagem do WhatsApp montada a partir do pedido gravado (preços do servidor). cfg: configurações da loja (para o Pix). */
+export function montarMensagemWhatsApp(pedido, urlRecibo, cfg) {
+  const p = pedido, pix = textoPix(pixDe(cfg));
   const loja = (p.loja?.nome || 'Rita Bolos').toUpperCase();
   const pct = Number(p.percentual_sinal ?? 50).toLocaleString('pt-BR');
   const l = [
@@ -157,8 +169,7 @@ export function montarMensagemWhatsApp(pedido, urlRecibo) {
   l.push('', '----------------------------',
     `*Total:* ${formatarPreco(p.total)}`,
     `*Sinal mínimo (${pct}%):* ${formatarPreco(p.valor_sinal)}`,
-    '',
-    PIX_TEXTO,
+    ...(pix ? ['', pix] : []),
     '',
     `*ATENÇÃO:* Pedido só será confirmado mediante envio do comprovante de pagamento de pelo menos ${pct}% do valor total.`);
   if (urlRecibo) l.push('', '----------------------------', '*RECIBO DO PEDIDO:*', urlRecibo);
@@ -169,16 +180,17 @@ export function montarMensagemWhatsApp(pedido, urlRecibo) {
  * Mensagem para o cliente quando o pedido muda de status (a equipe confere antes de enviar).
  * status: { codigo, nome, descricao, finalizado } do cadastro. Os c\u00f3digos padr\u00e3o t\u00eam texto
  * pr\u00f3prio; status criados no backoffice usam o nome e a descri\u00e7\u00e3o cadastrados.
+ * cfg: configura\u00e7\u00f5es da loja (para o Pix).
  */
-export function montarMensagemStatus(pedido, status, urlRecibo) {
-  const p = pedido, s = status || {};
+export function montarMensagemStatus(pedido, status, urlRecibo, cfg) {
+  const p = pedido, s = status || {}, pix = textoPix(pixDe(cfg));
   const nome = String(p.cliente_nome || '').trim().split(/\s+/)[0];
   const ped = `*${p.codigo}*`;
   const retirada = `*Retirada:* ${formatarData(p.data_retirada)}${p.hora_retirada ? ' \u00e0s ' + String(p.hora_retirada).slice(0, 5) : ''}`;
   const saldo = Number(p.saldo ?? 0);
   const pct = Number(p.percentual_sinal ?? 50).toLocaleString('pt-BR');
   const textos = {
-    recebido: [`Recebemos o seu pedido ${ped}.`, `Para confirmar, envie o comprovante do sinal de ${formatarPreco(p.valor_sinal)} (${pct}% do total).`, `\n${PIX_TEXTO}`],
+    recebido: [`Recebemos o seu pedido ${ped}.`, `Para confirmar, envie o comprovante do sinal de ${formatarPreco(p.valor_sinal)} (${pct}% do total).`, pix ? `\n${pix}` : ''],
     confirmado: [`Seu pedido ${ped} est\u00e1 *confirmado*! Recebemos o sinal.`, retirada],
     em_producao: [`Seu pedido ${ped} j\u00e1 est\u00e1 *em produ\u00e7\u00e3o*.`, retirada],
     pronto: [`Seu pedido ${ped} est\u00e1 *pronto para retirada*!`, retirada, saldo > 0 ? `*Falta pagar:* ${formatarPreco(saldo)}` : 'Est\u00e1 tudo pago, \u00e9 s\u00f3 vir buscar.'],
@@ -339,12 +351,18 @@ export function criarApi(supabase, opcoes = {}) {
         const { data } = await supabase.auth.getUser();
         return data?.user ?? null;
       },
-      /** Cadastro do usuário logado na equipe (null se não for da equipe). */
+      /**
+       * Cadastro do usuário logado (null se não tiver acesso). papel: 'admin', 'atendente' ou
+       * 'personalizados' (quem produz topos e personalizados: só vê esse módulo, ver sql/topos.sql).
+       */
       async perfil() {
         const { data: u } = await supabase.auth.getUser();
         if (!u?.user) return null;
         const r = conferir(await supabase.from('administradores').select('*').eq('user_id', u.user.id).maybeSingle(), 'perfil');
-        return r && r.ativo ? { ...r, email: u.user.email } : null;
+        if (r) return r.ativo ? { ...r, email: u.user.email } : null;
+        // sem o sql/topos.sql a tabela não existe: segue sem acesso
+        const { data: p, error } = await supabase.from('produtores_personalizados').select('*').eq('user_id', u.user.id).maybeSingle();
+        return !error && p?.ativo ? { ...p, papel: 'personalizados', email: u.user.email } : null;
       },
       /** Avatar do próprio perfil (código de backoffice/avatares.js, ou null para usar as iniciais). */
       definirAvatar: (avatar) => rpc('definir_avatar', { p_avatar: avatar || null }),
@@ -483,6 +501,77 @@ export function criarApi(supabase, opcoes = {}) {
           return conferir(await supabase.from('prejuizos').insert(linhas).select(), 'prejuízos');
         }
       },
+      /*
+       * Topos e personalizados (sql/topos.sql): pedidos próprios, feitos por quem produz os topos.
+       * Status: novo, em_producao, pronto, entregue, cancelado. O histórico é gravado pelo banco.
+       */
+      topos: {
+        /** filtros: status (texto ou lista), entregaDesde / entregaAte (YYYY-MM-DD), busca, pedidoId */
+        async listar(f = {}) {
+          let q = supabase.from('topos_pedidos').select('*');
+          if (Array.isArray(f.status) && f.status.length) q = q.in('status', f.status);
+          else if (typeof f.status === 'string' && f.status) q = q.eq('status', f.status);
+          if (f.entregaDesde) q = q.gte('data_entrega', f.entregaDesde);
+          if (f.entregaAte) q = q.lte('data_entrega', f.entregaAte);
+          if (f.pedidoId) q = q.eq('pedido_id', f.pedidoId);
+          const termo = (f.busca || '').trim().replace(/[,()*%\\]/g, ' ').trim();
+          if (termo) q = q.or(['titulo', 'tema', 'texto', 'cliente_nome', 'pedido_codigo'].map(c => `${c}.ilike.*${termo}*`).join(','));
+          q = q.order('data_entrega', { ascending: f.crescente ?? true }).order('hora_entrega', { ascending: true, nullsFirst: false }).order('numero');
+          if (f.limite) q = q.limit(f.limite);
+          return conferir(await q, 'topos');
+        },
+        obter: async (id) => conferir(await supabase.from('topos_pedidos').select('*').eq('id', id).single(), 'topo'),
+        criar: async (dados) => conferir(await supabase.from('topos_pedidos').insert(dados).select().single(), 'topo'),
+        async atualizar(id, campos) {
+          const { id: _i, numero, criado_em, criado_por, atualizado_em, ...dados } = campos;
+          return conferir(await supabase.from('topos_pedidos').update(dados).eq('id', id).select().single(), 'topo');
+        },
+        alterarStatus: async (id, status) => conferir(await supabase.from('topos_pedidos').update({ status }).eq('id', id).select().single(), 'topo'),
+        async remover(id) {
+          conferir(await supabase.from('topos_pedidos').delete().eq('id', id), 'topo');
+          return true;
+        },
+        historico: async (id) => conferir(await supabase.from('topos_historico').select('*').eq('topo_id', id).order('criado_em'), 'histórico do topo'),
+        /** Avisa quando um pedido de topo é criado, alterado ou apagado. Devolve uma função para parar de ouvir. */
+        aoMudar(callback, aoEstado) {
+          const canal = supabase
+            .channel('topos-backoffice')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'topos_pedidos' },
+                (m) => callback({ tipo: m.eventType, topo: m.new && Object.keys(m.new).length ? m.new : m.old }))
+            .subscribe((estado) => aoEstado?.(estado));
+          return () => supabase.removeChannel(canal);
+        }
+      },
+      /* Avisos da equipe (sino do backoffice), criados pelo banco: ex.: topo pronto (sql/topos.sql) */
+      notificacoes: {
+        async listar({ naoLidas = false, limite = 30 } = {}) {
+          let q = supabase.from('notificacoes').select('*');
+          if (naoLidas) q = q.is('lida_em', null);
+          return conferir(await q.order('criado_em', { ascending: false }).limit(limite), 'avisos');
+        },
+        /** Marca como visto (para toda a equipe). Sem id: todos os que ainda não foram vistos. */
+        async marcarVista(id) {
+          let q = supabase.from('notificacoes').update({ lida_em: new Date().toISOString() });
+          q = id ? q.eq('id', id) : q.is('lida_em', null);
+          conferir(await q, 'avisos');
+          return true;
+        },
+        aoMudar(callback) {
+          const canal = supabase
+            .channel('avisos-backoffice')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'notificacoes' },
+                (m) => callback({ tipo: m.eventType, aviso: m.new && Object.keys(m.new).length ? m.new : m.old }))
+            .subscribe();
+          return () => supabase.removeChannel(canal);
+        }
+      },
+      /* Quem produz os personalizados: entra no backoffice e só vê o módulo de topos */
+      personalizados: {
+        listar: async () => conferir(await supabase.from('produtores_personalizados').select('*').order('nome'), 'equipe de personalizados'),
+        salvar: ({ email, nome, ativo = true }) => rpc('salvar_produtor_personalizados', { p_email: email, p_nome: nome, p_ativo: ativo }),
+        remover: (userId) => rpc('remover_produtor_personalizados', { p_user_id: userId })
+      },
+
       /* Equipe: o usuário é criado no Supabase (Authentication > Users) e liberado aqui pelo e-mail */
       equipe: {
         listar: () => rpc('listar_equipe'),
@@ -527,7 +616,7 @@ export function criarApi(supabase, opcoes = {}) {
       }
     },
 
-    util: { formatarPreco, formatarPeso, formatarData, novaChave, linkWhatsApp, abrirWhatsApp, alvoWhatsApp, linkCompartilhavel, linkRecibo, montarMensagemWhatsApp, montarMensagemStatus, prepararAba, separarReferencia, juntarReferencia, ehTopper, PIX }
+    util: { formatarPreco, formatarPeso, formatarData, novaChave, linkWhatsApp, abrirWhatsApp, alvoWhatsApp, linkCompartilhavel, linkRecibo, montarMensagemWhatsApp, montarMensagemStatus, prepararAba, separarReferencia, juntarReferencia, ehTopper, PIX, pixDe, textoPix }
   };
 }
 
