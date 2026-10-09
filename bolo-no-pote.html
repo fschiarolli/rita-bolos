@@ -322,7 +322,7 @@ textarea.input { height: auto; min-height: 76px; padding: 12px 15px; resize: ver
   <section class="hero" aria-labelledby="hTitulo">
     <div class="wrap">
       <div>
-        <span class="selo"><i></i>Porção individual, feita pela Rita</span>
+        <span class="selo"><i></i><span id="seloTxt">Porção individual, feita pela Rita</span></span>
         <h1 id="hTitulo">Bolo<br>no pote <em>da Rita</em></h1>
         <p class="lead" id="intro">Camadas de massa fofinha e recheio cremoso, do jeito que você já conhece. Escolha os sabores, quantos quiser, e retire no horário que preferir.</p>
         <div class="preco-chip" id="precoChip" hidden><span id="precoRot">cada</span><strong id="precoVal"></strong></div>
@@ -438,7 +438,9 @@ const NAME_KEY = 'ritabolos.nome';           // mesmas chaves do site: nome e te
 const PHONE_KEY = 'ritabolos.telefone';
 const ULTIMO_KEY = 'ritabolos.ultimo-pedido';
 const CACHE_KEY = 'ritabolos.cardapio.v1' + (DEMO ? '.demo' : '');
-const CAT_SLUGS = ['bolo-no-pote', 'pote'];
+/* Esta página é o canal de atacado: usa a categoria "Bolo no pote (atacado)" (R$ 12,00, ver sql/bolo-no-pote-atacado.sql),
+   que não aparece no cardápio do site. Enquanto ela não existir, usa o bolo no pote do cardápio normal. */
+const CAT_SLUGS = ['bolo-no-pote-atacado', 'bolo-no-pote', 'pote'];
 /* Horários de retirada: mesmos do site (index.html, const RETIRADA) */
 const RETIRADA = { dias: 14, inicio: '08:00', fim: '18:00', passoMin: 30, tardeDesde: '12:00' };
 
@@ -555,7 +557,8 @@ async function conectarApi() {
 
 function aplicarDados(d) {
   CFG = { ...CFG_PADRAO, ...(d.configuracoes || {}) };
-  CAT = (d.categorias || []).find(c => CAT_SLUGS.includes(c.slug)) || (d.categorias || []).find(c => c.icone === 'pote') || null;
+  const cats = d.categorias || [];
+  CAT = CAT_SLUGS.map(s => cats.find(c => c.slug === s)).find(Boolean) || cats.find(c => c.icone === 'pote') || null;
   const prods = CAT ? [...(CAT.grupos || []).flatMap(g => g.produtos || []), ...(CAT.produtos || [])] : [];
   ITENS = prods.map(p => ({
     slug: p.slug, nome: p.nome, rotulo: p.rotulo || p.nome.replace(/^bolo no pote\s*/i, '') || p.nome,
@@ -573,7 +576,9 @@ function render() {
   // links de WhatsApp e do cardápio completo
   ligarLinksWa(CFG.whatsapp_numero);
   $$('[data-wa-txt]').forEach(s => { s.textContent = CFG.whatsapp_exibicao || ''; });
-  $$('[data-cardapio]').forEach(a => { a.href = 'index.html' + (DEMO ? '?demo' : '') + (CAT ? `#cardapio/${CAT.slug}` : ''); });
+  // o cardápio completo é o normal (o atacado não aparece lá)
+  $$('[data-cardapio]').forEach(a => { a.href = 'index.html' + (DEMO ? '?demo' : '') + '#cardapio/bolo-no-pote'; });
+  $('#seloTxt').textContent = CAT?.slug === 'bolo-no-pote-atacado' ? 'Preço especial para grandes quantidades' : 'Porção individual, feita pela Rita';
   $('#passoSinal').textContent = `O pedido chega no WhatsApp da Rita e é confirmado com o sinal de ${pct().toLocaleString('pt-BR')}%.`;
 
   if (CAT?.introducao) $('#intro').textContent = CAT.introducao;

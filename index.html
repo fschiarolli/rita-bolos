@@ -1324,7 +1324,9 @@ function buildCatalog(d) {
     short: m.nome.replace(/^massa\s+/i, '').replace(/^./, c => c.toUpperCase()) }));
   FORMATOS = (d.bolo?.formatos || []).map(f => ({ v: f.slug, label: f.nome, desc: f.descricao || '' }));
   // Categoria com "Vende pelo site" desmarcado é só do backoffice: some do site (páginas, como Sacolinhas, continuam como link)
-  CATS = (d.categorias || []).filter(c => c.layout === 'pagina' || c.aceita_pedido_online !== false);
+  // Página própria (layout "pagina"): com link, vira uma faixa no início (ex.: Sacolinhas); sem link, fica fora do site
+  // (ex.: atacado, vendido só em bolo-no-pote.html). Os produtos dela nunca entram no cardápio nem na busca.
+  CATS = (d.categorias || []).filter(c => c.layout === 'pagina' ? !!c.link_externo : c.aceita_pedido_online !== false);
   FINALIZACOES = (d.categorias || []).flatMap(c => [...(c.grupos || []).flatMap(g => (g.produtos || []).filter(p => grupoFinalizacao(g.nome) || ehFinalizacao(p))),
     ...(c.produtos || []).filter(ehFinalizacao)])
     .map(p => ({ slug: p.slug, nome: p.nome, preco: Number(p.preco), desc: p.descricao || '',
@@ -1334,6 +1336,7 @@ function buildCatalog(d) {
   for (const c of CATS) {
     const grupos = (c.grupos || []).map(g => ({ id: `${c.slug}-${g.id}`, title: g.nome, info: g.info, flavors: g.sabores, produtos: g.produtos || [] }));
     if ((c.produtos || []).length) grupos.push({ id: `${c.slug}-itens`, title: null, info: null, produtos: c.produtos });
+    if (c.layout === 'pagina') { CATALOG[c.slug] = []; continue; }   // vendidos na página própria
     CATALOG[c.slug] = grupos.map(g => ({ ...g, items: g.produtos.map(p => register(itemDe(p, c, g))) })).filter(g => g.items.length);
   }
 }

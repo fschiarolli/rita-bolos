@@ -2328,9 +2328,9 @@ function desenharCardapio() {
       <button type="button" class="btn sm ghost" data-nova-cat>${ic('mais')}Categoria</button></div>
     ${c ? `<div class="card" style="margin-bottom:16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
         <div style="flex:1;min-width:200px"><strong style="font-size:17px">${esc(c.nome)}</strong>
-          <div class="dica" style="color:var(--ink-3);font-weight:400;font-size:13px">${esc(LAYOUTS.find(l => l[0] === c.layout)?.[1] || c.layout)}${c.antecedencia_minima_dias ? ` · ${c.antecedencia_minima_dias} dias de antecedência` : ''}${c.aceita_pedido_online ? '' : c.layout === 'pagina' ? ' · sem pedido pelo site' : ' · só no backoffice (não aparece no site)'}${c.precos_validos_ate ? ` · preços até ${esc(formatarData(c.precos_validos_ate))}` : ''}</div>
+          <div class="dica" style="color:var(--ink-3);font-weight:400;font-size:13px">${esc(LAYOUTS.find(l => l[0] === c.layout)?.[1] || c.layout)}${c.layout === 'pagina' ? (c.link_externo ? ` · faixa no site levando a ${esc(c.link_externo)}` : ' · fora do cardápio do site (vendida só na página própria)') : ''}${c.antecedencia_minima_dias ? ` · ${c.antecedencia_minima_dias} dias de antecedência` : ''}${c.aceita_pedido_online ? '' : c.layout === 'pagina' ? ' · sem pedido pelo site' : ' · só no backoffice (não aparece no site)'}${c.precos_validos_ate ? ` · preços até ${esc(formatarData(c.precos_validos_ate))}` : ''}</div>
           ${c.precos_validos_ate && c.precos_validos_ate < hojeISO() ? `<div class="tag pend" style="margin-top:6px">A validade dos preços já passou</div>` : ''}</div>
-        <label class="chk"><input type="checkbox" class="switch" data-ativo-cat="${esc(c.id)}" ${c.ativo ? 'checked' : ''}> No site</label>
+        <label class="chk"><input type="checkbox" class="switch" data-ativo-cat="${esc(c.id)}" ${c.ativo ? 'checked' : ''}> Ativa</label>
         <button type="button" class="btn sm ghost" data-ed-cat="${esc(c.id)}">${ic('editar')}Editar categoria</button>
         <button type="button" class="btn sm ghost" data-novo-grupo>${ic('mais')}Grupo</button>
       </div>
@@ -2513,7 +2513,7 @@ function modalCategoria(c) {
         ${campo('cVal', 'Preços válidos até', `<input class="in" id="cVal" type="date" value="${esc(c.precos_validos_ate || '')}">`)}${inNum('cOrdem', 'Ordem', c.ordem ?? 0)}</div>
       <div id="cPagina" ${c.layout === 'pagina' ? '' : 'hidden'}>
         ${inTa('cDesc', 'Descrição', c.descricao || '', { attrs: 'maxlength="800" style="min-height:64px"' })}
-        <div class="grid2">${inTxt('cLink', 'Link da página', c.link_externo || '', { attrs: 'placeholder="sacolinhas.html"' })}${inTxt('cParc', 'Parceria', c.parceiro || '', { attrs: 'maxlength="60"' })}</div>
+        <div class="grid2">${inTxt('cLink', 'Link da página', c.link_externo || '', { attrs: 'placeholder="sacolinhas.html"', dica: 'Os produtos são vendidos só na página própria, nunca no cardápio. Com link, aparece uma faixa no início do site; sem link, a categoria fica fora do site (ex.: atacado, vendido só na página do bolo no pote).' })}${inTxt('cParc', 'Parceria', c.parceiro || '', { attrs: 'maxlength="60"' })}</div>
       </div>
       <div style="display:flex;gap:18px;flex-wrap:wrap">${inChk('cOnline', 'Vende pelo site', c.aceita_pedido_online)}${inChk('cAtivo', 'Ativa', c.ativo)}</div>
       <p class="dica" style="margin:4px 0 0">Desmarque <strong>Vende pelo site</strong> para itens só do backoffice (ex.: pedidos personalizados para algumas clientes): a categoria some do site e os itens só podem ser lançados em <strong>Novo pedido</strong>. Desmarque <strong>Ativa</strong> para tirar a categoria de tudo.</p>`,

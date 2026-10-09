@@ -58,6 +58,18 @@ export function criarSupabaseDemo(opcoes = {}) {
           imagem_path: null, ilustracao: null, destaque: false, destaque_ordem: null, antecedencia_minima_dias: 0, ordem, ativo: true, criado_em: agora(), atualizado_em: agora() });
       });
     }
+    // bolo no pote no atacado (igual a sql/bolo-no-pote-atacado.sql): mesmos sabores a R$ 12, fora do cardápio do site
+    const pote = (b.categorias || []).find(c => c.slug === 'bolo-no-pote');
+    if (pote && !b.categorias.some(c => c.slug === 'bolo-no-pote-atacado')) {
+      const atac = { ...pote, id: novoId(), slug: 'bolo-no-pote-atacado', nome: 'Bolo no pote (atacado)', layout: 'pagina', link_externo: null,
+        introducao: 'Bolo no pote para festas, eventos e revenda. Todos os sabores R$ 12,00 a unidade.', aceita_pedido_online: true, ativo: true,
+        ordem: (pote.ordem || 0) + 100, criado_em: agora(), atualizado_em: agora() };
+      b.categorias.push(atac);
+      b.produtos.filter(p => p.categoria_id === pote.id).forEach(p => {
+        if (!b.produtos.some(x => x.slug === 'atacado-' + p.slug))
+          b.produtos.push({ ...p, id: novoId(), categoria_id: atac.id, slug: 'atacado-' + p.slug, preco: 12, destaque: false, destaque_ordem: null, criado_em: agora(), atualizado_em: agora() });
+      });
+    }
     return b;
   }
   function salvar() { try { localStorage.setItem(CHAVE, JSON.stringify(db)); } catch (e) {} }
