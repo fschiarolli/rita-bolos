@@ -1,21 +1,28 @@
 /**
  * Quadro da equipe (TV da cozinha e do balcão)
  * ------------------------------------------------------------------
- * Pedidos em aberto por status, o que produzir hoje e amanhã e os
- * números do dia. Foi feito para ficar aberto numa TV sem ninguém mexer:
+ * Pedidos do dia em aberto por status, o que produzir hoje e os números
+ * do dia. Pedido de dia anterior que ainda não foi retirado continua
+ * aparecendo, marcado como atrasado. Com muitos pedidos (dias de 30+),
+ * os cartões ficam compactos sozinhos e as colunas ganham divisões por
+ * período (manhã, tarde). Foi feito para ficar aberto numa TV sem ninguém mexer:
  * atualiza sozinho (tempo real + conferência periódica), troca de página
  * quando a coluna não cabe, mantém a tela acesa e avisa pedido novo.
  *
  * Endereço: backoffice/quadro.html
  *   ?demo     usa os dados de demonstração (os mesmos do backoffice ?demo)
- *   ?dias=14  quantos dias à frente aparecem nas colunas (padrão 14, o mesmo prazo que o site oferece para a retirada)
+ *   ?dias=3       quantos dias aparecem nas colunas (padrão 1: só os pedidos de hoje)
+ *   ?compacto=1   cartões sempre compactos (=0: nunca; sem o parâmetro, o quadro decide pela quantidade)
  */
 import { criarApi, conectar, formatarPreco as R, formatarPeso, separarReferencia } from '../js/rita-api.js';
 
 const PARAMS = new URLSearchParams(location.search);
 const DEMO = PARAMS.has('demo');
 const FUSO = 'America/Sao_Paulo';
-const DIAS_A_FRENTE = Math.min(60, Math.max(1, parseInt(PARAMS.get('dias'), 10) || 14));
+const DIAS_A_FRENTE = Math.min(60, Math.max(1, parseInt(PARAMS.get('dias'), 10) || 1));
+const SO_HOJE = DIAS_A_FRENTE === 1;
+const COMPACTO = PARAMS.get('compacto');     // '1' sempre, '0' nunca, null: automático
+const MAX_PAGINAS = 2;                        // mais páginas que isso numa coluna: cartões compactos
 const TROCA_PAGINA_MS = 12000;
 const NOVO_MS = 3 * 60e3;          // quanto tempo um pedido novo fica destacado
 const MUDOU_MS = 2600;             // destaque rápido de quem acabou de mudar de coluna
@@ -317,7 +324,19 @@ function desenhar() {
   painel.innerHTML = E.cols.map(s => coluna(s, ctx)).join('') + producao(ctx);
   ajustarRotulosBarra();
   desenharConexao();
+  paginarComDensidade();
+}
+/** Mede no tamanho normal; se alguma coluna de status precisar de mais de MAX_PAGINAS, usa cartões compactos;
+    se ainda não couber, o nível mínimo (hora, nome e itens numa linha). */
+function paginarComDensidade() {
+  const painel = $('#painel'); if (!painel) return;
+  const cheia = () => [...paginas.entries()].some(([chave, est]) => chave !== 'producao' && est.inicios.length > MAX_PAGINAS);
+  painel.classList.toggle('compacto', COMPACTO === '1');
+  painel.classList.remove('mini');
   paginar();
+  if (COMPACTO !== null || matchMedia(MQ_LISTA).matches) return;
+  if (cheia()) { painel.classList.add('compacto'); paginar(); }
+  if (cheia()) { painel.classList.add('mini'); paginar(); }
 }
 
 /* ---------- Números do dia ---------- */
@@ -387,16 +406,34 @@ function coluna(s, ctx) {
     atrasados ? (ehPronto ? `<em>${plural(atrasados, 'passou do horário', 'passaram do horário')}</em>` : `<b>${plural(atrasados, 'atrasado', 'atrasados')}</b>`) : '',
     hoje ? `${hoje} para hoje` : '', amanha ? `${amanha} amanhã` : ''
   ].filter(Boolean).join(' · ') || esc(s.descricao || '');
+  const futuros = SO_HOJE ? `+${depois} nos próximos dias` : `+${depois} depois de ${dataCurta(ate)}`;
   const id = 'col-' + s.codigo;
   return `<section class="coluna" style="--cor:${cor.hex};--cor-rgb:${cor.rgb}" aria-labelledby="${id}">
     <div class="col-topo">
       <h2 class="col-nome" id="${id}" style="margin:0"><i aria-hidden="true"></i><span>${esc(s.nome)}</span></h2>
-      <span class="col-qtd" aria-label="${plural(todos.length, 'pedido', 'pedidos')}">${todos.length}</span>
+      <span class="col-qtd" aria-label="${plural(visiveis.length, 'pedido', 'pedidos')}">${visiveis.length}</span>
       <div class="col-resumo">${resumo || '&nbsp;'}</div>
     </div>
-    <div class="rolo" data-pag="${esc(s.codigo)}"><div class="trilho">${visiveis.length ? visiveis.map(p => cartao(p, ctx)).join('') : vazio(ehPronto)}</div></div>
-    <div class="col-pe">${depois ? `<span>+${depois} depois de ${dataCurta(ate)}</span>` : ''}<span class="pag" data-ind="${esc(s.codigo)}" hidden></span></div>
+    <div class="rolo" data-pag="${esc(s.codigo)}"><div class="trilho">${visiveis.length ? comPeriodos(visiveis, ctx) : vazio(ehPronto)}</div></div>
+    <div class="col-pe">${depois ? `<span class="col-futuros">${futuros}</span>` : ''}<span class="pag" data-ind="${esc(s.codigo)}" hidden></span></div>
   </section>`;
+}
+/** Cartões na ordem da retirada; com muitos, divididos por período (dias anteriores, manhã, tarde, noite, sem horário). */
+function periodo(p, hojeIso) {
+  if (p.data_retirada < hojeIso) return 'Dias anteriores';
+  if (p.data_retirada > hojeIso) return rotuloDia(p.data_retirada, hojeIso);
+  if (!p.hora_retirada) return 'Sem horário';
+  const h = Number(String(p.hora_retirada).slice(0, 2));
+  return h < 12 ? 'Manhã' : h < 18 ? 'Tarde' : 'Noite';
+}
+function comPeriodos(lista, ctx) {
+  const grupos = [];
+  for (const p of lista) {
+    const g = periodo(p, ctx.ag.iso), ult = grupos[grupos.length - 1];
+    if (ult && ult.nome === g) ult.itens.push(p); else grupos.push({ nome: g, itens: [p] });
+  }
+  const dividir = lista.length >= 5 && grupos.length > 1;
+  return grupos.map(g => (dividir ? `<div class="grupo" aria-hidden="true">${esc(g.nome)}<b>${g.itens.length}</b></div>` : '') + g.itens.map(p => cartao(p, ctx)).join('')).join('');
 }
 function vazio(ehPronto) {
   return `<div class="vazio">${ic(ehPronto ? 'ok' : 'bolo')}<span>${ehPronto ? 'Nenhum pedido esperando retirada' : 'Nada por aqui agora'}</span></div>`;
@@ -421,7 +458,7 @@ function cartao(p, ctx) {
   const pagto = pagamento(p, ctx);
   return `<article class="cartao ${classe} ${d ? d.tipo : ''}"${anim} aria-label="${esc(`${p.codigo}, ${p.cliente_nome}, retirada ${dia.toLowerCase()}${hora(p) ? ' às ' + hora(p) : ''}`)}">
     <div class="c-cab">
-      <div class="c-quando">${hora(p) ? `<span class="c-hora">${hora(p)}</span>` : '<span class="c-hora sem">Sem hora</span>'}<span class="c-dia">${esc(dia)}</span></div>
+      <div class="c-quando">${hora(p) ? `<span class="c-hora">${hora(p)}</span>` : '<span class="c-hora sem">Sem hora</span>'}${SO_HOJE && p.data_retirada === ag.iso ? '' : `<span class="c-dia">${esc(dia)}</span>`}</div>
       <div class="c-quem"><span class="c-nome" title="${esc(p.cliente_nome)}">${esc(nomeCurto(p.cliente_nome))}</span><span class="c-cod">${esc(p.codigo)}</span></div>
     </div>
     ${urgencia || novo ? `<div class="c-fichas">${novo}${urgencia}</div>` : ''}
@@ -454,12 +491,12 @@ function pagamento(p, ctx) {
   return '';
 }
 
-/* ---------- Produção: o que fazer hoje e amanhã ---------- */
+/* ---------- Produção: o que fazer hoje (com ?dias=2 ou mais, também amanhã) ---------- */
 function producao(ctx) {
   const { ag, E } = ctx, amanha = somarDias(ag.iso, 1);
   const dias = [
     { nome: 'Hoje', data: ag.iso, filtro: p => p.data_retirada <= ag.iso },   // atrasados entram no hoje
-    { nome: 'Amanhã', data: amanha, filtro: p => p.data_retirada === amanha }
+    ...(SO_HOJE ? [] : [{ nome: 'Amanhã', data: amanha, filtro: p => p.data_retirada === amanha }])
   ];
   let corpo;
   if (!dados.itens) corpo = '<div class="vazio">Não foi possível carregar os itens agora.</div>';
@@ -516,7 +553,11 @@ function paginar() {
     const inicios = [0];
     if (!lista) {
       const H = rolo.clientHeight; let base = 0;
-      for (const f of trilho.children) if (f.offsetTop > base && f.offsetTop + f.offsetHeight - base > H + 1) { inicios.push(f.offsetTop); base = f.offsetTop; }
+      for (const f of trilho.children) {
+        if (!(f.offsetTop > base && f.offsetTop + f.offsetHeight - base > H + 1)) continue;
+        const ant = f.previousElementSibling, ini = ant?.classList.contains('grupo') && ant.offsetTop > base ? ant.offsetTop : f.offsetTop;
+        inicios.push(ini); base = ini;
+      }
     }
     est.inicios = inicios;
     if (est.i >= inicios.length) est.i = 0;
@@ -525,11 +566,12 @@ function paginar() {
 }
 function mostrarPagina(rolo, est, animar) {
   const trilho = rolo.firstElementChild, ini = est.inicios[est.i], fim = ini + rolo.clientHeight, varias = est.inicios.length > 1;
+  const prox = est.inicios[est.i + 1] ?? Infinity;   // o que começa na próxima página fica escondido (ex.: divisão de período levada junto)
   if (!animar) trilho.style.transition = 'none';
   trilho.style.transform = ini ? `translateY(${-ini}px)` : '';
   for (const f of trilho.children) {
     const topo = f.offsetTop, baixo = topo + f.offsetHeight;
-    f.classList.toggle('fora', varias && (topo < ini - 1 || (baixo > fim + 1 && topo > ini + 1)));
+    f.classList.toggle('fora', varias && (topo < ini - 1 || topo >= prox - 1 || (baixo > fim + 1 && topo > ini + 1)));
   }
   if (!animar) { void trilho.offsetHeight; trilho.style.transition = ''; }
   const ind = $(`[data-ind="${CSS.escape(rolo.dataset.pag)}"]`);
@@ -646,7 +688,7 @@ document.addEventListener('fullscreenchange', () => {
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && api && dados) { manterAcesa(); carregar(); } });
 addEventListener('online', () => { if (api && dados) carregar(); });
 let tResize = null;
-addEventListener('resize', () => { clearTimeout(tResize); tResize = setTimeout(() => { ajustarRotulosBarra(); paginar(); }, 200); });
+addEventListener('resize', () => { clearTimeout(tResize); tResize = setTimeout(() => { ajustarRotulosBarra(); paginarComDensidade(); }, 200); });
 
 /* =========================================================
    TELAS: entrada, falha e quadro

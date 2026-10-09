@@ -126,7 +126,8 @@ button, input { font: inherit; color: inherit; }
 .rolo { position: relative; overflow: hidden; min-height: 0; padding: 0 .75rem; }
 .trilho { display: grid; gap: .7rem; padding-bottom: .75rem; transition: transform .8s cubic-bezier(.22, .8, .24, 1); will-change: transform; }
 .col-pe { display: flex; align-items: center; justify-content: space-between; min-height: 2.1rem; padding: .35rem 1rem .6rem; font-size: .76rem; color: var(--ink-3); }
-.pag { display: inline-flex; align-items: center; margin-left: auto; font-weight: 700; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.col-futuros { min-width: 0; margin-right: .6rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pag { display: inline-flex; flex: none; align-items: center; margin-left: auto; font-weight: 700; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .pag-barra { position: relative; width: 3.2rem; height: .22rem; margin-left: .55rem; border-radius: 1rem; background: var(--surface-3); overflow: hidden; }
 .pag-barra i { position: absolute; top: 0; left: 0; bottom: 0; width: 100%; background: var(--ink-2); transform-origin: left center; transform: scaleX(0); }
 
@@ -148,7 +149,7 @@ button, input { font: inherit; color: inherit; }
 .c-fichas, .c-pag { display: flex; flex-wrap: wrap; margin: -.3rem 0 0 -.35rem; }
 .c-fichas > *, .c-pag > * { margin: .3rem 0 0 .35rem; }
 .c-itens { list-style: none; margin: 0; padding: .55rem 0 0; border-top: 1px solid var(--line); display: grid; gap: .35rem; }
-.c-item { display: grid; grid-template-columns: 2.1rem minmax(0, 1fr); align-items: baseline; }
+.c-item { display: grid; grid-template-columns: minmax(2.1rem, auto) minmax(0, 1fr); column-gap: .3rem; align-items: baseline; }
 .c-qtd { font-weight: 800; color: var(--ink-2); font-variant-numeric: tabular-nums; font-size: .95rem; }
 .c-prod { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: .95rem; font-weight: 500; line-height: 1.25; }
 .c-peso { font-weight: 800; white-space: nowrap; }
@@ -170,10 +171,51 @@ button, input { font: inherit; color: inherit; }
 .ficha.bom { color: var(--good); background: var(--good-bg); }
 .ficha.marca { color: var(--brand); background: var(--brand-bg); }
 
+/* Divisão por período dentro da coluna (manhã, tarde...), quando há muitos pedidos */
+.grupo { display: flex; align-items: center; gap: .45rem; padding: .3rem .15rem 0; font-size: .68rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); transition: opacity .5s ease; }
+.grupo:first-child { padding-top: 0; }
+.grupo b { color: var(--ink-2); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.grupo::after { content: ''; flex: 1; height: 1px; background: var(--line-2); }
+.grupo.fora { opacity: 0; }
+
+/* ---------- Cartões compactos: o quadro liga sozinho quando as colunas não cabem (dias de muitos pedidos) ---------- */
+.painel.compacto .trilho { gap: .45rem; }
+.painel.compacto .cartao { gap: .3rem; padding: .5rem .7rem .55rem; }
+.painel.compacto .c-cab { column-gap: .6rem; }
+.painel.compacto .c-quando { min-width: 0; display: flex; align-items: baseline; gap: .4rem; }
+.painel.compacto .c-hora { font-size: 1.3rem; }
+.painel.compacto .c-hora.sem { font-size: .85rem; }
+.painel.compacto .c-dia { margin: 0; font-size: .62rem; }
+.painel.compacto .c-quem { display: flex; align-items: baseline; gap: .5rem; padding-left: .6rem; }
+.painel.compacto .c-nome { flex: 1; min-width: 0; -webkit-line-clamp: 1; font-size: 1rem; }
+.painel.compacto .c-cod { display: none; }   /* o nome importa mais que o código na TV */
+.painel.compacto .c-itens { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; padding-top: .3rem; font-size: .86rem; line-height: 1.32; }
+.painel.compacto .c-item, .painel.compacto .c-item > span { display: inline; }
+.painel.compacto .c-item + .c-item::before, .painel.compacto .c-mais::before { content: '·'; margin: 0 .35rem; color: var(--ink-3); font-weight: 800; }
+.painel.compacto .c-qtd { margin-right: .2rem; font-size: inherit; }
+.painel.compacto .c-prod { display: inline; font-size: inherit; }
+.painel.compacto .c-det, .painel.compacto .c-iobs { display: none; }
+.painel.compacto .c-ref { display: inline; margin: 0 0 0 .3rem; font-size: 0; }
+.painel.compacto .c-ref img { width: 1.2rem; height: 1.2rem; border-radius: .25rem; vertical-align: -.25rem; }
+.painel.compacto .c-mais { display: inline; padding: 0; font-size: inherit; }
+.painel.compacto .c-nota, .painel.compacto .c-obs { font-size: .74rem; }
+.painel.compacto .c-nota { padding: .22rem .45rem; }
+.painel.compacto .c-nota span, .painel.compacto .c-obs span { -webkit-line-clamp: 1; }
+.painel.compacto .ficha { height: 1.35rem; padding: 0 .5rem; font-size: .7rem; }
+/* Nível mínimo (ainda mais pedidos): hora, nome e itens numa linha; o atraso fica na borda colorida do cartão */
+.painel.mini .trilho { gap: .35rem; }
+.painel.mini .cartao { gap: .18rem; padding: .38rem .65rem .42rem; }
+.painel.mini .c-hora { font-size: 1.12rem; }
+.painel.mini .c-nome { font-size: .95rem; }
+.painel.mini .c-itens { -webkit-line-clamp: 1; padding-top: .2rem; font-size: .82rem; }
+.painel.mini .c-fichas, .painel.mini .c-obs { display: none; }   /* o valor a receber (c-pag) fica: quem entrega precisa dele */
+.painel.mini .c-nota { padding: .14rem .4rem; font-size: .7rem; }
+.painel.mini .grupo { padding-top: .15rem; }
+
 .vazio { display: grid; justify-items: center; align-content: center; gap: .55rem; height: 100%; min-height: 9rem; padding: 1rem; text-align: center; color: var(--ink-3); font-size: .86rem; }
 .vazio .ic { width: 2.2rem; height: 2.2rem; stroke-width: 1.6; opacity: .7; }
 
-/* ---------- Produção (o que fazer hoje e amanhã) ---------- */
+/* ---------- Produção (o que fazer hoje; com ?dias=2 ou mais, também amanhã) ---------- */
 .producao { --cor: linear-gradient(90deg, #E8C886, #F4AFC2); }
 .prod-sub { grid-column: 1 / -1; margin-top: .35rem; font-size: .8rem; color: var(--ink-3); }
 .p-dia + .p-dia { margin-top: 1.1rem; }
