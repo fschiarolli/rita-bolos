@@ -193,26 +193,31 @@ create policy topos_historico_ler on topos_historico for select to authenticated
 -- o histórico só é escrito pelo gatilho acima
 
 -- ---------------------------------------------------------------- avisos da equipe
+-- (a mesma tabela é criada pelo sql/estoque.sql: os dois arquivos podem ser rodados em qualquer ordem)
 create table if not exists notificacoes (
   id        bigint generated always as identity primary key,
-  tipo      text not null,                          -- topo_pronto
+  tipo      text not null,                          -- topo_pronto, estoque_baixo, estoque_acabou
   titulo    text not null,
   texto     text,
   pedido_id uuid references pedidos(id) on delete cascade,
-  topo_id   uuid references topos_pedidos(id) on delete cascade,
   criado_em timestamptz not null default now(),
   lida_em   timestamptz                             -- visto por alguém da equipe: sai da lista de novos para todos
 );
+alter table notificacoes add column if not exists topo_id uuid references topos_pedidos(id) on delete cascade;
 create index if not exists notificacoes_novas_idx on notificacoes (criado_em desc) where lida_em is null;
 
 alter table notificacoes enable row level security;
 drop policy if exists notificacoes_ler on notificacoes;
 drop policy if exists notificacoes_marcar on notificacoes;
+-- a equipe da loja vê os avisos; os de estoque, só a Administração (igual em sql/estoque.sql)
 create policy notificacoes_ler on notificacoes for select to authenticated
-  using (exists (select 1 from administradores a where a.user_id = auth.uid() and a.ativo));
+  using (exists (select 1 from administradores a where a.user_id = auth.uid() and a.ativo)
+         and (tipo not like 'estoque%' or eh_admin_loja()));
 create policy notificacoes_marcar on notificacoes for update to authenticated
-  using (exists (select 1 from administradores a where a.user_id = auth.uid() and a.ativo))
-  with check (exists (select 1 from administradores a where a.user_id = auth.uid() and a.ativo));
+  using (exists (select 1 from administradores a where a.user_id = auth.uid() and a.ativo)
+         and (tipo not like 'estoque%' or eh_admin_loja()))
+  with check (exists (select 1 from administradores a where a.user_id = auth.uid() and a.ativo)
+         and (tipo not like 'estoque%' or eh_admin_loja()));
 -- criar: só o gatilho abaixo
 
 create or replace function topos_avisar_pronto()

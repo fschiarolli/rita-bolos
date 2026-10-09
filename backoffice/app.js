@@ -353,6 +353,7 @@ async function aposLogin() {
   if (podeTopos()) atualizarBadgeTopos().then(ok => { if (ok && perfil) ligarTempoRealTopos(); });
   if (!ehProdutor()) carregarAvisos().then(ok => { if (ok && perfil) ligarAvisos(); });
   if (!ehProdutor()) mapaKitsLoja();   // conteúdo dos kits já pronto para a gaveta e a impressão
+  if (isAdmin()) badgeEstoque();
   if (!ehProdutor() && impressaoAuto().ligada) toast('Impressão automática ligada neste aparelho: pedidos confirmados saem na impressora.', { tempo: 6000 });
 }
 
@@ -382,6 +383,7 @@ const NAV = [
   { id: 'topos', rot: 'Topos', ic: 'topo', topos: true },
   { id: 'relatorio', rot: 'Relatório', ic: 'grafico', admin: true },
   { id: 'prejuizos', rot: 'Prejuízos', ic: 'alerta', admin: true },
+  { id: 'estoque', rot: 'Estoque', ic: 'estoque', admin: true },
   { id: 'cardapio', rot: 'Cardápio', ic: 'bolo', admin: true },
   { id: 'ajustes', rot: 'Ajustes', ic: 'config', admin: true }
 ];
@@ -446,7 +448,7 @@ function modalAvatar() {
 const papelTxt = () => ({ admin: 'Administração', personalizados: 'Topos e personalizados' })[perfil.papel] || 'Atendimento';
 function telaShell() {
   const itens = NAV.filter(podeVerNav), prod = ehProdutor();
-  const link = (n, cls) => `<a class="${cls}" href="#${n.id}" data-nav="${n.id}">${ic(n.ic)}<span>${n.rot}</span>${n.badge ? '<span class="nav-badge" data-badge hidden></span>' : ''}${n.topos ? '<span class="nav-badge" data-badge-topos hidden></span>' : ''}</a>`;
+  const link = (n, cls) => `<a class="${cls}" href="#${n.id}" data-nav="${n.id}">${ic(n.ic)}<span>${n.rot}</span>${n.badge ? '<span class="nav-badge" data-badge hidden></span>' : ''}${n.topos ? '<span class="nav-badge" data-badge-topos hidden></span>' : ''}${n.id === 'estoque' ? '<span class="nav-badge" data-badge-estoque hidden></span>' : ''}</a>`;
   const principais = itens.filter(n => !n.admin), gestao = itens.filter(n => n.admin);
   app.innerHTML = `<div class="shell">
     <aside class="side" aria-label="Menu principal">
@@ -490,7 +492,7 @@ function telaShell() {
   $('#topoBusca')?.addEventListener('submit', e => {
     e.preventDefault();
     const termo = $('#topoBuscaIn').value.trim(); if (!termo) return;
-    Object.assign(filtro, { busca: termo, status: 'todos', periodo: 'todas', extra: null });
+    Object.assign(filtro, { ...FILTRO_PADRAO, busca: termo, status: 'todos', periodo: 'todas' });
     $('#topoBuscaIn').value = ''; $('#topoBuscaIn').blur();
     if (telaAtual === 'pedidos' && rotaAtual === 'pedidos') telaPedidos($('#conteudo')); else location.hash = '#pedidos';
   });
@@ -651,7 +653,7 @@ function rotear(forcar = false) {
     const el = $('#conteudo');
     document.title = `${NAV.find(n => n.id === tela)?.rot || 'Painel'} — Backoffice Rita Bolos`;
     if (tela !== 'topos') sairTvTopos();
-    ({ painel: telaPainel, hoje: telaHoje, pedidos: telaPedidos, topos: telaTopos, relatorio: telaRelatorio, prejuizos: telaPrejuizos, cardapio: telaCardapio, ajustes: telaAjustes })[tela](el, sub);
+    ({ painel: telaPainel, hoje: telaHoje, pedidos: telaPedidos, topos: telaTopos, relatorio: telaRelatorio, prejuizos: telaPrejuizos, estoque: telaEstoque, cardapio: telaCardapio, ajustes: telaAjustes })[tela](el, sub);
     window.scrollTo(0, 0);
   }
   if (pedidoId && !ehProdutor()) abrirGaveta(pedidoId); else fecharGaveta(true);
@@ -679,9 +681,10 @@ function recarregarTela() {
   if (!telaAtual) return;
   const [, sub] = rotaAtual.split('/');
   if (telaAtual === 'painel') telaPainel($('#conteudo'), sub, true);
-  if (telaAtual === 'pedidos') carregarPedidos(false, true);
+  if (telaAtual === 'pedidos') { carregarPedidos(false, true); contarDias(); }
   if (telaAtual === 'hoje') recarregarHoje();
   if (telaAtual === 'topos') carregarTopos(true);
+  if (telaAtual === 'estoque') carregarEstoque();   // um pedido confirmado pode ter dado baixa
 }
 
 /* Cabeçalho padrão das telas */
@@ -727,6 +730,7 @@ function ligarTempoReal() {
     atualizarBadge();
     clearTimeout(recarga);
     recarga = setTimeout(() => {
+      if (isAdmin()) badgeEstoque();   // confirmar ou cancelar pedido mexe no estoque
       if (gavetaAbertaId && pedido?.id === gavetaAbertaId && tipo === 'UPDATE' && !salvandoGaveta) recarregarGaveta();
       if ($('#gaveta')?.classList.contains('on')) precisaRecarregar = true;
       else recarregarTela();
@@ -1188,16 +1192,22 @@ async function modalPrejuizo(pedido = null) {
   if (pedido) desenharPedido(pedido); else setTimeout(() => m.$('#prjBusca').focus(), 60);
 }
 
+/* "Limpar filtros" da lista de pedidos */
+document.addEventListener('click', e => {
+  if (!e.target.closest('[data-limpar-filtros]') || telaAtual !== 'pedidos') return;
+  Object.assign(filtro, FILTRO_PADRAO);
+  telaPedidos($('#conteudo'));
+});
 /* Atalhos do painel para a lista já filtrada */
 document.addEventListener('click', e => {
   const a = e.target.closest('[data-filtro]'); if (!a) return;
   const f = a.dataset.filtro;
-  Object.assign(filtro, { busca: '', status: 'abertos', periodo: 'proximas', extra: null });
-  if (f === 'hoje') filtro.periodo = 'hoje';
-  if (f === 'amanha') filtro.periodo = 'amanha';
+  Object.assign(filtro, FILTRO_PADRAO);
+  if (f === 'hoje') { filtro.periodo = 'dia'; filtro.dia = hojeISO(); }
+  if (f === 'amanha') { filtro.periodo = 'dia'; filtro.dia = hojeISO(1); }
   if (f === 'novos') { filtro.periodo = 'todas'; filtro.status = 'todos'; filtro.extra = 'novos'; }
-  if (f === 'sinal') { filtro.periodo = 'todas'; filtro.extra = 'sinal'; }
-  if (f === 'saldo') { filtro.periodo = 'todas'; filtro.extra = 'saldo'; }
+  if (f === 'sinal') { filtro.periodo = 'todas'; filtro.pagamento = 'sinal_pendente'; }
+  if (f === 'saldo') { filtro.periodo = 'todas'; filtro.pagamento = 'com_saldo'; }
   if (f === 'recebido') { filtro.periodo = 'todas'; filtro.status = 'recebido'; }
   if (f === 'atrasados') { filtro.periodo = 'atrasadas'; filtro.status = 'abertos'; }
   if (f.startsWith('st:')) { filtro.periodo = 'todas'; filtro.status = f.slice(3); }
@@ -1418,21 +1428,61 @@ setInterval(() => { if (telaAtual === 'hoje' && hojeDia && hojeISO() !== hojeDia
 /* =========================================================
    PEDIDOS (lista)
 ========================================================= */
-const filtro = { busca: '', status: 'abertos', periodo: 'proximas', extra: null };
-const PERIODOS = [['proximas', 'Hoje em diante'], ['hoje', 'Hoje'], ['amanha', 'Amanhã'], ['semana', 'Próximos 7 dias'], ['atrasadas', 'Retirada já passou'], ['todas', 'Todas as datas']];
-const EXTRAS = { novos: 'Feitos hoje', sinal: 'Aguardando sinal', saldo: 'Com saldo a receber' };
+/* periodo: proximas | semana | dia (filtro.dia) | entre (filtro.de, filtro.ate) | atrasadas | todas
+   diaSemana: '' ou 0 (domingo) a 6 (sábado); pagamento: '' | sinal_pendente | sinal_pago | com_saldo | pago */
+const FILTRO_PADRAO = { busca: '', status: 'abertos', periodo: 'proximas', dia: '', de: '', ate: '', diaSemana: '', origem: '', pagamento: '', ordem: '', extra: null };
+const filtro = { ...FILTRO_PADRAO };
+const PERIODOS = [['proximas', 'Hoje em diante'], ['semana', 'Próximos 7 dias'], ['dia', 'Um dia…'], ['entre', 'Entre datas…'], ['atrasadas', 'Retirada já passou'], ['todas', 'Todas as datas']];
+const FILTRO_DIAS_SEMANA = [['', 'Qualquer dia'], ['0', 'Domingos'], ['1', 'Segundas'], ['2', 'Terças'], ['3', 'Quartas'], ['4', 'Quintas'], ['5', 'Sextas'], ['6', 'Sábados']];
+const PAGAMENTOS_FILTRO = [['', 'Qualquer situação'], ['sinal_pendente', 'Sinal pendente'], ['sinal_pago', 'Sinal pago, falta o resto'], ['com_saldo', 'Com saldo a receber'], ['pago', 'Tudo pago']];
+const ORDENS = [['', 'Automática'], ['retirada', 'Retirada mais cedo primeiro'], ['retirada_desc', 'Retirada mais tarde primeiro'], ['criado', 'Feitos por último primeiro']];
+const EXTRAS = { novos: 'Feitos hoje' };
+const NOMES_DIA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
 let listaPedidos = [], totalPedidos = 0, paginaPedidos = 1;
+const somarDiasIso = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const diaDaSemanaIso = iso => new Date(iso + 'T12:00:00Z').getUTCDay();
+/** "hoje", "amanhã", "domingo, 11/10" */
+function nomeDia(iso) {
+  if (iso === hojeISO()) return 'hoje';
+  if (iso === hojeISO(1)) return 'amanhã';
+  if (iso === hojeISO(-1)) return 'ontem';
+  return `${NOMES_DIA[diaDaSemanaIso(iso)]}, ${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+}
+/** Filtros que não são de data (valem também para a contagem de pedidos por dia). */
+function filtrosComuns() {
+  const f = {};
+  if (filtro.status === 'abertos') f.apenasAbertos = true; else if (filtro.status !== 'todos') f.status = filtro.status;
+  if (filtro.origem) f.origem = filtro.origem;
+  if (filtro.pagamento === 'sinal_pendente') f.sinalPago = false;
+  if (filtro.pagamento === 'sinal_pago') { f.sinalPago = true; f.comSaldo = true; }
+  if (filtro.pagamento === 'com_saldo') f.comSaldo = true;
+  if (filtro.pagamento === 'pago') f.quitado = true;
+  if (filtro.extra === 'novos') f.criadoDesde = `${hojeISO()}T00:00:00-03:00`;
+  return f;
+}
+/** Quantos filtros de "Mais filtros" estão ligados. */
+const filtrosExtrasAtivos = () => [filtro.diaSemana !== '' && filtro.periodo !== 'dia', filtro.origem, filtro.pagamento, filtro.ordem].filter(Boolean).length;
+const filtroMudou = () => !!(filtro.busca.trim() || filtro.status !== FILTRO_PADRAO.status || filtro.periodo !== FILTRO_PADRAO.periodo || filtrosExtrasAtivos() || filtro.extra);
 
 function telaPedidos(el) {
   const chips = [['abertos', 'Em aberto'], ...STATUS.filter(s => s.ativo).sort((a, b) => a.ordem - b.ordem).map(s => [s.codigo, s.nome, s.cor]), ['todos', 'Todos']];
+  const sel = (id, rot, ops, val) => campo(id, rot, `<select class="sel" id="${id}">${ops.map(([v, t]) => `<option value="${esc(v)}" ${String(v) === String(val) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`);
+  const extras = filtrosExtrasAtivos();
   el.innerHTML = cabecalho('Pedidos', `<button type="button" class="btn primary" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`,
       'Pedidos do site, do WhatsApp e do balcão. Toque em um pedido para ver tudo.') + `
     <div class="filtros">
       <div class="linha">
         <div class="busca">${ic('busca')}<label class="sr" for="fBusca">Buscar pedido</label>
-          <input class="in" id="fBusca" type="search" placeholder="Nome, telefone ou código (RB-01001)" value="${esc(filtro.busca)}" autocomplete="off"></div>
+          <input class="in" id="fBusca" type="search" placeholder="Nome, telefone, código ou item (ex.: kit)" value="${esc(filtro.busca)}" autocomplete="off"></div>
         <label class="sr" for="fPeriodo">Data de retirada</label>
-        <select class="sel" id="fPeriodo" style="width:auto;flex:0 1 220px">${PERIODOS.map(([v, t]) => `<option value="${v}" ${v === filtro.periodo ? 'selected' : ''}>${t}</option>`).join('')}</select>
+        <select class="sel" id="fPeriodo" style="width:auto;flex:0 1 200px">${PERIODOS.map(([v, t]) => `<option value="${v}" ${v === filtro.periodo ? 'selected' : ''}>${t}</option>`).join('')}</select>
+        <button type="button" class="btn ghost" id="fMaisBt" aria-expanded="${extras ? 'true' : 'false'}" aria-controls="fMais">${ic('config')}Mais filtros<span class="f-cont" id="fCont" ${extras ? '' : 'hidden'}>${extras}</span></button>
+      </div>
+      <div class="linha f-datas" id="fDatas"></div>
+      <div class="dias-ret" id="fDias" role="group" aria-label="Retirada nos próximos dias"></div>
+      <div class="f-mais" id="fMais" ${extras ? '' : 'hidden'}>
+        ${sel('fSemana', 'Dia da semana', FILTRO_DIAS_SEMANA, filtro.diaSemana)}${sel('fOrigem', 'Origem', [['', 'Qualquer origem'], ...Object.entries(ORIGENS)], filtro.origem)}
+        ${sel('fPagto', 'Pagamento', PAGAMENTOS_FILTRO, filtro.pagamento)}${sel('fOrdem', 'Ordem', ORDENS, filtro.ordem)}
       </div>
       <div class="chips" role="group" aria-label="Filtrar por status">${chips.map(([v, t, cor]) => `<button type="button" class="chip" data-fst="${esc(v)}" aria-pressed="${v === filtro.status}">${cor ? `<span class="dot" style="background:${esc(cor)}"></span>` : ''}${esc(t)}</button>`).join('')}</div>
       ${filtro.extra ? `<div class="linha"><button type="button" class="chip" data-limpar-extra aria-pressed="true">${esc(EXTRAS[filtro.extra])} ${ic('x')}</button></div>` : ''}
@@ -1444,34 +1494,129 @@ function telaPedidos(el) {
     </section>`;
   let t;
   $('#fBusca').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => { filtro.busca = e.target.value; carregarPedidos(); }, 300); });
-  $('#fPeriodo').addEventListener('change', e => { filtro.periodo = e.target.value; carregarPedidos(); });
+  $('#fPeriodo').addEventListener('change', e => {
+    filtro.periodo = e.target.value;
+    if (filtro.periodo === 'dia' && !filtro.dia) filtro.dia = hojeISO();
+    if (filtro.periodo === 'entre' && !filtro.de && !filtro.ate) { filtro.de = hojeISO(); filtro.ate = hojeISO(6); }
+    atualizarFiltrosData(); carregarPedidos();
+    if (filtro.periodo === 'dia' || filtro.periodo === 'entre') $('#fDatas input')?.focus();
+  });
+  $('#fMaisBt').addEventListener('click', e => { const p = $('#fMais'); p.hidden = !p.hidden; e.currentTarget.setAttribute('aria-expanded', String(!p.hidden)); });
+  [['fSemana', 'diaSemana'], ['fOrigem', 'origem'], ['fPagto', 'pagamento'], ['fOrdem', 'ordem']].forEach(([id, k]) => $('#' + id).addEventListener('change', e => {
+    filtro[k] = e.target.value; atualizarFiltrosData(); carregarPedidos(); if (k !== 'ordem') contarDias();
+  }));
+  // dia escolhido, entre datas, e os botões dos próximos dias
+  $('#fDatas').addEventListener('change', e => {
+    const id = e.target.id;
+    if (id === 'fDia' && e.target.value) filtro.dia = e.target.value;
+    if (id === 'fDe') filtro.de = e.target.value;
+    if (id === 'fAte') filtro.ate = e.target.value;
+    atualizarFiltrosData(); carregarPedidos();
+  });
+  $('#fDatas').addEventListener('click', e => {
+    const b = e.target.closest('[data-passo]'); if (!b) return;
+    filtro.dia = somarDiasIso(filtro.dia || hojeISO(), Number(b.dataset.passo)); atualizarFiltrosData(); carregarPedidos();
+  });
+  $('#fDias').addEventListener('click', e => {
+    const b = e.target.closest('[data-fdia]'); if (!b) return;
+    if (b.dataset.fdia === 'outro') { filtro.periodo = 'dia'; filtro.dia = filtro.dia || hojeISO(); atualizarFiltrosData(); carregarPedidos(); $('#fDia')?.showPicker?.(); $('#fDia')?.focus(); return; }
+    const mesmo = filtro.periodo === 'dia' && filtro.dia === b.dataset.fdia;
+    filtro.periodo = mesmo ? 'proximas' : 'dia'; if (!mesmo) filtro.dia = b.dataset.fdia;   // tocar de novo no dia desmarca
+    atualizarFiltrosData(); carregarPedidos();
+  });
   el.querySelector('.chips').addEventListener('click', e => {
     const b = e.target.closest('[data-fst]'); if (!b) return;
     filtro.status = b.dataset.fst;
     $$('[data-fst]', el).forEach(x => x.setAttribute('aria-pressed', String(x === b)));
-    carregarPedidos();
+    carregarPedidos(); contarDias();
   });
   el.querySelector('[data-limpar-extra]')?.addEventListener('click', () => { filtro.extra = null; telaPedidos(el); });
+  atualizarFiltrosData();
   carregarPedidos();
+  contarDias();
+}
+/** Campos de data (um dia ou entre datas), os botões dos próximos dias e o contador de "Mais filtros". */
+function atualizarFiltrosData() {
+  const box = $('#fDatas'); if (!box) return;
+  $('#fPeriodo').value = filtro.periodo;
+  if (filtro.periodo === 'dia') {
+    box.innerHTML = `<button type="button" class="btn icon ghost" data-passo="-1" aria-label="Dia anterior" title="Dia anterior">${ic('voltar')}</button>
+      <label class="sr" for="fDia">Dia da retirada</label><input class="in" type="date" id="fDia" value="${esc(filtro.dia)}">
+      <button type="button" class="btn icon ghost f-prox" data-passo="1" aria-label="Próximo dia" title="Próximo dia">${ic('voltar')}</button>
+      <span class="f-dia-nome">${esc(nomeDia(filtro.dia))}</span>`;
+  } else if (filtro.periodo === 'entre') {
+    box.innerHTML = `<label class="f-de">De <input class="in" type="date" id="fDe" value="${esc(filtro.de)}"></label>
+      <label class="f-de">até <input class="in" type="date" id="fAte" value="${esc(filtro.ate)}" ${filtro.de ? `min="${esc(filtro.de)}"` : ''}></label>`;
+  } else box.innerHTML = '';
+  box.hidden = !box.innerHTML;
+  // "Dia da semana" não faz sentido com um dia só
+  const sem = $('#fSemana'); if (sem) { sem.disabled = filtro.periodo === 'dia'; sem.title = sem.disabled ? 'Com um dia escolhido, o dia da semana não se aplica.' : ''; }
+  const n = filtrosExtrasAtivos(), cont = $('#fCont'); if (cont) { cont.textContent = n; cont.hidden = !n; }
+  desenharDias();
+}
+/* Próximos 14 dias, com quantos pedidos tem em cada um (respeita status, origem e pagamento) */
+let contagemDias = {};
+async function contarDias() {
+  const h = hojeISO();
+  try { contagemDias = await api.admin.pedidos.contarPorDia({ ...filtrosComuns(), de: h, ate: hojeISO(13) }); } catch (e) { contagemDias = {}; }
+  desenharDias();
+}
+function desenharDias() {
+  const box = $('#fDias'); if (!box) return;
+  const dias = Array.from({ length: 14 }, (_, i) => hojeISO(i));
+  const forDaFaixa = filtro.periodo === 'dia' && filtro.dia && !dias.includes(filtro.dia);
+  box.innerHTML = dias.map((iso, i) => {
+    const n = contagemDias[iso] || 0, on = filtro.periodo === 'dia' && filtro.dia === iso, dow = diaDaSemanaIso(iso);
+    const rot = i === 0 ? 'Hoje' : i === 1 ? 'Amanhã' : NOMES_DIA[dow].slice(0, 3);
+    return `<button type="button" class="dia-ret ${dow === 0 ? 'domingo' : ''}" data-fdia="${iso}" aria-pressed="${on}" aria-label="${esc(nomeDia(iso))}: ${n} ${n === 1 ? 'pedido' : 'pedidos'}">
+      <span class="dr-sem">${rot}</span><b>${iso.slice(8, 10)}/${iso.slice(5, 7)}</b><span class="dr-n">${n ? `${n} ${n === 1 ? 'pedido' : 'pedidos'}` : '—'}</span></button>`;
+  }).join('') + `<button type="button" class="dia-ret outro" data-fdia="outro" aria-pressed="${forDaFaixa}">${ic('hoje')}<span class="dr-n">${forDaFaixa ? esc(nomeDia(filtro.dia)) : 'Outro dia'}</span></button>`;
+}
+/** Datas (AAAA-MM-DD) entre ini e fim que caem no dia da semana pedido. */
+function datasNoDiaDaSemana(ini, fim, dow) {
+  const out = [];
+  for (let d = ini, n = 0; d <= fim && n < 800; d = somarDiasIso(d, 1), n++) if (diaDaSemanaIso(d) === dow) out.push(d);
+  return out;
 }
 function consultaPedidos() {
-  const f = { busca: filtro.busca, porPagina: 30 };
-  if (filtro.status === 'abertos') f.apenasAbertos = true;
-  else if (filtro.status !== 'todos') f.status = filtro.status;
+  const f = { busca: filtro.busca, porPagina: 30, ...filtrosComuns() };
   const h = hojeISO();
+  let de = null, ate = null, antesDe = null, crescente = true;
   switch (filtro.periodo) {
-    case 'proximas': f.de = h; break;
-    case 'hoje': f.de = f.ate = h; break;
-    case 'amanha': f.de = f.ate = hojeISO(1); break;
-    case 'semana': f.de = h; f.ate = hojeISO(6); break;
-    case 'atrasadas': f.antesDe = h; f.crescente = false; break;
-    case 'todas': f.crescente = false; break;
+    case 'proximas': de = h; break;
+    case 'semana': de = h; ate = hojeISO(6); break;
+    case 'dia': de = ate = filtro.dia || h; break;
+    case 'entre': de = filtro.de || null; ate = filtro.ate || null; break;
+    case 'atrasadas': antesDe = h; crescente = false; break;
+    case 'todas': crescente = false; break;
   }
-  if (filtro.extra === 'novos') { f.criadoDesde = `${h}T00:00:00-03:00`; f.ordenarPor = 'criado_em'; f.crescente = false; }
-  if (filtro.extra === 'sinal') { f.sinalPago = false; f.apenasAbertos = true; f.crescente = true; }
-  if (filtro.extra === 'saldo') { f.comSaldo = true; f.apenasAbertos = true; f.crescente = true; }
-  if (filtro.busca.trim()) { delete f.de; delete f.ate; delete f.antesDe; }   // a busca procura em todas as datas
+  // buscar sem escolher período procura em todas as datas (achar o pedido de um cliente), do mais novo para o mais antigo
+  if (filtro.busca.trim() && filtro.periodo === 'proximas') { de = null; crescente = false; }
+  // dia da semana (ex.: só os domingos): as datas do período que caem nesse dia (sem data marcada: último ano e próximos 6 meses)
+  if (filtro.diaSemana !== '' && filtro.periodo !== 'dia') {
+    const ini = de || hojeISO(-365), fim = ate || (antesDe ? hojeISO(-1) : hojeISO(183));
+    f.datas = datasNoDiaDaSemana(ini, fim, Number(filtro.diaSemana));
+  }
+  if (de) f.de = de;
+  if (ate) f.ate = ate;
+  if (antesDe) f.antesDe = antesDe;
+  if (filtro.extra === 'novos') { f.ordenarPor = 'criado_em'; crescente = false; }
+  if (filtro.ordem === 'retirada') { delete f.ordenarPor; crescente = true; }
+  if (filtro.ordem === 'retirada_desc') { delete f.ordenarPor; crescente = false; }
+  if (filtro.ordem === 'criado') { f.ordenarPor = 'criado_em'; crescente = false; }
+  f.crescente = crescente;
   return f;
+}
+/** "para domingo, 11/10 · só aos domingos" etc., para o rodapé da lista */
+function descricaoFiltro() {
+  const p = { proximas: 'de hoje em diante', semana: 'nos próximos 7 dias', atrasadas: 'com a retirada já passada', todas: 'em todas as datas' }[filtro.periodo];
+  const partes = [filtro.periodo === 'dia' ? `para ${nomeDia(filtro.dia || hojeISO())}`
+    : filtro.periodo === 'entre' ? (filtro.de && filtro.ate ? `de ${formatarData(filtro.de).slice(0, 5)} a ${formatarData(filtro.ate).slice(0, 5)}` : filtro.de ? `a partir de ${formatarData(filtro.de).slice(0, 5)}` : filtro.ate ? `até ${formatarData(filtro.ate).slice(0, 5)}` : 'em todas as datas')
+    : filtro.busca.trim() && filtro.periodo === 'proximas' ? 'em todas as datas' : p];
+  if (filtro.diaSemana !== '' && filtro.periodo !== 'dia') partes.push(`só ${FILTRO_DIAS_SEMANA.find(([v]) => v === filtro.diaSemana)[1].toLowerCase().replace(/^/, filtro.diaSemana === '0' || filtro.diaSemana === '6' ? 'aos ' : 'às ')}`);
+  if (filtro.origem) partes.push(`origem: ${ORIGENS[filtro.origem]}`);
+  if (filtro.pagamento) partes.push(PAGAMENTOS_FILTRO.find(([v]) => v === filtro.pagamento)[1].toLowerCase());
+  return partes.join(' · ');
 }
 async function carregarPedidos(mais = false, silencioso = false) {
   const lista = $('#listaPed'); if (!lista) return;
@@ -1486,8 +1631,9 @@ async function carregarPedidos(mais = false, silencioso = false) {
     if (mais) { paginaPedidos++; listaPedidos = listaPedidos.concat(r.pedidos); } else listaPedidos = r.pedidos;
     totalPedidos = r.total;
     lista.innerHTML = listaPedidos.length ? listaPedidos.map(linhaPedido).join('')
-      : `<div class="vazio"><h2>Nenhum pedido aqui</h2><p>${filtro.busca ? 'Nada encontrado para essa busca.' : 'Tente outro filtro de data ou status.'}</p></div>`;
-    $('#pedResumo').textContent = totalPedidos ? `${totalPedidos} ${totalPedidos === 1 ? 'pedido' : 'pedidos'}${filtro.busca ? (totalPedidos === 1 ? ' encontrado' : ' encontrados') : ''}` : '';
+      : `<div class="vazio"><h2>Nenhum pedido ${esc(descricaoFiltro())}</h2><p>${filtro.busca ? 'Nada encontrado para essa busca.' : 'Tente outro dia, período ou status.'}</p>
+          ${filtroMudou() ? '<button type="button" class="btn ghost" data-limpar-filtros style="margin-top:12px">Limpar filtros</button>' : ''}</div>`;
+    $('#pedResumo').innerHTML = `${totalPedidos ? `<b>${totalPedidos} ${totalPedidos === 1 ? 'pedido' : 'pedidos'}</b> ${esc(descricaoFiltro())}` : ''}${filtroMudou() ? ' <button type="button" class="link" data-limpar-filtros>Limpar filtros</button>' : ''}`;
     $('#maisPed').innerHTML = listaPedidos.length < totalPedidos ? `<button type="button" class="btn ghost" id="btnMais">Carregar mais (${totalPedidos - listaPedidos.length})</button>` : '';
     $('#btnMais')?.addEventListener('click', e => ocupado(e.currentTarget, () => carregarPedidos(true)));
   } catch (e) {
@@ -3490,6 +3636,251 @@ document.addEventListener('fullscreenchange', () => { if (!document.fullscreenEl
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && tvTopos && !pilhaModais.length) sairTvTopos(); });
 
 /* =========================================================
+   ESTOQUE (sql/estoque.sql), só a Administração.
+   Itens com quantidade e estoque mínimo; entrada, saída e contagem ficam no histórico. Itens ligados
+   a produtos do cardápio saem sozinhos quando o pedido é confirmado (e voltam se ele for cancelado).
+   Ao chegar no mínimo, o banco cria o aviso do sino.
+========================================================= */
+const UNIDADES_ESTOQUE = [['unidade', 'unidade'], ['caixa', 'caixa'], ['pacote', 'pacote'], ['lata', 'lata'], ['garrafa', 'garrafa'], ['saco', 'saco'], ['rolo', 'rolo'], ['dúzia', 'dúzia'],
+  ['kg', 'kg (quilo)'], ['g', 'g (grama)'], ['L', 'L (litro)'], ['ml', 'ml (mililitro)']];
+const CATEGORIAS_ESTOQUE = ['Ingredientes', 'Embalagens', 'Bebidas', 'Decoração', 'Descartáveis', 'Limpeza'];
+const SITUACAO_EST = { ok: ['Em dia', 'pago'], acabando: ['Acabando', 'sinal'], acabou: ['Acabou', 'pend'], pausado: ['Sem aviso', 'cinza'] };
+const TIPO_MOV_EST = { entrada: 'Entrada', saida: 'Saída', ajuste: 'Contagem', pedido: 'Pedido' };
+const numEst = n => Number(n || 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 });
+const unidadeEst = (q, u) => (['kg', 'g', 'L', 'ml'].includes(u) ? u : u + (Math.abs(Number(q)) === 1 ? '' : 's'));
+const qtdEst = (q, u) => `${numEst(q)} ${unidadeEst(q, u)}`;
+/** Quantidade digitada ("2,5", "12") com até 3 casas; null se vazio, NaN se não for número. */
+function lerQtd(s) {
+  s = String(s ?? '').trim(); if (!s) return null;
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  const n = Number(s);
+  return Number.isFinite(n) ? Math.round(n * 1000) / 1000 : NaN;
+}
+const situacaoEst = it => (!it.ativo ? 'pausado' : Number(it.quantidade) <= 0 ? 'acabou' : Number(it.quantidade) <= Number(it.minimo) ? 'acabando' : 'ok');
+const filtroEst = { situacao: 'todos', busca: '' };
+let estoqueCache = [], consumosCache = [], produtosEst = null, estoqueAbrir = null;
+
+async function telaEstoque(el) {
+  el.innerHTML = cabecalho('Estoque', `<button type="button" class="btn primary" data-est-novo>${ic('mais')}Novo item</button>`,
+      'Ingredientes, embalagens e bebidas. Quando um item chega no estoque mínimo, aparece um aviso no sino.') + `
+    <div class="est-kpis" id="estKpis"></div>
+    <div class="filtros">
+      <div class="linha"><div class="busca">${ic('busca')}<label class="sr" for="estBusca">Buscar no estoque</label>
+        <input class="in" id="estBusca" type="search" placeholder="Nome ou categoria" value="${esc(filtroEst.busca)}" autocomplete="off"></div></div>
+      <div class="chips" role="group" aria-label="Filtrar">${[['todos', 'Todos'], ['acabando', 'Acabando'], ['acabou', 'Acabou'], ['ok', 'Em dia'], ['pausado', 'Sem aviso']]
+        .map(([v, t]) => `<button type="button" class="chip" data-est-f="${v}" aria-pressed="${v === filtroEst.situacao}">${t}</button>`).join('')}</div>
+    </div>
+    <div id="estCorpo"><div class="skel" style="height:300px"></div></div>`;
+  let t;
+  $('#estBusca').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => { filtroEst.busca = e.target.value; desenharEstoque(); }, 200); });
+  await carregarEstoque();
+}
+async function carregarEstoque() {
+  const corpo = $('#estCorpo'); if (!corpo) return;
+  try { [estoqueCache, consumosCache] = await Promise.all([api.admin.estoque.listar(), api.admin.estoque.consumos()]); }
+  catch (e) {
+    const semTabela = /estoque_itens|42P01|PGRST205|schema cache|does not exist|não existe/i.test(`${e?.message} ${e?.codigo}`);
+    $('#estKpis').innerHTML = '';
+    corpo.innerHTML = `<div class="vazio"><h2>${semTabela ? 'O estoque ainda não está no banco' : 'Não foi possível carregar'}</h2>
+      <p>${semTabela ? 'Rode no Supabase o arquivo <code>sql/estoque.sql</code> (SQL Editor). Depois, é só voltar aqui.' : esc(e?.message || 'Tente de novo.')}</p></div>`;
+    return;
+  }
+  desenharEstoque();
+  badgeEstoque(estoqueCache);
+  if (estoqueAbrir) { const id = estoqueAbrir; estoqueAbrir = null; abrirItemEstoque(id); }
+}
+function desenharEstoque() {
+  const corpo = $('#estCorpo'); if (!corpo) return;
+  const cont = { acabando: 0, acabou: 0 };
+  estoqueCache.forEach(it => { const s = situacaoEst(it); if (s in cont) cont[s]++; });
+  $('#estKpis').innerHTML = [['todos', estoqueCache.length, estoqueCache.length === 1 ? 'item no estoque' : 'itens no estoque', ''], ['acabando', cont.acabando, 'acabando', 'sinal'], ['acabou', cont.acabou, cont.acabou === 1 ? 'acabou' : 'acabaram', 'pend']]
+    .map(([f, n, rot, cls]) => `<button type="button" class="est-kpi ${n && cls ? cls : ''}" data-est-f="${f}" aria-pressed="${filtroEst.situacao === f}"><strong>${n}</strong><span>${rot}</span></button>`).join('');
+  if (!estoqueCache.length) {
+    corpo.innerHTML = `<div class="card vazio"><h2>Nenhum item no estoque ainda</h2><p>Cadastre ingredientes, embalagens e bebidas com o estoque mínimo de cada um: quando chegar nele, aparece um aviso no sino.</p>
+      <button type="button" class="btn primary" data-est-novo style="margin-top:14px">${ic('mais')}Cadastrar o primeiro item</button></div>`;
+    return;
+  }
+  const termo = semAcento(filtroEst.busca.trim());
+  const lista = estoqueCache.filter(it => (filtroEst.situacao === 'todos' || situacaoEst(it) === filtroEst.situacao) && (!termo || semAcento(`${it.nome} ${it.categoria || ''}`).includes(termo)));
+  if (!lista.length) { corpo.innerHTML = '<div class="card"><p class="vazio">Nenhum item com esse filtro.</p></div>'; return; }
+  // por categoria; dentro de cada uma, o que acabou e o que está acabando primeiro
+  const ordem = { acabou: 0, acabando: 1, ok: 2, pausado: 3 }, grupos = new Map();
+  lista.sort((a, b) => ordem[situacaoEst(a)] - ordem[situacaoEst(b)] || a.nome.localeCompare(b.nome, 'pt-BR'))
+    .forEach(it => { const g = it.categoria || 'Sem categoria'; if (!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(it); });
+  corpo.innerHTML = [...grupos].sort(([a], [b]) => (a === 'Sem categoria') - (b === 'Sem categoria') || a.localeCompare(b, 'pt-BR'))
+    .map(([g, itens]) => `<section class="card tabela est-grupo" aria-label="${esc(g)}"><div class="est-cab"><h2>${esc(g)}</h2><span class="tag cinza">${itens.length}</span></div>
+      <div>${itens.map(linhaEstoque).join('')}</div></section>`).join('');
+}
+function linhaEstoque(it) {
+  const s = situacaoEst(it), [rot, cls] = SITUACAO_EST[s], ligados = consumosCache.filter(c => c.item_id === it.id).length;
+  return `<div class="est-linha ${s}">
+    <button type="button" class="est-nome" data-est-item="${esc(it.id)}"><strong>${esc(it.nome)}</strong>
+      <small>Mínimo: ${esc(qtdEst(it.minimo, it.unidade))}${ligados ? ` · sai sozinho com ${ligados} ${ligados === 1 ? 'produto' : 'produtos'}` : ''}</small></button>
+    <span class="est-qtd"><b>${esc(numEst(it.quantidade))}</b><small>${esc(unidadeEst(it.quantidade, it.unidade))}</small></span>
+    <span class="tag ${cls}">${rot}</span>
+    <span class="est-bts"><button type="button" class="btn icon sm ghost" data-est-mov="saida" data-id="${esc(it.id)}" aria-label="Saída de ${esc(it.nome)}" title="Saída">${ic('menos')}</button>
+      <button type="button" class="btn icon sm ghost" data-est-mov="entrada" data-id="${esc(it.id)}" aria-label="Entrada de ${esc(it.nome)}" title="Entrada">${ic('mais')}</button></span>
+  </div>`;
+}
+/** Contador no menu: itens acabando ou que acabaram. */
+async function badgeEstoque(lista) {
+  if (!isAdmin()) return;
+  try { lista = lista || await api.admin.estoque.listar(); } catch (e) { return; }
+  const n = lista.filter(it => ['acabando', 'acabou'].includes(situacaoEst(it))).length;
+  $$('[data-badge-estoque]').forEach(b => { b.textContent = n > 99 ? '99+' : n; b.hidden = !n; b.title = `${n} ${n === 1 ? 'item acabando' : 'itens acabando'} no estoque`; });
+}
+document.addEventListener('click', e => {
+  if (!perfil || !isAdmin()) return;
+  const b = e.target.closest('[data-est-novo],[data-est-f],[data-est-item],[data-est-mov]');
+  if (!b || b.closest('.modal-veu')) return;
+  if (b.dataset.estNovo !== undefined) modalItemEstoque();
+  else if (b.dataset.estF) { filtroEst.situacao = b.dataset.estF; $$('[data-est-f]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.estF === filtroEst.situacao))); desenharEstoque(); }
+  else if (b.dataset.estItem) abrirItemEstoque(b.dataset.estItem);
+  else if (b.dataset.estMov) { const it = estoqueCache.find(x => x.id === b.dataset.id); if (it) modalMovEstoque(it, b.dataset.estMov); }
+});
+
+/* ---- Entrada, saída ou contagem ---- */
+function modalMovEstoque(it, tipo = 'entrada', depois) {
+  const TIPOS = [['entrada', 'Entrada', 'Chegou: compra, produção'], ['saida', 'Saída', 'Usou, perdeu, venceu'], ['ajuste', 'Contagem', 'Contei: tem exatamente']];
+  const m = abrirModal({
+    titulo: it.nome,
+    corpo: `<p class="est-atual">Agora: <b>${esc(qtdEst(it.quantidade, it.unidade))}</b> · mínimo ${esc(qtdEst(it.minimo, it.unidade))}</p>
+      <div class="est-tipos" role="radiogroup" aria-label="O que aconteceu">${TIPOS.map(([v, t, d]) => `<label class="est-tipo"><input type="radio" name="mvTipo" value="${v}" ${v === tipo ? 'checked' : ''}><span><b>${t}</b><small>${d}</small></span></label>`).join('')}</div>
+      <div class="grid2">${campo('mvQtd', 'Quantidade', `<div class="est-un-in"><input class="in" id="mvQtd" inputmode="decimal" autocomplete="off" placeholder="0"><span>${esc(unidadeEst(2, it.unidade))}</span></div>`)}
+        ${inTxt('mvMotivo', 'Motivo <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>', '', { attrs: 'maxlength="120" placeholder="Ex.: compra no atacadista"' })}</div>
+      <p class="ajuste-dica" id="mvPrev" aria-live="polite"></p>`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>Salvar</button>`
+  });
+  const tipoSel = () => m.$('input[name="mvTipo"]:checked').value;
+  const previa = () => {
+    const q = lerQtd(valDe(m, 'mvQtd')), el = m.$('#mvPrev');
+    if (q === null || Number.isNaN(q)) { el.textContent = tipoSel() === 'ajuste' ? 'Digite quanto tem agora, contando tudo.' : ''; return; }
+    const fica = tipoSel() === 'entrada' ? Number(it.quantidade) + q : tipoSel() === 'saida' ? Number(it.quantidade) - q : q;
+    el.textContent = `Fica: ${qtdEst(fica, it.unidade)}${fica <= 0 ? ' (acabou: vai avisar no sino)' : fica <= Number(it.minimo) ? ' (no mínimo: vai avisar no sino)' : ''}.`;
+  };
+  m.el.addEventListener('input', previa); m.el.addEventListener('change', previa); previa();
+  setTimeout(() => m.$('#mvQtd')?.focus(), 60);
+  m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    const q = lerQtd(valDe(m, 'mvQtd')), t = tipoSel();
+    if (q === null || Number.isNaN(q) || q < 0 || (t !== 'ajuste' && q === 0)) { m.$('#mvQtd').setAttribute('aria-invalid', 'true'); m.$('#mvQtd').focus(); throw new Error('Informe a quantidade (ex.: 12 ou 2,5).'); }
+    const r = await api.admin.estoque.movimentar(it.id, t, q, valDe(m, 'mvMotivo'));
+    m.fechar();
+    toast(`${it.nome}: agora ${qtdEst(r.quantidade, r.unidade)}.`);
+    await carregarEstoque();
+    badgeEstoque();
+    depois?.();
+  }));
+}
+
+/* ---- Ficha do item: quantidade, o que dá baixa sozinho e histórico ---- */
+async function abrirItemEstoque(id) {
+  let it = estoqueCache.find(x => x.id === id), movs;
+  try {
+    if (!it) { estoqueCache = await api.admin.estoque.listar(); it = estoqueCache.find(x => x.id === id); }
+    if (!it) { toast('Esse item não existe mais no estoque.', { tipo: 'erro' }); return; }
+    movs = await api.admin.estoque.movimentos(id, 80);
+    produtosEst = produtosEst || await api.admin.produtos.listarCompleto().catch(() => []);
+  } catch (e) { erroToast(e); return; }
+  const s = situacaoEst(it), [rot, cls] = SITUACAO_EST[s];
+  const ligados = consumosCache.filter(c => c.item_id === id).map(c => ({ ...c, p: produtosEst.find(p => p.id === c.produto_id) }));
+  const m = abrirModal({
+    titulo: it.nome, largo: true,
+    corpo: `<div class="est-topo"><div class="est-grande"><b>${esc(numEst(it.quantidade))}</b><span>${esc(unidadeEst(it.quantidade, it.unidade))}</span></div>
+        <div><span class="tag ${cls}">${rot}</span><p class="dica">Mínimo: ${esc(qtdEst(it.minimo, it.unidade))}${it.categoria ? ' · ' + esc(it.categoria) : ''}</p></div></div>
+      <div class="est-acoes"><button type="button" class="btn teal" data-mv="entrada">${ic('mais')}Entrada</button><button type="button" class="btn ghost" data-mv="saida">${ic('menos')}Saída</button>
+        <button type="button" class="btn ghost" data-mv="ajuste">${ic('ok')}Contagem</button></div>
+      ${ligados.length ? `<p class="secao-t">Sai sozinho quando o pedido é confirmado</p><ul class="est-ligados">${ligados.map(c => `<li>${esc(c.p?.nome || 'Produto que saiu do cardápio')}: <b>${esc(qtdEst(c.quantidade, it.unidade))}</b> ${c.por_kg ? 'por kg' : 'cada'}</li>`).join('')}</ul>` : ''}
+      ${it.observacao ? `<p class="secao-t">Observação</p><p class="est-obs">${esc(it.observacao)}</p>` : ''}
+      <p class="secao-t">Histórico</p>
+      ${movs.length ? `<ul class="est-hist">${movs.map(mv => {
+        const q = Number(mv.quantidade), aj = mv.tipo === 'ajuste';
+        return `<li class="${q >= 0 ? 'mais' : 'menos'}"><span class="est-h-q">${aj ? '= ' + esc(numEst(mv.saldo)) : (q > 0 ? '+' : '−') + esc(numEst(Math.abs(q)))}</span>
+          <span class="est-h-t"><b>${TIPO_MOV_EST[mv.tipo] || esc(mv.tipo)}</b>${aj && q ? ` (${q > 0 ? '+' : '−'}${esc(numEst(Math.abs(q)))})` : ''}${mv.motivo ? ' · ' + (mv.pedido_id ? `<button type="button" class="link" data-mv-ped="${esc(mv.pedido_id)}">${esc(mv.motivo)}</button>` : esc(mv.motivo)) : ''}
+          <small>${esc(dataHora(mv.criado_em))}${mv.autor_nome ? ' · ' + esc(mv.autor_nome) : ''} · ficou ${esc(qtdEst(mv.saldo, it.unidade))}</small></span></li>`;
+      }).join('')}</ul>` : '<p class="est-obs" style="color:var(--ink-3)">Sem movimentos ainda.</p>'}`,
+    rodape: `<button type="button" class="btn ghost" data-est-editar>${ic('editar')}Editar</button><button type="button" class="btn primary" data-fechar>Fechar</button>`
+  });
+  m.$$('[data-mv]').forEach(b => b.addEventListener('click', () => { m.fechar(); modalMovEstoque(it, b.dataset.mv, () => abrirItemEstoque(id)); }));
+  m.$('[data-est-editar]').addEventListener('click', () => { m.fechar(); modalItemEstoque(it); });
+  m.$$('[data-mv-ped]').forEach(b => b.addEventListener('click', () => { m.fechar(); verPedido(b.dataset.mvPed); }));
+}
+
+/* ---- Cadastro do item, com a baixa automática pelos produtos do cardápio ---- */
+async function modalItemEstoque(it = null) {
+  const novo = !it, d = it || { unidade: 'unidade', ativo: true };
+  try { produtosEst = produtosEst || await api.admin.produtos.listarCompleto(); } catch (e) { produtosEst = []; }
+  const grupos = new Map();
+  produtosEst.forEach(p => { const g = p.categoria_nome || 'Outros'; if (!grupos.has(g)) grupos.set(g, []); grupos.get(g).push(p); });
+  const opcoes = sel => '<option value="">Escolha o produto</option>' + [...grupos].map(([g, ps]) => `<optgroup label="${esc(g)}">${ps.map(p =>
+    `<option value="${esc(p.id)}" data-kg="${p.unidade_preco === 'kg' ? 1 : ''}" ${p.id === sel ? 'selected' : ''}>${esc(p.nome)}${p.ativo === false ? ' (fora do site)' : ''}</option>`).join('')}</optgroup>`).join('');
+  const linhaConsumo = (c = {}) => `<div class="est-cons" data-cons>
+      <select class="sel" data-cons-prod aria-label="Produto do cardápio">${opcoes(c.produto_id)}</select>
+      <span class="est-cons-q"><span class="est-cons-g" aria-hidden="true">gasta</span><input class="in" data-cons-qtd inputmode="decimal" value="${esc(c.quantidade != null ? numEst(c.quantidade) : '1')}" aria-label="Quanto gasta"><span data-cons-un></span></span>
+      <select class="sel" data-cons-base aria-label="Gasta por"><option value="un">cada bolo</option><option value="kg" ${c.por_kg ? 'selected' : ''}>por kg de bolo</option></select>
+      <span class="est-cons-cada" data-cons-cada>cada um</span>
+      <button type="button" class="btn icon sm ghost" data-cons-tirar aria-label="Tirar este produto">${ic('x')}</button></div>`;
+  const cats = [...new Set([...CATEGORIAS_ESTOQUE, ...estoqueCache.map(x => x.categoria).filter(Boolean)])];
+  const m = abrirModal({
+    titulo: novo ? 'Novo item de estoque' : `Editar ${it.nome}`, largo: true,
+    corpo: `<div class="grid2">${inTxt('eiNome', 'Nome', d.nome || '', { attrs: 'maxlength="80" placeholder="Ex.: Leite condensado"' })}${inTxt('eiCat', 'Categoria', d.categoria || '', { attrs: 'maxlength="40" list="eiCats" placeholder="Ex.: Ingredientes"' })}</div>
+      <datalist id="eiCats">${cats.map(c => `<option value="${esc(c)}"></option>`).join('')}</datalist>
+      <div class="grid3">${inSel('eiUn', 'Unidade', UNIDADES_ESTOQUE, d.unidade)}
+        ${novo ? inTxt('eiQtd', 'Quanto tem agora', '', { attrs: 'inputmode="decimal" placeholder="0" autocomplete="off"' })
+          : campo('eiQtdAgora', 'Quanto tem agora', `<input class="in" id="eiQtdAgora" value="${esc(qtdEst(d.quantidade, d.unidade))}" readonly>`, 'Muda por Entrada, Saída ou Contagem.')}
+        ${inTxt('eiMin', 'Estoque mínimo', d.minimo != null ? numEst(d.minimo) : '', { attrs: 'inputmode="decimal" placeholder="Ex.: 10" autocomplete="off"', dica: 'Chegou nisso: aviso no sino.' })}</div>
+      <p class="secao-t">Sai sozinho com os pedidos <span style="text-transform:none;letter-spacing:0;font-weight:400">(opcional)</span></p>
+      <p class="ajuste-dica" style="margin-top:-4px">Ligue aos produtos do cardápio que gastam este item. Quando o pedido é confirmado, sai do estoque; se for cancelado, volta. Ex.: a Coca-Cola 2 L gasta 1 garrafa; o Kit Individual gasta 1 suco; cada kg de bolo gasta 0,5 lata.</p>
+      <div id="eiCons">${(novo ? [] : consumosCache.filter(c => c.item_id === it.id)).map(linhaConsumo).join('')}</div>
+      <button type="button" class="btn sm ghost" data-cons-mais style="margin-bottom:14px">${ic('mais')}Ligar a um produto</button>
+      ${inTa('eiObs', 'Observação <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>', d.observacao || '', { attrs: 'maxlength="500" style="min-height:60px" placeholder="Ex.: comprar no atacadista; marca X"' })}
+      ${novo ? '' : inChk('eiAtivo', 'Avisar quando estiver acabando', d.ativo)}`,
+    rodape: `${novo ? '' : `<button type="button" class="btn danger esq" data-del>${ic('lixo')}Excluir</button>`}<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>${novo ? 'Cadastrar' : 'Salvar'}</button>`
+  });
+  // bolo vendido por peso: escolhe "cada bolo" ou "por kg"; os outros produtos gastam "cada um". A unidade segue a do item.
+  const ajustarLinhas = () => m.$$('[data-cons]').forEach(l => {
+    const kg = !!l.querySelector('[data-cons-prod]').selectedOptions[0]?.dataset.kg, base = l.querySelector('[data-cons-base]');
+    base.hidden = !kg; l.querySelector('[data-cons-cada]').hidden = kg;
+    if (!kg) base.value = 'un';
+    l.querySelector('[data-cons-un]').textContent = unidadeEst(lerQtd(l.querySelector('[data-cons-qtd]').value) ?? 2, valDe(m, 'eiUn'));
+  });
+  ajustarLinhas();
+  m.$('[data-cons-mais]').addEventListener('click', () => { m.$('#eiCons').insertAdjacentHTML('beforeend', linhaConsumo()); ajustarLinhas(); m.$$('[data-cons-prod]').at(-1).focus(); });
+  m.$('#eiCons').addEventListener('click', e => { const b = e.target.closest('[data-cons-tirar]'); if (b) b.closest('[data-cons]').remove(); });
+  m.el.addEventListener('change', e => { if (e.target.matches('[data-cons-prod], #eiUn')) ajustarLinhas(); });
+  m.el.addEventListener('input', e => { if (e.target.matches('[data-cons-qtd]')) ajustarLinhas(); });
+  m.$('[data-del]')?.addEventListener('click', async () => {
+    if (!await confirmar(`Excluir ${it.nome}?`, 'O item, o histórico e a ligação com os produtos serão apagados. Se só não quiser mais o aviso, desmarque “Avisar quando estiver acabando”.', { botao: 'Excluir', perigo: true })) return;
+    await ocupado(m.$('[data-del]'), async () => { await api.admin.estoque.remover(it.id); m.fechar(); toast(`${it.nome} excluído do estoque.`); await carregarEstoque(); badgeEstoque(); });
+  });
+  m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    exigir(m, 'eiNome', 'Informe o nome do item.');
+    const minimo = lerQtd(valDe(m, 'eiMin'));
+    if (minimo === null || Number.isNaN(minimo) || minimo < 0) { m.$('#eiMin').focus(); throw new Error('Informe o estoque mínimo (ex.: 10). Use 0 para avisar só quando acabar.'); }
+    const qtd = novo ? lerQtd(valDe(m, 'eiQtd')) ?? 0 : null;
+    if (novo && (Number.isNaN(qtd) || qtd < 0)) { m.$('#eiQtd').focus(); throw new Error('Confira quanto tem agora (ex.: 12 ou 2,5).'); }
+    const consumos = [];
+    for (const l of m.$$('[data-cons]')) {
+      const produto_id = l.querySelector('[data-cons-prod]').value, q = lerQtd(l.querySelector('[data-cons-qtd]').value);
+      if (!produto_id) continue;   // linha sem produto: ignora
+      if (!(q > 0)) { l.querySelector('[data-cons-qtd]').focus(); throw new Error('Diga quanto cada produto gasta (maior que zero).'); }
+      if (consumos.some(c => c.produto_id === produto_id)) throw new Error('Esse produto apareceu duas vezes na lista.');
+      consumos.push({ produto_id, quantidade: q, por_kg: l.querySelector('[data-cons-base]').value === 'kg' });
+    }
+    const dados = { nome: valDe(m, 'eiNome'), categoria: valDe(m, 'eiCat') || null, unidade: valDe(m, 'eiUn'), minimo, observacao: valDe(m, 'eiObs') || null, ativo: novo ? true : chkDe(m, 'eiAtivo') };
+    let r;
+    if (novo) {
+      r = await api.admin.estoque.criar({ ...dados, quantidade: 0 });
+      if (qtd > 0) await api.admin.estoque.movimentar(r.id, 'ajuste', qtd, 'Quantidade inicial');   // fica no histórico
+    } else r = await api.admin.estoque.atualizar(it.id, dados);
+    await api.admin.estoque.salvarConsumos(r.id, consumos);
+    m.fechar();
+    toast(novo ? `${dados.nome} cadastrado no estoque.` : `${dados.nome} salvo.`);
+    await carregarEstoque();
+    badgeEstoque();
+  }));
+}
+
+/* =========================================================
    AVISOS (sino da barra de cima), criados pelo banco (sql/topos.sql).
    Ex.: "O topo do pedido RB-01005 está pronto". Ficam até alguém da equipe marcar como visto.
 ========================================================= */
@@ -3519,15 +3910,16 @@ function ligarAvisos() {
       toast(aviso.texto || aviso.titulo, { tipo: 'novo', acao: { rotulo: 'Ver', fn: () => abrirDoAviso(aviso) }, tempo: 15000 });
     }
     carregarAvisos();
+    if (isAdmin()) badgeEstoque();   // aviso de estoque (ou um item reposto): o contador do menu muda
   });
 }
 function desenharAvisos() {
   const menu = $('#avisosMenu'); if (!menu) return;
   const novos = avisos.filter(a => !a.lida_em).length;
   menu.innerHTML = `<div class="av-cab"><p class="tema-menu-t">Avisos</p>${novos ? '<button type="button" class="link" data-avisos-todos>Marcar todos como vistos</button>' : ''}</div>
-    ${avisos.length ? avisos.map(a => `<button type="button" class="aviso-it ${a.lida_em ? '' : 'novo'}" data-aviso="${esc(a.id)}">${ic(a.tipo === 'topo_pronto' ? 'topo' : 'sino')}
+    ${avisos.length ? avisos.map(a => `<button type="button" class="aviso-it ${a.lida_em ? '' : 'novo'}" data-aviso="${esc(a.id)}">${ic(a.tipo === 'topo_pronto' ? 'topo' : /^estoque/.test(a.tipo) ? 'estoque' : 'sino')}
       <span><strong>${esc(a.titulo)}${a.lida_em ? '' : '<i class="av-ponto" aria-label="novo"></i>'}</strong><small>${esc(a.texto || '')}</small><em>${esc(tempoAtras(a.criado_em))}</em></span></button>`).join('')
-      : '<p class="av-vazio">Nenhum aviso por enquanto. Quando um topo ficar pronto, ele aparece aqui.</p>'}`;
+      : `<p class="av-vazio">Nenhum aviso por enquanto. Quando um topo ficar pronto${isAdmin() ? ' ou um item do estoque estiver acabando' : ''}, ele aparece aqui.</p>`}`;
 }
 function abrirAvisos(botao) {
   if ($('#avisosMenu')) { fecharAvisos(true); return; }
@@ -3552,10 +3944,13 @@ function fecharAvisos(devolverFoco) {
   const b = $('.topo [data-act="avisos"]'); b?.setAttribute('aria-expanded', 'false');
   if (devolverFoco) b?.focus();
 }
-/** Abre o que o aviso fala: o pedido do bolo (ou a ficha do topo, se não tiver pedido ligado). */
+/** Abre o que o aviso fala: o item do estoque, o pedido do bolo (ou a ficha do topo, se não tiver pedido ligado). */
 function abrirDoAviso(a) {
   if (!a.lida_em) api.admin.notificacoes.marcarVista(a.id).then(carregarAvisos).catch(() => {});
-  if (a.pedido_id) verPedido(a.pedido_id);
+  if (a.estoque_item_id && isAdmin()) {
+    estoqueAbrir = a.estoque_item_id;
+    if (telaAtual === 'estoque') carregarEstoque(); else location.hash = '#estoque';
+  } else if (a.pedido_id) verPedido(a.pedido_id);
   else if (a.topo_id && podeTopos()) abrirTopo(a.topo_id);
 }
 document.addEventListener('click', async e => {

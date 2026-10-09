@@ -15,6 +15,12 @@ const TABELAS_COM_ATUALIZADO = ['configuracoes', 'categorias', 'grupos', 'produt
 /* Quem produz os personalizados na demonstração: entre com topos@demo.com.br para ver o backoffice como ela vê */
 const PRODUTORA_DEMO = { user_id: '00000000-0000-4000-8000-000000000002', nome: 'Bia Andrade', email: 'topos@demo.com.br', ativo: true, avatar: null };
 const TABELAS_TOPOS = ['topos_pedidos', 'topos_historico'];
+const TABELAS_ESTOQUE = ['estoque_itens', 'estoque_consumos', 'estoque_movimentos'];
+const r3 = n => Math.round(Number(n) * 1000) / 1000;
+/** "3 latas", "1,5 kg" (igual a estoque_qtd em sql/estoque.sql) */
+const qtdEstoque = (q, u) => `${String(r3(q)).replace('.', ',')} ${['kg', 'g', 'L', 'ml'].includes(u) ? u : u + (Math.abs(q) === 1 ? '' : 's')}`;
+/** Pedido "gasta" estoque do Confirmado em diante (igual a estoque_consome em sql/estoque.sql). */
+const consomeEstoque = s => !['recebido', 'cancelado'].includes(s || 'recebido');
 /** Aviso "topo pronto" para a equipe da loja (o mesmo texto do gatilho em sql/topos.sql). */
 function avisoTopoPronto(lista, t) {
   const cod = 'TP-' + String(t.numero).padStart(4, '0'), oque = t.tipo === 'personalizado' ? 'personalizado' : 'topo', qtd = t.quantidade > 1 ? `${t.quantidade}× ` : '';
@@ -68,6 +74,8 @@ export function criarSupabaseDemo(opcoes = {}) {
     b.produtores_personalizados = b.produtores_personalizados || [{ ...PRODUTORA_DEMO, criado_em: agora() }];
     if (!b.topos_pedidos) semearTopos(b);
     if (!b.notificacoes) { b.notificacoes = []; b.topos_pedidos.filter(t => t.status === 'pronto').forEach(t => avisoTopoPronto(b.notificacoes, t)); }
+    // Estoque (igual a sql/estoque.sql), com itens de exemplo
+    if (!b.estoque_itens) semearEstoque(b);
     const adic = (b.categorias || []).find(c => c.slug === 'adicionais');
     if (adic) {
       [['finalizacao-colorida', 'Finalização colorida', 'Colorido', 'Cobertura ou decoração colorida.', 90],
@@ -109,6 +117,74 @@ export function criarSupabaseDemo(opcoes = {}) {
     const caminho = { novo: ['novo'], em_producao: ['novo', 'em_producao'], pronto: ['novo', 'em_producao', 'pronto'], entregue: ['novo', 'em_producao', 'pronto', 'entregue'] };
     b.topos_pedidos.forEach(p => (caminho[p.status] || ['novo']).forEach((s, i, l) => b.topos_historico.push({ id: b.topos_historico.length + 1, topo_id: p.id,
       status_anterior: i ? l[i - 1] : null, status_novo: s, autor_id: i ? PRODUTORA_DEMO.user_id : USUARIO_DEMO.id, autor_nome: i ? PRODUTORA_DEMO.nome : 'Rita', criado_em: agora() })));
+  }
+  function semearEstoque(b) {
+    b.estoque_itens = []; b.estoque_consumos = []; b.estoque_movimentos = [];
+    const idDe = slug => b.produtos.find(p => p.slug === slug)?.id;
+    const item = (nome, categoria, unidade, quantidade, minimo, consumos = []) => {
+      const it = { id: novoId(), nome, categoria, unidade, quantidade, minimo, observacao: null, ativo: true, criado_em: agora(), atualizado_em: agora() };
+      b.estoque_itens.push(it);
+      b.estoque_movimentos.push({ id: b.estoque_movimentos.length + 1, item_id: it.id, tipo: 'ajuste', quantidade, saldo: quantidade, motivo: 'Quantidade inicial',
+        pedido_id: null, autor_id: USUARIO_DEMO.id, autor_nome: 'Rita', criado_em: agora() });
+      consumos.forEach(([slug, q, porKg]) => { const pid = idDe(slug); if (pid) b.estoque_consumos.push({ id: novoId(), item_id: it.id, produto_id: pid, quantidade: q, por_kg: !!porKg }); });
+      return it;
+    };
+    const slugs = re => b.produtos.filter(p => re.test(p.slug)).map(p => [p.slug, 1]);
+    item('Leite condensado', 'Ingredientes', 'lata', 30, 12);
+    item('Creme de leite', 'Ingredientes', 'caixa', 20, 10);
+    item('Leite Ninho', 'Ingredientes', 'kg', 3.2, 2);
+    item('Chocolate em pó 50%', 'Ingredientes', 'kg', 1.5, 1);
+    item('Coca-Cola 2 L', 'Bebidas', 'garrafa', 8, 6, [['bebida-coca-cola-2-l', 1]]);
+    const guarana = item('Guaraná Antarctica 2 L', 'Bebidas', 'garrafa', 3, 6, [['bebida-guarana-antarctica-2-l', 1]]);
+    item('Suco individual', 'Bebidas', 'unidade', 24, 12, [['kit-individual', 1]]);
+    item('Velas', 'Decoração', 'unidade', 40, 20, [['vela', 1]]);
+    item('Pote para bolo no pote', 'Embalagens', 'unidade', 120, 60, slugs(/^(atacado-)?pote-/));
+    item('Caixa para bolo', 'Embalagens', 'unidade', 25, 10, b.produtos.filter(p => p.tipo === 'bolo').map(p => [p.slug, 1]));
+    item('Sacola personalizada', 'Embalagens', 'unidade', 30, 15, [['kit-individual', 1]]);
+    b.notificacoes = b.notificacoes || [];
+    b.notificacoes.push({ id: b.notificacoes.reduce((m, n) => Math.max(m, n.id), 0) + 1, tipo: 'estoque_baixo', titulo: 'Estoque acabando',
+      texto: `${guarana.nome}: restam ${qtdEstoque(3, 'garrafa')} (mínimo ${qtdEstoque(6, 'garrafa')}).`, pedido_id: null, topo_id: null, estoque_item_id: guarana.id, criado_em: agora(), lida_em: null });
+  }
+  /* ---- Estoque: o que os gatilhos de sql/estoque.sql fazem ---- */
+  /** Muda a quantidade, registra o movimento e avisa se chegou no mínimo ou em zero. */
+  function aplicarEstoque(itemId, delta, tipo, motivo, pedidoId = null) {
+    const it = db.estoque_itens.find(x => x.id === itemId); if (!it) return null;
+    const antes = clone(it);
+    it.quantidade = r3(Number(it.quantidade) + delta); it.atualizado_em = agora();
+    db.estoque_movimentos.push({ id: db.estoque_movimentos.reduce((m, x) => Math.max(m, x.id), 0) + 1, item_id: itemId, tipo, quantidade: r3(delta), saldo: it.quantidade,
+      motivo: motivo || null, pedido_id: pedidoId, autor_id: usuarioId(), autor_nome: db.administradores.find(a => a.user_id === usuarioId())?.nome || null, criado_em: agora() });
+    avisarEstoque(antes, it);
+    return it;
+  }
+  function avisarEstoque(antes, it) {
+    if (!it.ativo) return;
+    const q = Number(it.quantidade), min = Number(it.minimo);
+    const acabou = q <= 0 && Number(antes.quantidade) > 0, acabando = q > 0 && q <= min && Number(antes.quantidade) > Number(antes.minimo);
+    db.notificacoes = db.notificacoes || [];
+    if (q > min || acabou || acabando) {
+      const abertos = db.notificacoes.filter(n => n.estoque_item_id === it.id && !n.lida_em);
+      abertos.forEach(n => { n.lida_em = agora(); });
+      if (abertos.length) emitir('UPDATE', abertos[0], null, 'notificacoes');   // como o tempo real do banco: o sino se atualiza
+    }
+    if (!acabou && !acabando) return;
+    const n = { id: db.notificacoes.reduce((m, x) => Math.max(m, x.id), 0) + 1, tipo: acabou ? 'estoque_acabou' : 'estoque_baixo', titulo: acabou ? 'Estoque acabou' : 'Estoque acabando',
+      texto: acabou ? `${it.nome} acabou${q < 0 ? ` (faltam ${qtdEstoque(-q, it.unidade)} para os pedidos)` : ''}.` : `${it.nome}: restam ${qtdEstoque(q, it.unidade)} (mínimo ${qtdEstoque(min, it.unidade)}).`,
+      pedido_id: null, topo_id: null, estoque_item_id: it.id, criado_em: agora(), lida_em: null };
+    db.notificacoes.push(n);
+    emitir('INSERT', n, null, 'notificacoes');
+  }
+  /** Deixa o estoque igual ao que o pedido gasta agora, ou devolve tudo (consumir = false). */
+  function sincronizarEstoquePedido(pedidoId, consumir, codigo) {
+    if (!db.estoque_itens) return;
+    const p = db.pedidos.find(x => x.id === pedidoId), desejado = new Map(), aplicado = new Map();
+    if (consumir) for (const i of db.pedido_itens.filter(x => x.pedido_id === pedidoId))
+      for (const c of db.estoque_consumos.filter(x => x.produto_id === i.produto_id))
+        desejado.set(c.item_id, (desejado.get(c.item_id) || 0) + c.quantidade * i.quantidade * (c.por_kg && i.peso_kg != null ? Number(i.peso_kg) : 1));
+    for (const m of db.estoque_movimentos.filter(x => x.pedido_id === pedidoId && x.tipo === 'pedido')) aplicado.set(m.item_id, (aplicado.get(m.item_id) || 0) - m.quantidade);
+    for (const id of new Set([...desejado.keys(), ...aplicado.keys()])) {
+      const falta = r3((desejado.get(id) || 0) - (aplicado.get(id) || 0));
+      if (falta) aplicarEstoque(id, -falta, 'pedido', `${falta > 0 ? 'Pedido' : 'Devolvido do pedido'} ${p?.codigo || codigo || ''}`.trim(), pedidoId);
+    }
   }
   function salvar() { try { localStorage.setItem(CHAVE, JSON.stringify(db)); } catch (e) {} }
 
@@ -215,6 +291,11 @@ export function criarSupabaseDemo(opcoes = {}) {
     if (tabela === 'notificacoes') {   // só a equipe da loja vê e marca como visto; quem cria é o gatilho
       if (!equipe()) return q.op === 'select' ? finalizar([], q, 0) : erro('new row violates row-level security policy', '42501');
       if (q.op === 'insert' || q.op === 'delete') return erro('new row violates row-level security policy', '42501');
+      if (!adminLoja()) q.filtros.push(n => !String(n.tipo || '').startsWith('estoque'));   // avisos de estoque: só a Administração
+    }
+    if (TABELAS_ESTOQUE.includes(tabela)) {   // estoque: só a Administração; movimentos só pelas funções
+      if (!adminLoja()) return q.op === 'select' ? finalizar([], q, 0) : erro('new row violates row-level security policy', '42501');
+      if (tabela === 'estoque_movimentos' && q.op !== 'select') return erro('new row violates row-level security policy', '42501');
     }
     if (tabela === 'produtores_personalizados' && q.op === 'select') {
       const linhas = fonte.filter(filtrar).filter(r => adminLoja() || r.user_id === usuarioId());
@@ -285,7 +366,9 @@ export function criarSupabaseDemo(opcoes = {}) {
       status_pedido: { ativo: true, ordem: 0, finalizado: false }, administradores: { ativo: true, papel: 'admin' },
       pedido_observacoes: { fixada: false, autor_id: USUARIO_DEMO.id }, pedido_pagamentos: { tipo: 'sinal', forma: 'pix', pago_em: agora() },
       prejuizos: { quantidade: 1, data: hojeSP(), registrado_por: USUARIO_DEMO.id },
-      topos_pedidos: { tipo: 'topo', quantidade: 1, referencias: [], status: 'novo', valor: 0, pago: false, criado_por: usuarioId() }
+      topos_pedidos: { tipo: 'topo', quantidade: 1, referencias: [], status: 'novo', valor: 0, pago: false, criado_por: usuarioId() },
+      estoque_itens: { unidade: 'unidade', quantidade: 0, minimo: 0, ativo: true, categoria: null, observacao: null },
+      estoque_consumos: { por_kg: false }
     }[tabela] || {};
     if (tabela === 'topos_pedidos') extra.numero = db._seqTopo = (db._seqTopo || 0) + 1;
     if (tabela === 'pedido_observacoes' || tabela === 'pedido_historico') id.id = Date.now() + Math.floor(Math.random() * 1000);
@@ -295,15 +378,26 @@ export function criarSupabaseDemo(opcoes = {}) {
     if (tabela === 'pedidos' && novo) {
       if (antigo && novo.status !== antigo.status) historico(novo.id, antigo.status, novo.status, null);
       recalcularPedido(novo);
+      // estoque: baixa ao entrar em Confirmado em diante, devolve ao sair (cancelado, de volta a Recebido)
+      if (antigo && consomeEstoque(novo.status) !== consomeEstoque(antigo.status)) sincronizarEstoquePedido(novo.id, consomeEstoque(novo.status));
       emitir(antigo ? 'UPDATE' : 'INSERT', novo, antigo);
     }
     if (tabela === 'pedidos' && !novo && antigo) {
+      sincronizarEstoquePedido(antigo.id, false, antigo.codigo);   // pedido excluído: devolve o que tinha saído
+      (db.estoque_movimentos || []).filter(m => m.pedido_id === antigo.id).forEach(m => { m.pedido_id = null; });
       for (const t of ['pedido_itens', 'pedido_historico', 'pedido_observacoes', 'pedido_pagamentos']) db[t] = db[t].filter(r => r.pedido_id !== antigo.id);
       emitir('DELETE', null, antigo);
     }
     if (['pedido_itens', 'pedido_pagamentos'].includes(tabela)) {
       const p = db.pedidos.find(x => x.id === (novo || antigo).pedido_id);
+      if (p && tabela === 'pedido_itens') sincronizarEstoquePedido(p.id, consomeEstoque(p.status));   // itens mudaram num pedido confirmado: acerta a diferença
       if (p) { recalcularPedido(p); emitir('UPDATE', p); }
+    }
+    if (tabela === 'estoque_itens' && novo && antigo) avisarEstoque(antigo, novo);   // mudou o mínimo ou desligou o item
+    if (tabela === 'estoque_itens' && !novo && antigo) {
+      db.estoque_consumos = db.estoque_consumos.filter(c => c.item_id !== antigo.id);
+      db.estoque_movimentos = db.estoque_movimentos.filter(m => m.item_id !== antigo.id);
+      db.notificacoes = (db.notificacoes || []).filter(n => n.estoque_item_id !== antigo.id);
     }
     if (tabela === 'pedido_observacoes' && novo && !antigo) novo.autor_nome = nomeAdmin(novo.autor_id);
     if (tabela === 'topos_pedidos') {
@@ -484,8 +578,23 @@ export function criarSupabaseDemo(opcoes = {}) {
       exigirEquipe();
       if (!db.status_pedido.some(s => s.codigo === p_status && s.ativo)) throw `Status "${p_status}" não existe.`;
       const p = db.pedidos.find(x => x.id === p_pedido_id); if (!p) throw ['Pedido não encontrado.', 'P0002'];
-      if (p.status !== p_status) { const antigo = clone(p); historico(p.id, p.status, p_status, (p_comentario || '').trim()); p.status = p_status; p.atualizado_em = agora(); salvar(); emitir('UPDATE', p, antigo); }
+      if (p.status !== p_status) {
+        const antigo = clone(p); historico(p.id, p.status, p_status, (p_comentario || '').trim()); p.status = p_status; p.atualizado_em = agora();
+        if (consomeEstoque(p.status) !== consomeEstoque(antigo.status)) sincronizarEstoquePedido(p.id, consomeEstoque(p.status));   // gatilho do estoque
+        salvar(); emitir('UPDATE', p, antigo);
+      }
       return pedidoJson(p.id, true);
+    },
+    movimentar_estoque: ({ p_item_id, p_tipo, p_quantidade, p_motivo }) => {
+      if (!adminLoja()) throw ['Só a Administração mexe no estoque.', '42501'];
+      const q = Number(p_quantidade);
+      if (!(q >= 0)) throw 'Informe uma quantidade válida.';
+      if (['entrada', 'saida'].includes(p_tipo) && q === 0) throw 'Informe uma quantidade maior que zero.';
+      const it = db.estoque_itens.find(x => x.id === p_item_id); if (!it) throw 'Item de estoque não encontrado.';
+      const delta = { entrada: q, saida: -q, ajuste: r3(q - Number(it.quantidade)) }[p_tipo];
+      if (delta === undefined) throw 'Tipo de movimento inválido.';
+      aplicarEstoque(it.id, delta, p_tipo, String(p_motivo || '').trim() || null);
+      salvar(); return clone(it);
     },
     adicionar_observacao_pedido: ({ p_pedido_id, p_texto, p_fixada }) => {
       exigirEquipe();

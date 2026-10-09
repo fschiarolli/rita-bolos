@@ -257,6 +257,26 @@ export function prepararAba() {
    API
 ================================================================ */
 
+/** Filtros da lista de pedidos (vw_pedidos), usados pela lista e pela contagem por dia. */
+function filtrarPedidos(q, f) {
+  if (Array.isArray(f.status) && f.status.length) q = q.in('status', f.status);
+  else if (typeof f.status === 'string' && f.status) q = q.eq('status', f.status);
+  if (f.apenasAbertos) q = q.eq('finalizado', false);
+  if (f.sinalPago === false) q = q.eq('sinal_pago', false);
+  if (f.sinalPago === true) q = q.eq('sinal_pago', true);
+  if (f.comSaldo) q = q.gt('saldo', 0);
+  if (f.quitado) q = q.lte('saldo', 0);
+  if (f.origem) q = q.eq('origem', f.origem);
+  if (f.criadoDesde) q = q.gte('criado_em', f.criadoDesde);
+  if (f.antesDe) q = q.lt('data_retirada', f.antesDe);
+  if (f.de) q = q.gte('data_retirada', f.de);
+  if (f.ate) q = q.lte('data_retirada', f.ate);
+  if (Array.isArray(f.datas)) q = q.in('data_retirada', f.datas.length ? f.datas : ['1900-01-01']);   // ex.: só os domingos
+  const termo = (f.busca || '').trim().replace(/[,()*%\\]/g, ' ').trim();
+  if (termo) q = q.or(['cliente_nome', 'codigo', 'cliente_telefone', 'resumo_itens'].map(c => `${c}.ilike.*${termo}*`).join(','));
+  return q;
+}
+
 /**
  * Cria a API a partir de um cliente Supabase já existente.
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
@@ -403,31 +423,27 @@ export function criarApi(supabase, opcoes = {}) {
       pedidos: {
         /**
          * Lista de pedidos com filtros e paginação.
-         * @param {{status?: string|string[], de?: string, ate?: string, antesDe?: string, busca?: string,
-         *          apenasAbertos?: boolean, sinalPago?: boolean, comSaldo?: boolean, criadoDesde?: string,
-         *          pagina?: number, porPagina?: number, ordenarPor?: string, crescente?: boolean}} [f]
+         * @param {{status?: string|string[], de?: string, ate?: string, antesDe?: string, datas?: string[], busca?: string,
+         *          apenasAbertos?: boolean, sinalPago?: boolean, comSaldo?: boolean, quitado?: boolean, origem?: string,
+         *          criadoDesde?: string, pagina?: number, porPagina?: number, ordenarPor?: string, crescente?: boolean}} [f]
+         * busca: nome, código, telefone ou item do pedido (ex.: "kit").
          */
         async listar(f = {}) {
           const pagina = f.pagina || 1, porPagina = f.porPagina || 30;
-          let q = supabase.from('vw_pedidos').select('*', { count: 'exact' });
-          if (Array.isArray(f.status) && f.status.length) q = q.in('status', f.status);
-          else if (typeof f.status === 'string' && f.status) q = q.eq('status', f.status);
-          if (f.apenasAbertos) q = q.eq('finalizado', false);
-          if (f.sinalPago === false) q = q.eq('sinal_pago', false);
-          if (f.sinalPago === true) q = q.eq('sinal_pago', true);
-          if (f.comSaldo) q = q.gt('saldo', 0);
-          if (f.criadoDesde) q = q.gte('criado_em', f.criadoDesde);
-          if (f.antesDe) q = q.lt('data_retirada', f.antesDe);
-          if (f.de) q = q.gte('data_retirada', f.de);
-          if (f.ate) q = q.lte('data_retirada', f.ate);
-          const termo = (f.busca || '').trim().replace(/[,()*%\\]/g, ' ').trim();
-          if (termo) q = q.or(`cliente_nome.ilike.*${termo}*,codigo.ilike.*${termo}*,cliente_telefone.ilike.*${termo}*`);
+          let q = filtrarPedidos(supabase.from('vw_pedidos').select('*', { count: 'exact' }), f);
           q = q.order(f.ordenarPor || 'data_retirada', { ascending: f.crescente ?? true })
                .order('hora_retirada', { ascending: true, nullsFirst: false })
                .range((pagina - 1) * porPagina, pagina * porPagina - 1);
           const { data, error, count } = await q;
           if (error) throw new ErroApi(error, 'pedidos');
           return { pedidos: data, total: count ?? data.length, pagina, porPagina };
+        },
+        /** Quantos pedidos há em cada dia de retirada (mesmos filtros da lista): { 'AAAA-MM-DD': n } */
+        async contarPorDia(f = {}) {
+          const linhas = conferir(await filtrarPedidos(supabase.from('vw_pedidos').select('data_retirada'), f).limit(2000), 'pedidos');
+          const n = {};
+          for (const l of linhas) n[l.data_retirada] = (n[l.data_retirada] || 0) + 1;
+          return n;
         },
         /** Pedido completo: itens, pagamentos, observações e histórico (também usado no recibo). */
         obter: (id) => rpc('recibo_pedido', { p_pedido_id: id }),
@@ -564,7 +580,37 @@ export function criarApi(supabase, opcoes = {}) {
           return () => supabase.removeChannel(canal);
         }
       },
-      /* Avisos da equipe (sino do backoffice), criados pelo banco: ex.: topo pronto (sql/topos.sql) */
+      /*
+       * Estoque (sql/estoque.sql, só a Administração). A quantidade só muda por movimentar (entrada,
+       * saída, ajuste) ou pela baixa automática dos pedidos; o banco registra o histórico e avisa
+       * (notificacoes) quando o item chega no mínimo.
+       */
+      estoque: {
+        listar: async () => conferir(await supabase.from('estoque_itens').select('*').order('nome'), 'estoque'),
+        criar: async (dados) => conferir(await supabase.from('estoque_itens').insert(dados).select().single(), 'item de estoque'),
+        async atualizar(id, campos) {
+          const { id: _i, quantidade, criado_em, atualizado_em, ...dados } = campos;   // quantidade: use movimentar
+          return conferir(await supabase.from('estoque_itens').update(dados).eq('id', id).select().single(), 'item de estoque');
+        },
+        async remover(id) {
+          conferir(await supabase.from('estoque_itens').delete().eq('id', id), 'item de estoque');
+          return true;
+        },
+        /** tipo: 'entrada' | 'saida' | 'ajuste' (contagem: a quantidade passa a ser exatamente a informada) */
+        movimentar: (itemId, tipo, quantidade, motivo) =>
+          rpc('movimentar_estoque', { p_item_id: itemId, p_tipo: tipo, p_quantidade: quantidade, p_motivo: motivo || null }),
+        movimentos: async (itemId, limite = 60) => conferir(await supabase.from('estoque_movimentos').select('*').eq('item_id', itemId)
+          .order('criado_em', { ascending: false }).order('id', { ascending: false }).limit(limite), 'histórico do estoque'),
+        /** Baixa automática: quanto de cada item os produtos do cardápio gastam. */
+        consumos: async () => conferir(await supabase.from('estoque_consumos').select('*'), 'baixa automática'),
+        /** Troca a lista de produtos ligados ao item: [{ produto_id, quantidade, por_kg }] */
+        async salvarConsumos(itemId, lista) {
+          conferir(await supabase.from('estoque_consumos').delete().eq('item_id', itemId), 'baixa automática');
+          if (lista.length) conferir(await supabase.from('estoque_consumos').insert(lista.map(c => ({ item_id: itemId, produto_id: c.produto_id, quantidade: c.quantidade, por_kg: !!c.por_kg }))), 'baixa automática');
+          return true;
+        }
+      },
+      /* Avisos da equipe (sino do backoffice), criados pelo banco: ex.: topo pronto (sql/topos.sql), estoque acabando (sql/estoque.sql) */
       notificacoes: {
         async listar({ naoLidas = false, limite = 30 } = {}) {
           let q = supabase.from('notificacoes').select('*');
