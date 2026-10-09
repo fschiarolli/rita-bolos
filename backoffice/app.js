@@ -1295,10 +1295,8 @@ function desenharHoje() {
   const porHora = (a, b) => (a.hora_retirada || '99').localeCompare(b.hora_retirada || '99') || a.cliente_nome.localeCompare(b.cliente_nome);
   const pendentes = hojeLista.filter(p => !p.finalizado).sort(porHora);
   const feitos = hojeLista.filter(p => p.finalizado).sort(porHora);
-  const aReceber = hojeLista.reduce((s, p) => s + situacaoPagamento(p).falta, 0);   // inclui quem levou sem pagar tudo
-  $('#hjResumo').innerHTML = `<span><b>${pendentes.length}</b> para ${pendentes.length === 1 ? 'retirar' : 'retirar'}</span>
-    <span><b>${feitos.length}</b> já ${esc((ret?.nome || 'retirado').toLowerCase())}${feitos.length === 1 ? '' : 's'}</span>
-    <span>Falta receber hoje <b>${R(aReceber)}</b></span>`;
+  $('#hjResumo').innerHTML = `<span><b>${pendentes.length}</b> para retirar</span>
+    <span><b>${feitos.length}</b> já ${esc((ret?.nome || 'retirado').toLowerCase())}${feitos.length === 1 ? '' : 's'}</span>`;
   $('#hjAtraso').innerHTML = hojeAtrasados
     ? `<div class="aviso-box hj-atraso">${hojeAtrasados === 1 ? '1 pedido de dias anteriores ainda não foi retirado.' : `${hojeAtrasados} pedidos de dias anteriores ainda não foram retirados.`}
        <a href="#pedidos" data-filtro="atrasados">Ver</a></div>` : '';
