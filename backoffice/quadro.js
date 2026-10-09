@@ -28,7 +28,8 @@ const NOVO_MS = 3 * 60e3;          // quanto tempo um pedido novo fica destacado
 const MUDOU_MS = 2600;             // destaque rápido de quem acabou de mudar de coluna
 const EM_BREVE_MIN = 120;          // "em 45 min" a partir de 2 h antes da retirada
 const CONFERIR_MS = 60e3;          // conferência periódica, além do tempo real
-const SUPERFICIE = '#1E1510';      // fundo das colunas (as cores dos status são calculadas contra ele)
+// fundo das colunas (as cores dos status são calculadas contra ele): creme no tema Canela, escuro nos outros
+const SUPERFICIE = document.documentElement.getAttribute('data-theme') === 'canela' ? '#FFFBEA' : '#1E1510';
 const MQ_LISTA = '(max-width: 999px) and (orientation: portrait), (max-width: 760px), (max-height: 500px)';
 const CHAVE_SOM = 'ritabolos.quadro.som';
 

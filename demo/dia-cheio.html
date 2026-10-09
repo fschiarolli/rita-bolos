@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Demonstração: dia cheio — Rita Bolos</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #140D09; color: #F7EBDD; font: 17px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; text-align: center; padding: 24px; box-sizing: border-box; }
+  .caixa { max-width: 34rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .5rem; }
+  p { margin: .4rem 0; color: #DDC8B5; }
+  .barra { height: .5rem; border-radius: 1rem; background: #2A1D16; overflow: hidden; margin: 1.2rem 0 .6rem; }
+  .barra i { display: block; height: 100%; width: 0; background: #8FD3BF; transition: width .2s; }
+  a { color: #8FD3BF; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="caixa">
+  <h1>Montando um dia cheio na demonstração…</h1>
+  <p>35 pedidos com retirada hoje, em todos os status, para ver o quadro da equipe num dia de muito movimento.</p>
+  <div class="barra" aria-hidden="true"><i id="barra"></i></div>
+  <p id="msg" role="status">Preparando…</p>
+</div>
+<script type="module">
+/* Só para a DEMONSTRAÇÃO (dados guardados neste navegador; o banco real não é usado).
+   Recomeça os dados de exemplo, entra como a Rita e cria um dia cheio. Depois abre o quadro
+   com o relógio simulado às 10h05 (troque em ?hora=HH:MM no endereço do quadro). */
+import { criarApi } from '../js/rita-api.js';
+import { criarSupabaseDemo } from './supabase-demo.js';
+
+const msg = t => { document.getElementById('msg').textContent = t; };
+const barra = p => { document.getElementById('barra').style.width = `${Math.round(p * 100)}%`; };
+try {
+  const supa = criarSupabaseDemo({});
+  supa._demo.reiniciar();
+  const api = criarApi(supa);
+  await api.auth.entrar('rita@demo.com', 'demo');
+
+  const c = await api.cardapio.obter();
+  const prods = c.categorias.filter(x => x.layout === 'lista').flatMap(x => [...x.grupos.flatMap(g => g.produtos), ...x.produtos]);
+  const bolos = prods.filter(p => p.tipo === 'bolo'), outros = prods.filter(p => p.tipo !== 'bolo' && !/finaliza|topper/i.test(p.slug));
+  const fuso = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const dia = n => fuso.format(new Date(Date.now() + n * 864e5));
+  const nomes = ['Ana Paula', 'Bruno Lima', 'Carla Dias', 'Daniel Souza', 'Elaine Rocha', 'Fábio Nunes', 'Gabi Prado', 'Heitor Alves', 'Isabela Reis',
+    'João Pedro', 'Karina Melo', 'Lucas Moraes', 'Marina Costa', 'Nina Torres', 'Otávio Luz', 'Paula Freitas', 'Rafael Gomes', 'Sabrina Lopes', 'Tiago Ramos',
+    'Ursula Vieira', 'Vítor Cunha', 'Wesley Pinto', 'Yasmin Teles', 'Zeca Moura', 'Aline Barros', 'Breno Farias', 'Clara Neves', 'Diego Paiva', 'Érica Matos',
+    'Felipe Brito', 'Giovana Sá', 'Hugo Leal', 'Iara Campos', 'Júlia Faria'];
+  const status = ['recebido', 'confirmado', 'confirmado', 'em_producao', 'em_producao', 'pronto'];
+  let n = 0;
+  async function criar(data, hora, st, nome, obs) {
+    const itens = [];
+    if (n % 2 === 0) {
+      const b = bolos[n % bolos.length];
+      itens.push({ produto_slug: b.slug, quantidade: 1, peso_kg: c.bolo.pesos[n % c.bolo.pesos.length], massa: c.bolo.massas[n % c.bolo.massas.length].slug,
+        formato: c.bolo.formatos?.[n % 2]?.slug, observacao: n % 6 === 0 ? `Escrever "Parabéns, ${nome.split(' ')[0]}!"` : null });
+    }
+    for (let k = 0; k < 1 + (n % 3); k++) {
+      const o = outros[(n * 3 + k * 7) % outros.length];
+      itens.push({ produto_slug: o.slug, quantidade: /brigadeiro|beijinho|ninho/i.test(o.slug) && o.unidade_preco === 'unidade' ? 50 : 1 + (n % 4) });
+    }
+    const r = await api.admin.pedidos.criar({ origem: n % 3 ? 'whatsapp' : 'site', cliente_nome: nome, cliente_telefone: '19999990000', data_retirada: data, hora_retirada: hora, observacao: obs || null, itens });
+    if (st !== 'recebido') {
+      await api.admin.pedidos.registrarPagamento(r.id, { valor: Math.round(r.valor_sinal * 100) / 100, forma: 'pix', tipo: 'sinal' });
+      await api.admin.pedidos.alterarStatus(r.id, st);
+    }
+    if (n % 7 === 3) await api.admin.pedidos.adicionarObservacao(r.id, 'Cliente pediu caixa alta para transporte', true);
+    n++;
+  }
+  const total = 37;
+  for (let i = 0; i < 34; i++) {
+    const min = 8 * 60 + i * 20, hora = `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+    await criar(dia(0), hora, status[i % status.length], nomes[i], i % 9 === 4 ? 'Sem lactose, por favor' : null);
+    msg(`Pedido ${n} de ${total}…`); barra(n / total);
+  }
+  await criar(dia(1), '10:00', 'confirmado', 'Pedido de Amanhã');
+  await criar(dia(1), '15:00', 'em_producao', 'Outro de Amanhã');
+  await criar(dia(-1), '16:00', 'pronto', 'Cliente de Ontem');
+  barra(1);
+  msg('Pronto! Abrindo o quadro…');
+  // ?tema=canela (ou outro) passa adiante para o quadro
+  const tema = new URLSearchParams(location.search).get('tema');
+  setTimeout(() => location.replace('../backoffice/quadro.html?demo&hora=10:05' + (tema ? '&tema=' + encodeURIComponent(tema) : '')), 600);
+} catch (e) {
+  console.error(e);
+  document.querySelector('h1').textContent = 'Não deu para montar a demonstração';
+  msg(e?.message || String(e));
+}
+</script>
+</body>
+</html>

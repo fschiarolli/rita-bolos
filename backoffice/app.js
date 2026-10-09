@@ -488,16 +488,24 @@ const TEMAS = [
   { id: 'auto', nome: 'Automático', desc: 'Claro ou escuro, como o aparelho', attr: null },
   { id: 'claro', nome: 'Claro', desc: 'Creme e chocolate', attr: 'light', meta: '#F8F2EA', icone: 'sol', amostra: ['#F8F2EA', '#FFFFFF', '#4A2A1C', '#2B7465'] },
   { id: 'escuro', nome: 'Escuro', desc: 'Para pouca luz', attr: 'dark', meta: '#120B08', icone: 'lua', amostra: ['#120B08', '#1C130F', '#F2DCC6', '#8FD3BF'] },
-  { id: 'morango', nome: 'Morango', desc: 'Rosa suave e framboesa', attr: 'morango', meta: '#FCF0F3', icone: 'morango', amostra: ['#FCF0F3', '#FFFFFF', '#A8345C', '#2B7465'] }
+  { id: 'morango', nome: 'Morango', desc: 'Rosa suave e framboesa', attr: 'morango', meta: '#FCF0F3', icone: 'morango', amostra: ['#FCF0F3', '#FFFFFF', '#A8345C', '#2B7465'] },
+  { id: 'canela', nome: 'Canela', desc: 'Papel quadriculado, chocolate e tons pastel', attr: 'canela', meta: '#FFF4CC', icone: 'canela', amostra: ['#FFF4CC', '#FFFBEA', '#4A2418', '#A5B6EC'] }
 ];
+/** Fontes próprias de um tema: só são baixadas quando ele é escolhido. */
+const FONTES_TEMA = { canela: 'https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,400..800,0..100&family=Source+Serif+4:opsz,wght@8..60,400..700&display=swap' };
+function carregarFontesTema(id) {
+  const url = FONTES_TEMA[id]; if (!url || document.querySelector(`link[data-fontes="${id}"]`)) return;
+  const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = url; l.setAttribute('data-fontes', id); document.head.appendChild(l);
+}
 const temaDe = id => TEMAS.find(t => t.id === id) || TEMAS[0];
 const temaEscolhido = () => { try { const t = localStorage.getItem('ritabolos.tema'); return TEMAS.some(x => x.id === t) ? t : 'auto'; } catch (e) { return 'auto'; } };
 /** Tema em uso agora: o automático vira claro ou escuro conforme o aparelho. */
 const temaAtual = () => { const t = temaEscolhido(); return t === 'auto' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'escuro' : 'claro') : t; };
 const amostraTema = t => t.id === 'auto' ? '<span class="tema-amostra auto" aria-hidden="true"></span>'
-  : `<span class="tema-amostra" aria-hidden="true" style="--a:${t.amostra[0]};--b:${t.amostra[1]};--c:${t.amostra[2]};--d:${t.amostra[3]}"></span>`;
+  : `<span class="tema-amostra ${t.id}" aria-hidden="true" style="--a:${t.amostra[0]};--b:${t.amostra[1]};--c:${t.amostra[2]};--d:${t.amostra[3]}"></span>`;
 function aplicarTema(id) {
   const t = temaDe(id);
+  carregarFontesTema(t.id);
   if (t.attr) document.documentElement.setAttribute('data-theme', t.attr); else document.documentElement.removeAttribute('data-theme');
   try { if (t.attr) localStorage.setItem('ritabolos.tema', t.id); else localStorage.removeItem('ritabolos.tema'); } catch (e) { /* só nesta visita */ }
   atualizarBotaoTema();
