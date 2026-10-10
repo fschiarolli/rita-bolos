@@ -2114,9 +2114,9 @@ function openCheckout(opener) {
       ${obrig.length ? `<div class="notice rose" style="margin:0 0 6px">${icon('info')}<span>Preencha na sacola antes de enviar: ${esc(obrig.map(l => `${ITEMS[l.id].name} (${ITEMS[l.id].notesLabel})`).join(', '))}.</span></div>` : ''}
       ${semRef.length ? `<div class="notice rose" style="margin:0 0 6px">${icon('image')}<span>Envie na sacola a imagem de referência de: ${esc(semRef.map(l => ITEMS[l.id].name).join(', '))}.</span></div>` : ''}
       ${faltando.length ? `<div class="notice rose" style="margin:0 0 6px">${icon('info')}<span>Faltam os sabores de: ${esc(faltando.map(l => ITEMS[l.id].name).join(', '))}. Você pode voltar à sacola ou combinar com a Rita no WhatsApp.</span></div>` : ''}
-      <div class="field" style="margin-top:6px"><label class="lbl" for="cName">Seu nome</label>
-        <input class="input" id="cName" autocomplete="name" maxlength="120" placeholder="Como podemos te chamar?" value="${esc(store(NAME_KEY) || '')}" aria-describedby="eName">
-        <p class="err" id="eName">Informe seu nome para a Rita saber de quem é o pedido.</p></div>
+      <div class="field" style="margin-top:6px"><label class="lbl" for="cName">Seu nome completo</label>
+        <input class="input" id="cName" autocomplete="name" maxlength="120" placeholder="Nome e sobrenome" value="${esc(store(NAME_KEY) || '')}" aria-describedby="eName">
+        <p class="err" id="eName">Informe seu nome e sobrenome para a Rita saber de quem é o pedido.</p></div>
       <div class="field"><label class="lbl" for="cPhone">Seu WhatsApp</label>
         <input class="input" id="cPhone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="(19) 99999-9999" value="${esc(formatarTel(store(PHONE_KEY)))}" aria-describedby="hPhone ePhone">
         <p class="hint" id="hPhone">É por ele que avisamos cada etapa do pedido.</p>
@@ -2157,12 +2157,51 @@ document.addEventListener('input', e => {
   while (i < novo.length && vistos < antes) { if (/\d/.test(novo[i])) vistos++; i++; }
   if (document.activeElement === el) el.setSelectionRange(i, i);
 });
+/* ---- Nome completo e celular de verdade (os mesmos testes da página do bolo no pote) ---- */
+/** O nome sem espaços sobrando: "  maria   souza " → "maria souza". */
+const limparNome = v => String(v || '').trim().replace(/\s+/g, ' ');
+/** '' quando tem nome e sobrenome (2 letras ou mais cada; "da", "de", "dos"… não contam); senão, o que corrigir. */
+function erroNome(v) {
+  const nome = limparNome(v);
+  if (!nome) return 'Informe seu nome e sobrenome para a Rita saber de quem é o pedido.';
+  if (!/^\p{L}[\p{L}'’´.\- ]*$/u.test(nome)) return 'Use só letras no nome, sem números ou símbolos.';
+  const partes = nome.split(' ').filter(p => !/^(d[aeo]s?|e)$/i.test(p)), letras = p => p.replace(/[^\p{L}]/gu, '');
+  const ok = partes.length >= 2 && [partes[0], partes[partes.length - 1]].every(p => letras(p).length >= 2 && !/^(\p{L})\1+$/iu.test(letras(p)));
+  return ok ? '' : 'Digite seu nome e sobrenome, por exemplo: Maria Souza.';
+}
+/** DDDs que existem no Brasil (Anatel). */
+const DDDS = new Set('11 12 13 14 15 16 17 18 19 21 22 24 27 28 31 32 33 34 35 37 38 41 42 43 44 45 46 47 48 49 51 53 54 55 61 62 63 64 65 66 67 68 69 71 73 74 75 77 79 81 82 83 84 85 86 87 88 89 91 92 93 94 95 96 97 98 99'.split(' '));
+/** '' quando é celular: DDD que existe e 9 números começando com 9 (sem 99999-9999, 91234-5678…); senão, o que conferir. */
+function erroCelular(v) {
+  const d = digitosTel(v);
+  if (!d) return 'Informe seu WhatsApp com DDD, por exemplo (19) 99999-9999.';
+  if (d.length < 10) return 'Faltam números: informe o DDD e o celular, por exemplo (19) 99999-9999.';
+  if (!DDDS.has(d.slice(0, 2))) return `O DDD ${d.slice(0, 2)} não existe. Confira o número.`;
+  if (d.length === 10 || d[2] !== '9') return 'O celular tem 9 números depois do DDD, começando com 9. Ex.: (19) 99999-9999.';
+  const m = d.slice(2);   // os 9 números depois do DDD: recusa só os inventados de sempre (um celular de verdade nunca pode ficar de fora)
+  if (/^9(\d)\1{7}$/.test(m) || m === '912345678' || m === '987654321') return 'Esse número não parece um celular de verdade. Confira o seu WhatsApp.';
+  return '';
+}
+/** Mostra (msg) ou esconde ('') o erro embaixo do campo. Volta true quando está certo. */
+function marcarCampo(el, erro, msg) {
+  el.setAttribute('aria-invalid', String(!!msg));
+  if (!erro) return !msg;
+  if (msg) erro.textContent = msg;
+  erro.classList.toggle('show', !!msg);
+  return !msg;
+}
+/* Ao sair do campo já avisa o que corrigir (campo vazio só no Confirmar) */
+document.addEventListener('focusout', e => {
+  const t = e.target;
+  if (t.id === 'cName' && t.value.trim()) { t.value = limparNome(t.value); marcarCampo(t, $('#eName'), erroNome(t.value)); }
+  if (t.id === 'cPhone' && t.value.trim()) marcarCampo(t, $('#ePhone'), erroCelular(t.value));
+});
 function validateCheckout() {
   const name = $('#cName'), d = $('#cDate'), t = $('#cTime'), minD = sheetState.minDate || todayISO();
   let ok = true, first = null;
-  const nOk = !!name.value.trim(); name.setAttribute('aria-invalid', String(!nOk)); $('#eName').classList.toggle('show', !nOk); if (!nOk) { ok = false; first = first || name; }
-  const ph = $('#cPhone'), dig = digitosTel(ph.value);
-  const pOk = dig.length === 10 || dig.length === 11; ph.setAttribute('aria-invalid', String(!pOk)); $('#ePhone').classList.toggle('show', !pOk); if (!pOk) { ok = false; first = first || ph; }
+  if (!marcarCampo(name, $('#eName'), erroNome(name.value))) { ok = false; first = first || name; }
+  const ph = $('#cPhone');
+  if (!marcarCampo(ph, $('#ePhone'), erroCelular(ph.value))) { ok = false; first = first || ph; }
   const agora = new Date(), jaPassou = d.value === todayISO() && t.value && minutosDe(t.value) <= agora.getHours() * 60 + agora.getMinutes();
   const dOk = !!d.value && d.value >= minD, tOk = !!t.value && !jaPassou;
   $('#ePick').textContent = d.value && d.value < todayISO() ? 'A data de retirada não pode ser no passado.'
@@ -2187,7 +2226,7 @@ function validateCheckout() {
 let enviando = false;
 async function sendOrder() {
   if (enviando || !validateCheckout()) return;
-  const name = $('#cName').value.trim(), phone = formatarTel($('#cPhone').value), pd = $('#cDate').value, pt = $('#cTime').value;
+  const name = limparNome($('#cName').value), phone = formatarTel($('#cPhone').value), pd = $('#cDate').value, pt = $('#cTime').value;
   store(NAME_KEY, name); store(PHONE_KEY, phone);
   const payload = {
     chave_idempotencia: sheetState.chave, cliente_nome: name, cliente_telefone: phone || null, data_retirada: pd, hora_retirada: pt,
@@ -2275,7 +2314,7 @@ document.addEventListener('click', async e => {
 });
 /* Plano B: se o servidor estiver fora do ar, a mensagem segue direto pelo WhatsApp */
 function sendDirect() {
-  const name = $('#cName').value.trim(), pd = $('#cDate').value, pt = $('#cTime').value;
+  const name = limparNome($('#cName').value), pd = $('#cDate').value, pt = $('#cTime').value;
   const total = cartTotal();
   let m = `*NOVO PEDIDO — ${(CFG.nome_loja || 'Rita Bolos').toUpperCase()}*\n_(não registrado no sistema)_\n\n*Cliente:* ${name}\n*Retirada:* ${formatPickupDate(pd, pt)}\n\n*Itens do pedido:*\n`;
   cart.forEach((l, i) => {
@@ -2424,7 +2463,9 @@ document.addEventListener('input', e => {
     l.notes = t.value; saveCart(); autoGrow(t);
     const w = document.getElementById('lw-' + t.dataset.notes); if (w) w.hidden = !!t.value.trim();
   }
-  if (t.id === 'cName' && t.value.trim()) { t.setAttribute('aria-invalid', 'false'); $('#eName').classList.remove('show'); }
+  // com o erro aparecendo, ele some assim que o campo fica certo
+  if (t.id === 'cName' && t.getAttribute('aria-invalid') === 'true' && !erroNome(t.value)) marcarCampo(t, $('#eName'), '');
+  if (t.id === 'cPhone' && t.getAttribute('aria-invalid') === 'true' && !erroCelular(t.value)) marcarCampo(t, $('#ePhone'), '');
   if ((t.id === 'cDate' || t.id === 'cTime') && $('#cDate').value && $('#cTime').value) $('#ePick').classList.remove('show');
 });
 

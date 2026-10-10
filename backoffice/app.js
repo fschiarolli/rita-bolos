@@ -1245,14 +1245,14 @@ async function modalPrejuizo(pedido = null) {
   if (pedido) desenharPedido(pedido); else setTimeout(() => m.$('#prjBusca').focus(), 60);
 }
 
-/* Etiquetas em lote: os pedidos da lista filtrada (Pedidos) ou os de hoje (Hoje) */
+/* Imprimir vários pedidos (cupom de 80 mm ou etiquetas): os da lista filtrada (Pedidos) ou os de hoje (Hoje) */
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-lote-pedidos],[data-lote-hoje]'); if (!b || !perfil || ehProdutor()) return;
   if (b.dataset.lotePedidos !== undefined) ocupado(b, async () => {
     const r = await api.admin.pedidos.listar({ ...consultaPedidos(), porPagina: 500, pagina: 1 });
-    await modalEtiquetasLote(r.pedidos, `Etiquetas: ${r.total} ${r.total === 1 ? 'pedido' : 'pedidos'} ${descricaoFiltro()}`);
+    await modalImprimirLote(r.pedidos, `Imprimir ${r.total} ${r.total === 1 ? 'pedido' : 'pedidos'} ${descricaoFiltro()}`);
   });
-  else ocupado(b, () => modalEtiquetasLote(hojeLista, `Etiquetas do dia · ${dataLonga()}`));
+  else ocupado(b, () => modalImprimirLote(hojeLista, `Imprimir o dia · ${dataLonga()}`));
 });
 /* "Limpar filtros" da lista de pedidos */
 document.addEventListener('click', e => {
@@ -1303,7 +1303,7 @@ function situacaoPagamento(p) {
 }
 async function telaHoje(el) {
   hojeDia = hojeISO();
-  el.innerHTML = cabecalho('Hoje', `<button type="button" class="btn ghost" data-lote-hoje>${ic('imprimir')}Etiquetas do dia</button><button type="button" class="btn ghost" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`,
+  el.innerHTML = cabecalho('Hoje', `<button type="button" class="btn ghost" data-lote-hoje title="Imprimir os pedidos de hoje: cupom de 80 mm ou etiquetas">${ic('imprimir')}Imprimir</button><button type="button" class="btn ghost" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`,
       `${esc(dataLonga())} — retiradas do dia no balcão.`) + `
     <div class="hj-top"><div class="busca">${ic('busca')}<label class="sr" for="hjBusca">Buscar pelo nome</label>
       <input class="in" id="hjBusca" type="search" placeholder="Buscar pelo nome do cliente" value="${esc(hojeBusca)}" autocomplete="off"></div></div>
@@ -1528,7 +1528,7 @@ function telaPedidos(el) {
   const chips = [['abertos', 'Em aberto'], ...STATUS.filter(s => s.ativo).sort((a, b) => a.ordem - b.ordem).map(s => [s.codigo, s.nome, s.cor]), ['todos', 'Todos']];
   const sel = (id, rot, ops, val) => campo(id, rot, `<select class="sel" id="${id}">${ops.map(([v, t]) => `<option value="${esc(v)}" ${String(v) === String(val) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`);
   const extras = filtrosExtrasAtivos();
-  el.innerHTML = cabecalho('Pedidos', `<button type="button" class="btn ghost" data-lote-pedidos title="Imprimir as etiquetas dos pedidos desta lista">${ic('imprimir')}Etiquetas</button><button type="button" class="btn primary" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`,
+  el.innerHTML = cabecalho('Pedidos', `<button type="button" class="btn ghost" data-lote-pedidos title="Imprimir os pedidos desta lista: cupom de 80 mm ou etiquetas">${ic('imprimir')}Imprimir</button><button type="button" class="btn primary" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`,
       'Pedidos do site, do WhatsApp e do balcão. Toque em um pedido para ver tudo.') + `
     <div class="filtros">
       <div class="linha">
@@ -1844,9 +1844,24 @@ const CSS_TERMICA = `
     html, body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body { width: 80mm; padding: 3mm 4mm 8mm; font: 700 14px/1.35 Tahoma, Verdana, "Segoe UI", Arial, sans-serif; }
     b, strong { font-weight: 900; }`;
-async function imprimirTermica(p) {
-  const cfg = await configLoja(), loja = cfg || {}, pix = pixDe(cfg);
-  await mapaKitsLoja();
+/** Cupom do pedido ("Imprimir 80 mm"). Com vários pedidos, cada um começa numa página nova:
+    a térmica corta entre eles quando está configurada para cortar a cada página. */
+const CSS_CUPOM = `
+    body { padding: 0 4mm; } .cupom { padding: 3mm 0 8mm; } .cupom + .cupom { break-before: page; page-break-before: always; }
+    .c { text-align: center; } .loja { font-size: 19px; font-weight: 900; } .sub { font-size: 13px; }
+    .cod { font-size: 28px; font-weight: 900; letter-spacing: 1px; margin-top: 4px; }
+    .sep { border-top: 2px solid #000; margin: 7px 0; } .sep.fino { border-top-width: 1px; margin: 5px 0; } .sep.forte { border-top-width: 3px; }
+    .ret { border: 3px solid #000; padding: 5px 6px; margin: 7px 0; text-align: center; }
+    .ret small { display: block; font-size: 13px; letter-spacing: 1px; } .ret b { display: block; font-size: 20px; line-height: 1.2; }
+    .l { display: flex; justify-content: space-between; gap: 8px; } .l > span:last-child { white-space: nowrap; text-align: right; }
+    .t { font-size: 15px; font-weight: 900; letter-spacing: 1px; margin: 2px 0 4px; }
+    .it .n { font-size: 15px; font-weight: 900; } .it .d { font-size: 13px; margin-left: 10px; } .it .ob, .it .kit { font-weight: 900; }
+    .tot { font-size: 18px; font-weight: 900; } .falta { font-size: 17px; font-weight: 900; }
+    .box { border: 2px solid #000; padding: 4px 6px; margin: 6px 0; font-size: 13px; } .box b { display: block; }
+    .pix .k { display: block; font-size: 19px; font-weight: 900; letter-spacing: .5px; }
+    .pe { text-align: center; font-size: 13px; margin-top: 8px; }`;
+/** O cupom de um pedido completo (como o da gaveta, com as anotações): igual para um pedido ou vários. Carregue mapaKitsLoja() antes. */
+function cupomTermica(p, loja, pix) {
   const pct = Number(p.percentual_sinal ?? 50).toLocaleString('pt-BR');
   const falta = Math.max(0, Number(p.saldo ?? (p.total - p.valor_pago)));
   const l = (a, b, cls = '') => `<div class="l ${cls}"><span>${a}</span><span>${b}</span></div>`;
@@ -1861,20 +1876,7 @@ async function imprimirTermica(p) {
       ${texto ? `<div class="d ob">Obs: ${esc(texto)}</div>` : ''}${imagem ? '<div class="d ob">* Imagem de referência anexada (ver no sistema)</div>' : ''}</div>`;
   }).join('<div class="sep fino"></div>');
   const fixadas = (p.observacoes || []).filter(o => o.fixada);
-  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Pedido ${esc(p.codigo)}</title><style>${CSS_TERMICA}
-    .c { text-align: center; } .loja { font-size: 19px; font-weight: 900; } .sub { font-size: 13px; }
-    .cod { font-size: 28px; font-weight: 900; letter-spacing: 1px; margin-top: 4px; }
-    .sep { border-top: 2px solid #000; margin: 7px 0; } .sep.fino { border-top-width: 1px; margin: 5px 0; } .sep.forte { border-top-width: 3px; }
-    .ret { border: 3px solid #000; padding: 5px 6px; margin: 7px 0; text-align: center; }
-    .ret small { display: block; font-size: 13px; letter-spacing: 1px; } .ret b { display: block; font-size: 20px; line-height: 1.2; }
-    .l { display: flex; justify-content: space-between; gap: 8px; } .l > span:last-child { white-space: nowrap; text-align: right; }
-    .t { font-size: 15px; font-weight: 900; letter-spacing: 1px; margin: 2px 0 4px; }
-    .it .n { font-size: 15px; font-weight: 900; } .it .d { font-size: 13px; margin-left: 10px; } .it .ob, .it .kit { font-weight: 900; }
-    .tot { font-size: 18px; font-weight: 900; } .falta { font-size: 17px; font-weight: 900; }
-    .box { border: 2px solid #000; padding: 4px 6px; margin: 6px 0; font-size: 13px; } .box b { display: block; }
-    .pix .k { display: block; font-size: 19px; font-weight: 900; letter-spacing: .5px; }
-    .pe { text-align: center; font-size: 13px; margin-top: 8px; }
-  </style></head><body>
+  return `<section class="cupom">
     <div class="c loja">${esc(loja.nome_loja || 'Rita Bolos')}</div>
     <div class="c sub">${esc(loja.slogan || 'Bolos e sobremesas')}</div>
     <div class="c cod">${esc(p.codigo)}</div>
@@ -1894,9 +1896,17 @@ async function imprimirTermica(p) {
     ${fixadas.length ? `<div class="box"><b>Anotações</b>${fixadas.map(o => esc(o.texto)).join('<br>')}</div>` : ''}
     ${falta > 0 && pix ? `<div class="box pix"><b>Pix${pix.tipo ? ` (${esc(pix.tipo)})` : ''}</b><span class="k">${esc(pix.chave)}</span>${esc(pix.nome)}</div>` : ''}
     <div class="pe">${loja.whatsapp_exibicao ? 'WhatsApp ' + esc(loja.whatsapp_exibicao) + '<br>' : ''}Impresso em ${esc(dataHora(new Date().toISOString()))}</div>
-  </body></html>`;
-  return mandarParaTermica(html);
+  </section>`;
 }
+/** Um ou mais pedidos completos na térmica, numa impressão só (uma janela de impressão), na ordem recebida. */
+async function imprimirCupons(pedidos) {
+  const cfg = await configLoja(), loja = cfg || {}, pix = pixDe(cfg);
+  await mapaKitsLoja();
+  const titulo = pedidos.length === 1 ? `Pedido ${pedidos[0].codigo}` : `${pedidos.length} pedidos`;
+  return mandarParaTermica(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(titulo)}</title><style>${CSS_TERMICA}${CSS_CUPOM}
+  </style></head><body>${pedidos.map(p => cupomTermica(p, loja, pix)).join('')}</body></html>`);
+}
+function imprimirTermica(p) { return imprimirCupons([p]); }
 /** Uma impressão de cada vez (as automáticas podem chegar juntas). Resolve quando a impressão foi enviada. */
 let filaTermica = Promise.resolve();
 function mandarParaTermica(html) {
@@ -2414,40 +2424,69 @@ async function pedidosComItens(linhas) {
   return linhas.map(p => ({ ...p, itens: porPedido.get(p.id) || [] }));
 }
 
-/* ---- Etiquetas de vários pedidos de uma vez (Pedidos e Hoje) ---- */
-async function modalEtiquetasLote(linhas, titulo = 'Imprimir etiquetas') {
+/* ---- Imprimir vários pedidos de uma vez (Pedidos e Hoje): o cupom de 80 mm ou as etiquetas ---- */
+const OPCOES_LOTE = [
+  ['completo', 'Pedido completo · 80 mm', 'um por pedido, igual ao botão Imprimir 80 mm'],
+  ['producao', 'Etiqueta de produção', 'uma por bolo: cliente, horário, recheio, massa, formato e topo'],
+  ['pedido', 'Etiqueta do pedido', 'uma por pedido: código, cliente, itens e pagamento']
+];
+const CHAVE_LOTE = 'ritabolos.lote';
+/** O que saiu da última vez neste aparelho; na primeira, o cupom de 80 mm (ou a etiqueta, se a Niimbot estiver em uso aqui). */
+function tipoLote() {
+  try { const t = localStorage.getItem(CHAVE_LOTE); if (OPCOES_LOTE.some(([v]) => v === t)) return t; } catch (e) { /* sem armazenamento */ }
+  return confNiimbot().usar ? (confNiimbot().conteudo || 'producao') : 'completo';
+}
+/** Os pedidos completos, como na gaveta (com as anotações fixadas), alguns de cada vez e na ordem pedida. */
+async function pedidosCompletos(ids, aoAvancar) {
+  const out = [];
+  for (let i = 0; i < ids.length; i += 6) {
+    out.push(...await Promise.all(ids.slice(i, i + 6).map(id => api.admin.pedidos.obter(id))));
+    aoAvancar?.(Math.min(ids.length, i + 6), ids.length);
+  }
+  return out.filter(Boolean);
+}
+async function modalImprimirLote(linhas, titulo = 'Imprimir pedidos') {
   if (!linhas.length) { toast('Não há pedidos nesta lista para imprimir.'); return; }
   let pedidos;
   try { [pedidos] = await Promise.all([pedidosComItens(linhas), mapaKitsLoja()]); } catch (e) { erroToast(e); return; }
   pedidos.sort((a, b) => String(a.data_retirada).localeCompare(String(b.data_retirada)) || String(a.hora_retirada || '99').localeCompare(String(b.hora_retirada || '99')) || a.cliente_nome.localeCompare(b.cliente_nome));
-  let conteudo = confNiimbot().conteudo || 'producao', parar = false, imprimindo = false;
+  let tipo = tipoLote(), parar = false, imprimindo = false;
   const naNiimbot = confNiimbot().usar;
   const marcados = new Set(pedidos.filter(p => !p.finalizado && p.status !== 'cancelado').map(p => p.id));   // retirados e cancelados começam desmarcados
   const variosDias = new Set(pedidos.map(p => p.data_retirada)).size > 1;
   const m = abrirModal({
     titulo, largo: true,
-    corpo: `<div class="lote-conteudo" role="radiogroup" aria-label="O que sai em cada etiqueta">${CONTEUDOS_ETIQUETA.map(([v, t]) => `<label class="est-tipo"><input type="radio" name="loteCont" value="${v}" ${v === conteudo ? 'checked' : ''}><span><b>${esc(t.split(':')[0])}</b><small>${esc(t.split(':')[1].trim())}</small></span></label>`).join('')}</div>
+    corpo: `<div class="lote-conteudo" role="radiogroup" aria-label="O que imprimir">${OPCOES_LOTE.map(([v, t, d]) => `<label class="est-tipo"><input type="radio" name="loteCont" value="${v}" ${v === tipo ? 'checked' : ''}><span><b>${esc(t)}</b><small>${esc(d)}</small></span></label>`).join('')}</div>
       <div class="lote-barra"><button type="button" class="link" data-lote-todos>Marcar todos</button><button type="button" class="link" data-lote-nenhum>Desmarcar todos</button><span id="loteConta"></span></div>
       <div class="lote-lista" id="loteLista">${pedidos.map(p => `<label class="lote-it ${p.status === 'cancelado' ? 'cancelado' : ''}"><input type="checkbox" data-lote="${esc(p.id)}" ${marcados.has(p.id) ? 'checked' : ''}>
         <span class="lote-q">${variosDias ? `<small>${esc(dataCurta(p.data_retirada))}</small>` : ''}${p.hora_retirada ? esc(hora(p.hora_retirada)) : '—'}</span>
         <span class="lote-n"><b>${esc(p.cliente_nome)}</b><small>${esc(p.codigo)} · ${esc(p.status_nome || p.status)}</small></span>
         <em data-lote-n="${esc(p.id)}"></em></label>`).join('')}</div>
-      <p class="secao-t">Prévia da primeira etiqueta</p><div class="nb-previa" id="lotePrevia"></div>
-      <div class="lote-prog" id="loteProg" hidden><div class="lote-trilho"><i></i></div><span aria-live="polite"></span></div>
-      ${naNiimbot ? '' : '<p class="ajuste-dica" style="margin:8px 0 0">Sem a Niimbot ligada neste aparelho (Minha conta), as etiquetas saem na térmica de 80 mm, uma por página.</p>'}`,
+      <div data-so-etiqueta><p class="secao-t">Prévia da primeira etiqueta</p><div class="nb-previa" id="lotePrevia"></div>
+        ${naNiimbot ? '' : '<p class="ajuste-dica" style="margin:8px 0 0">Sem a Niimbot ligada neste aparelho (Minha conta), as etiquetas saem na térmica de 80 mm, uma por página.</p>'}</div>
+      <p class="ajuste-dica" data-so-cupom style="margin:12px 0 0">Sai o cupom de cada pedido, igual ao do botão Imprimir 80 mm, na ordem da lista e numa impressão só. Cada pedido começa numa página nova: se a térmica estiver configurada para cortar a cada página, ela corta entre um e outro.</p>
+      <div class="lote-prog" id="loteProg" hidden><div class="lote-trilho"><i></i></div><span aria-live="polite"></span></div>`,
     rodape: `<button type="button" class="btn ghost" data-fechar>Fechar</button><button type="button" class="btn primary" data-ok>${ic('imprimir')}<span>Imprimir</span></button>`
   });
-  const etiquetas = () => pedidos.filter(p => marcados.has(p.id)).flatMap(p => etiquetasDoPedido(p, conteudo));
+  const ehCupom = () => tipo === 'completo';
+  const selecionados = () => pedidos.filter(p => marcados.has(p.id));
+  const etiquetas = () => (ehCupom() ? [] : selecionados().flatMap(p => etiquetasDoPedido(p, tipo)));
   const atualizar = () => {
+    const cupom = ehCupom();
+    m.$('[data-so-etiqueta]').hidden = cupom; m.$('[data-so-cupom]').hidden = !cupom;
     pedidos.forEach(p => {
-      const n = etiquetasDoPedido(p, conteudo).length, bolo = conteudo !== 'pedido' && p.itens.some(ehBoloProducao);
-      const em = m.$(`[data-lote-n="${CSS.escape(p.id)}"]`);
-      if (em) em.textContent = conteudo === 'pedido' ? '1 etiqueta' : bolo ? `${n} ${n === 1 ? 'bolo' : 'bolos'}` : 'sem bolo: 1 do pedido';
+      const em = m.$(`[data-lote-n="${CSS.escape(p.id)}"]`); if (!em) return;
+      if (cupom) { const n = p.itens.length; em.textContent = `${n} ${n === 1 ? 'item' : 'itens'}`; return; }
+      const n = etiquetasDoPedido(p, tipo).length, bolo = tipo !== 'pedido' && p.itens.some(ehBoloProducao);
+      em.textContent = tipo === 'pedido' ? '1 etiqueta' : bolo ? `${n} ${n === 1 ? 'bolo' : 'bolos'}` : 'sem bolo: 1 do pedido';
     });
-    const n = etiquetas().length, sel = marcados.size;
-    m.$('#loteConta').textContent = `${sel} ${sel === 1 ? 'pedido marcado' : 'pedidos marcados'} · ${n} ${n === 1 ? 'etiqueta' : 'etiquetas'}`;
+    const sel = marcados.size, n = cupom ? sel : etiquetas().length;
+    const marc = `${sel} ${sel === 1 ? 'pedido marcado' : 'pedidos marcados'}`, unid = n === 1 ? 'etiqueta' : 'etiquetas';
+    m.$('#loteConta').textContent = cupom ? marc : `${marc} · ${n} ${unid}`;
     const bt = m.$('[data-ok]'); bt.disabled = !n || imprimindo;
-    bt.querySelector('span').textContent = imprimindo ? 'Imprimindo…' : `Imprimir ${n} ${n === 1 ? 'etiqueta' : 'etiquetas'}${naNiimbot ? ' na Niimbot' : ''}`;
+    bt.querySelector('span').textContent = imprimindo ? 'Imprimindo…'
+      : cupom ? `Imprimir ${n} ${n === 1 ? 'pedido' : 'pedidos'} em 80 mm` : `Imprimir ${n} ${unid}${naNiimbot ? ' na Niimbot' : ''}`;
+    if (cupom) return;
     const prim = etiquetas()[0], box = m.$('#lotePrevia');
     if (!prim) { box.textContent = 'Marque pelo menos um pedido.'; return; }
     const { W, H, pxmm } = medidasEtiqueta(niimbotConectada() ? niim.client.getModelMetadata() : null);
@@ -2456,18 +2495,38 @@ async function modalEtiquetasLote(linhas, titulo = 'Imprimir etiquetas') {
     box.replaceChildren(c);
   };
   m.el.addEventListener('change', e => {
-    if (e.target.name === 'loteCont') { conteudo = e.target.value; salvarConfNiimbot({ conteudo }); }
+    if (e.target.name === 'loteCont') {
+      tipo = e.target.value;
+      try { localStorage.setItem(CHAVE_LOTE, tipo); } catch (err) { /* só nesta visita */ }
+      if (!ehCupom()) salvarConfNiimbot({ conteudo: tipo });   // a etiqueta escolhida vale também para o botão Etiqueta
+    }
     if (e.target.dataset.lote) { if (e.target.checked) marcados.add(e.target.dataset.lote); else marcados.delete(e.target.dataset.lote); }
     atualizar();
   });
   m.$('[data-lote-todos]').addEventListener('click', () => { pedidos.forEach(p => marcados.add(p.id)); m.$$('[data-lote]').forEach(c => { c.checked = true; }); atualizar(); });
   m.$('[data-lote-nenhum]').addEventListener('click', () => { marcados.clear(); m.$$('[data-lote]').forEach(c => { c.checked = false; }); atualizar(); });
   atualizar();
+  const prog = m.$('#loteProg'), barra = prog.querySelector('i'), txt = prog.querySelector('span');
+  const avancar = (feitas, total) => { barra.style.width = `${Math.round(feitas / total * 100)}%`; txt.textContent = `Impressa${feitas === 1 ? '' : 's'} ${feitas} de ${total}`; };
+  // a impressão leva o foco para o quadro escondido da térmica: volta para a janela (o Esc fecha de novo)
+  const voltarFoco = () => { if (m.el.isConnected) m.$('.modal-f [data-fechar]')?.focus(); };
+  // cupom de 80 mm: busca os pedidos completos (com as anotações) e manda tudo numa impressão só
+  const imprimirCupomLote = async () => {
+    const ids = selecionados().map(p => p.id); if (!ids.length) return;
+    imprimindo = true; atualizar();
+    prog.hidden = false; barra.style.width = '0%'; txt.textContent = `Preparando ${ids.length} ${ids.length === 1 ? 'pedido' : 'pedidos'}…`;
+    try {
+      const completos = await pedidosCompletos(ids, (f, t) => { barra.style.width = `${Math.round(f / t * 90)}%`; });
+      await imprimirCupons(completos);
+      barra.style.width = '100%';
+      txt.textContent = `Enviado${completos.length === 1 ? '' : 's'} ${completos.length} ${completos.length === 1 ? 'pedido' : 'pedidos'} para a térmica.`;
+    } catch (e) { erroToast(e); txt.textContent = e.message || 'Não deu para imprimir.'; }
+    finally { imprimindo = false; atualizar(); voltarFoco(); }
+  };
   m.$('[data-ok]').addEventListener('click', async () => {
     if (imprimindo) return;
+    if (ehCupom()) { await imprimirCupomLote(); return; }
     const lista = etiquetas(); if (!lista.length) return;
-    const prog = m.$('#loteProg'), barra = prog.querySelector('i'), txt = prog.querySelector('span');
-    const avancar = (feitas, total) => { barra.style.width = `${Math.round(feitas / total * 100)}%`; txt.textContent = `Impressa${feitas === 1 ? '' : 's'} ${feitas} de ${total}`; };
     imprimindo = true; parar = false; atualizar();
     prog.hidden = false; avancar(0, lista.length); txt.textContent = `Enviando ${lista.length} ${lista.length === 1 ? 'etiqueta' : 'etiquetas'}…`;
     const fechar = m.$('.modal-f [data-fechar]'); fechar.textContent = 'Parar';
@@ -2483,7 +2542,7 @@ async function modalEtiquetasLote(linhas, titulo = 'Imprimir etiquetas') {
       }
     } catch (e) { erroToast(e); txt.textContent = e.message || 'Não deu para imprimir.'; }
     finally {
-      imprimindo = false; fechar.removeEventListener('click', pararClique, true); fechar.textContent = 'Fechar'; atualizar();
+      imprimindo = false; fechar.removeEventListener('click', pararClique, true); fechar.textContent = 'Fechar'; atualizar(); voltarFoco();
     }
   });
 }

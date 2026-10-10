@@ -984,7 +984,7 @@ a.chip { text-decoration: none; }
 .nb-ind.off .nb-ponto { background: var(--rose-600); }
 
 /* ---------- Etiquetas em lote ---------- */
-.lote-conteudo { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.lote-conteudo { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
 @media (max-width: 560px) { .lote-conteudo { grid-template-columns: 1fr; } }
 .lote-barra { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; font-size: 13px; }
 .lote-barra #loteConta { margin-left: auto; color: var(--ink-2); font-weight: 600; }
