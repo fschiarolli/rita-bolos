@@ -162,7 +162,7 @@ export function criarSupabaseDemo(opcoes = {}) {
     pagos.forEach(t => { t.custo_unitario = precoTopo(b.topos_precos, t.titulo); });
     const soma = r2(pagos.reduce((s, t) => s + t.custo_unitario * t.quantidade, 0));
     const pg = { id: novoId(), pago_em: hojeSP(-8), valor: soma, valor_topos: soma, qtd_topos: pagos.length, forma: 'pix', observacao: null,
-      criado_por: USUARIO_DEMO.id, autor_nome: 'Rita', criado_em: em(-8) };
+      criado_por: USUARIO_DEMO.id, autor_nome: 'Rita', criado_em: em(-8), confirmado_em: em(-7.9), confirmado_por: PRODUTORA_DEMO.nome };   // quem faz já confirmou
     b.topos_pagamentos.push(pg);
     pagos.forEach(t => { t.pagamento_id = pg.id; });
     b.topos_pedidos.forEach(t => { if (!t.custo_manual && !t.pagamento_id) t.custo_unitario = precoTopo(b.topos_precos, t.titulo); });
@@ -345,8 +345,9 @@ export function criarSupabaseDemo(opcoes = {}) {
     // gastos com topos: a tabela de preços quem produz só lê; pagamentos, só a Administração (e criados só pela função)
     if (tabela === 'topos_precos' && (q.op === 'select' ? !podeTopos() : !adminLoja()))
       return q.op === 'select' ? finalizar([], q, 0) : erro('new row violates row-level security policy', '42501');
-    if (tabela === 'topos_pagamentos') {
-      if (!adminLoja()) return q.op === 'select' ? finalizar([], q, 0) : erro('new row violates row-level security policy', '42501');
+    if (tabela === 'topos_pagamentos') {   // ver: a Administração e quem produz; apagar: só a Administração
+      if (q.op === 'select' && !podeTopos()) return finalizar([], q, 0);
+      if (q.op !== 'select' && !adminLoja()) return q.op === 'delete' ? finalizar([], q, 0) : erro('new row violates row-level security policy', '42501');
       if (q.op === 'insert' || q.op === 'update') return erro('new row violates row-level security policy', '42501');
     }
     if (TABELAS_ESTOQUE.includes(tabela)) {   // estoque: só a Administração; movimentos só pelas funções
@@ -782,11 +783,21 @@ export function criarSupabaseDemo(opcoes = {}) {
       const valor = r2(p_valor ?? soma);
       if (!(valor > 0)) throw 'Informe o valor pago.';
       const pg = { id: novoId(), pago_em: p_pago_em || hojeSP(), valor, valor_topos: soma, qtd_topos: topos.length, forma: String(p_forma || '').trim() || 'pix',
-        observacao: String(p_observacao || '').trim() || null, criado_por: usuarioId(), autor_nome: db.administradores.find(a => a.user_id === usuarioId())?.nome || null, criado_em: agora() };
+        observacao: String(p_observacao || '').trim() || null, criado_por: usuarioId(), autor_nome: db.administradores.find(a => a.user_id === usuarioId())?.nome || null, criado_em: agora(),
+        confirmado_em: null, confirmado_por: null };
       db.topos_pagamentos.push(pg);
       topos.forEach(t => { t.pagamento_id = pg.id; });
       salvar(); emitir('UPDATE', topos[0], null, 'topos_pedidos');
       return pg;
+    },
+    confirmar_pagamento_topos: ({ p_pagamento_id }) => {
+      const eu = (db.produtores_personalizados || []).find(p => p.user_id === usuarioId() && p.ativo);
+      if (!eu) throw ['Só quem faz os topos confirma o recebimento.', '42501'];
+      const pg = (db.topos_pagamentos || []).find(p => p.id === p_pagamento_id);
+      if (!pg) throw 'Pagamento não encontrado. Atualize a tela.';
+      pg.confirmado_em = pg.confirmado_em || agora(); pg.confirmado_por = pg.confirmado_por || eu.nome;
+      salvar();
+      return clone(pg);
     }
   });
 

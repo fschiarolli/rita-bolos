@@ -922,6 +922,22 @@ body.tv-topos .tq-meta { font-size: 14px; }
 .gt-pg-t small { font-size: 12.5px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gt-pg > .ic { width: 16px; height: 16px; color: var(--ink-3); }
 .gt-nada { margin: 0; font-size: 13.5px; color: var(--ink-3); }
+.gt-pg > .tag { white-space: nowrap; }
+.gt-pg:has(> .tag) { grid-template-columns: 50px minmax(0, 1fr) auto auto; }
+/* quem faz os topos (aba Financeiro): pagamento novo para confirmar, contador na aba e a tabela só para consulta */
+.vista-sel .vs-n { min-width: 18px; height: 18px; padding: 0 5px; margin-left: 2px; border-radius: 999px; display: inline-grid; place-items: center; background: var(--rose-600); color: #fff; font-size: 11px; font-weight: 700; line-height: 1; }
+.vista-sel .vs-n[hidden] { display: none; }
+.gt-novo { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; padding: 14px 16px; border-radius: var(--r); background: var(--teal-50); border: 1px solid rgba(var(--teal-rgb), .35); box-shadow: var(--shadow-sm); }
+.gt-novo > .ic { width: 38px; height: 38px; padding: 8px; border-radius: 12px; background: var(--teal); color: var(--on-teal); flex: none; }
+.gt-novo > div { flex: 1 1 220px; display: grid; gap: 2px; min-width: 0; }
+.gt-novo strong { font-family: var(--font-display); font-size: 19px; letter-spacing: -.01em; }
+.gt-novo small { font-size: 13px; color: var(--ink-2); }
+.gt-ro { display: grid; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+.gt-ro > div { display: flex; justify-content: space-between; gap: 12px; padding: 11px 14px; border-top: 1px solid var(--line); }
+.gt-ro > div:first-child { border-top: 0; }
+.gt-ro b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+span.gt-l-v { cursor: default; }
+span.gt-l-v:hover { background: none; }
 /* modais: pagamento, valor de um topo, tabela de preços e o formulário do pedido de topo */
 .gp-dif { margin: -6px 0 14px; color: var(--gold); font-weight: 600; }
 .gt-feito { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: var(--r-sm); background: var(--teal-50); }

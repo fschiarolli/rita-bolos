@@ -585,11 +585,15 @@ export function criarApi(supabase, opcoes = {}) {
           salvar: (lista) => rpc('salvar_precos_topos', { p_precos: lista })
         },
         pagamentos: {
-          /** Pagamentos a quem faz, do mais recente para o mais antigo. de / ate (YYYY-MM-DD): pela data do pagamento. */
-          async listar({ de, ate, limite } = {}) {
+          /**
+           * Pagamentos a quem faz, do mais recente para o mais antigo (a Administração e quem produz veem).
+           * de / ate (YYYY-MM-DD): pela data do pagamento. naoConfirmados: os que quem faz ainda não confirmou que recebeu.
+           */
+          async listar({ de, ate, limite, naoConfirmados } = {}) {
             let q = supabase.from('topos_pagamentos').select('*');
             if (de) q = q.gte('pago_em', de);
             if (ate) q = q.lte('pago_em', ate);
+            if (naoConfirmados) q = q.is('confirmado_em', null);
             q = q.order('pago_em', { ascending: false }).order('criado_em', { ascending: false });
             if (limite) q = q.limit(limite);
             return conferir(await q, 'pagamentos dos topos');
@@ -602,7 +606,9 @@ export function criarApi(supabase, opcoes = {}) {
           async remover(id) {
             conferir(await supabase.from('topos_pagamentos').delete().eq('id', id), 'pagamento');
             return true;
-          }
+          },
+          /** Quem faz os topos confirma que recebeu (só ela). */
+          confirmar: (id) => rpc('confirmar_pagamento_topos', { p_pagamento_id: id })
         },
         /** Avisa quando um pedido de topo é criado, alterado ou apagado. Devolve uma função para parar de ouvir. */
         aoMudar(callback, aoEstado) {

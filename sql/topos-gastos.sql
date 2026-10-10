@@ -10,7 +10,9 @@
 --    com a tabela. Mudou a tabela? Os topos ainda não pagos e sem valor digitado passam a seguir a tabela nova.
 -- 3. Pagamentos a quem faz (topos_pagamentos): registrar o pagamento marca os topos escolhidos como pagos
 --    (pagamento_id). Apagar o pagamento desfaz: os topos voltam para "a pagar".
--- Só a Administração vê os pagamentos, registra e muda valores. Quem produz não mexe em valor nem pagamento.
+-- 4. Acompanhamento de quem faz (aba Financeiro): ela vê o que tem a receber, os pagamentos e a tabela de preços,
+--    e confirma que recebeu cada pagamento (confirmado_em).
+-- Só a Administração registra pagamentos e muda valores. Quem produz vê, mas não mexe em valor nem pagamento.
 
 do $$
 begin
@@ -39,7 +41,7 @@ create unique index if not exists topos_precos_nome_idx on topos_precos (topos_c
 alter table topos_precos enable row level security;
 drop policy if exists topos_precos_ler on topos_precos;
 drop policy if exists topos_precos_admin on topos_precos;
--- quem produz lê os nomes (sugestões do "O que fazer"); gravar: só a Administração
+-- quem produz lê a tabela (os valores combinados e as sugestões do "O que fazer"); gravar: só a Administração
 create policy topos_precos_ler on topos_precos for select to authenticated using (pode_topos());
 create policy topos_precos_admin on topos_precos for all to authenticated using (eh_admin_loja()) with check (eh_admin_loja());
 
@@ -56,13 +58,17 @@ create table if not exists topos_pagamentos (
   criado_em   timestamptz not null default now()
 );
 create index if not exists topos_pagamentos_data_idx on topos_pagamentos (pago_em desc, criado_em desc);
+-- quem faz confirma que recebeu (pela função confirmar_pagamento_topos)
+alter table topos_pagamentos add column if not exists confirmado_em timestamptz;
+alter table topos_pagamentos add column if not exists confirmado_por text;
 
 alter table topos_pagamentos enable row level security;
 drop policy if exists topos_pagamentos_ler on topos_pagamentos;
 drop policy if exists topos_pagamentos_apagar on topos_pagamentos;
-create policy topos_pagamentos_ler on topos_pagamentos for select to authenticated using (eh_admin_loja());
+-- ver: a Administração e quem produz (o acompanhamento dela); apagar (desfazer): só a Administração
+create policy topos_pagamentos_ler on topos_pagamentos for select to authenticated using (pode_topos());
 create policy topos_pagamentos_apagar on topos_pagamentos for delete to authenticated using (eh_admin_loja());
--- criar: só pela função registrar_pagamento_topos (abaixo)
+-- criar e confirmar: só pelas funções registrar_pagamento_topos e confirmar_pagamento_topos (abaixo)
 
 -- valor em cada pedido de topo
 alter table topos_pedidos add column if not exists custo_unitario numeric(10, 2) check (custo_unitario >= 0);
@@ -240,3 +246,30 @@ end;
 $$;
 revoke all on function registrar_pagamento_topos(uuid[], numeric, text, date, text) from public, anon;
 grant execute on function registrar_pagamento_topos(uuid[], numeric, text, date, text) to authenticated;
+
+-- ---------------------------------------------------------------- funções de quem faz os topos
+/** Quem faz os topos confirma que recebeu o pagamento (fica registrado quando e por quem; confirmar de novo não muda nada). */
+create or replace function confirmar_pagamento_topos(p_pagamento_id uuid)
+returns topos_pagamentos
+language plpgsql security definer set search_path = public as $$
+declare
+  v_nome text;
+  v_pgto topos_pagamentos;
+begin
+  select p.nome into v_nome from produtores_personalizados p where p.user_id = auth.uid() and p.ativo;
+  if v_nome is null then
+    raise exception 'Só quem faz os topos confirma o recebimento.' using errcode = '42501';
+  end if;
+  update topos_pagamentos
+     set confirmado_em = coalesce(confirmado_em, now()),
+         confirmado_por = coalesce(confirmado_por, v_nome)
+   where id = p_pagamento_id
+  returning * into v_pgto;
+  if not found then
+    raise exception 'Pagamento não encontrado. Atualize a tela.';
+  end if;
+  return v_pgto;
+end;
+$$;
+revoke all on function confirmar_pagamento_topos(uuid) from public, anon;
+grant execute on function confirmar_pagamento_topos(uuid) to authenticated;

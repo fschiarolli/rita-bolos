@@ -3987,24 +3987,28 @@ function erroTopos(e) {
     <p>${semTabela ? 'Rode no Supabase o arquivo <code>sql/topos.sql</code> (SQL Editor). Depois, é só voltar aqui.' : esc(e?.message || 'Tente de novo.')}</p></div>`;
 }
 
-/** Quadro, Lista ou Gastos (o que pagar a quem faz: só a Administração). */
+/** Quadro, Lista ou o dinheiro dos topos: "Gastos" para a Administração (o que pagar), "Financeiro" para quem faz (o que receber). */
 const vistaTopos = () => {
   if (rotaAtual === 'topos/lista') return 'lista';
-  return rotaAtual === 'topos/gastos' && isAdmin() ? 'gastos' : 'quadro';
+  return ['topos/gastos', 'topos/financeiro'].includes(rotaAtual) ? 'gastos' : 'quadro';
 };
 async function telaTopos(el) {
-  const vista = vistaTopos(), lista = vista === 'lista', gastos = vista === 'gastos';
+  const vista = vistaTopos(), lista = vista === 'lista', gastos = vista === 'gastos', prod = ehProdutor();
   const botao = (v, href, icone, rot) => `<a class="btn sm ${vista === v ? 'primary' : 'ghost'}" href="${href}" ${vista === v ? 'aria-current="page"' : ''}>${ic(icone)}${rot}</a>`;
-  const acoes = `<div class="vista-sel" role="group" aria-label="Ver como">${botao('quadro', '#topos', 'painel', 'Quadro')}${botao('lista', '#topos/lista', 'pedidos', 'Lista')}${isAdmin() ? botao('gastos', '#topos/gastos', 'moeda', 'Gastos') : ''}</div>
+  // quem faz: o contador de pagamentos para confirmar fica na aba Financeiro
+  const dinheiro = prod ? botao('gastos', '#topos/financeiro', 'moeda', 'Financeiro<span class="vs-n" data-badge-fin hidden></span>') : botao('gastos', '#topos/gastos', 'moeda', 'Gastos');
+  const acoes = `<div class="vista-sel" role="group" aria-label="Ver como">${botao('quadro', '#topos', 'painel', 'Quadro')}${botao('lista', '#topos/lista', 'pedidos', 'Lista')}${dinheiro}</div>
     ${vista === 'quadro' ? `<button type="button" class="btn ghost" data-topos-tv>${ic('tv')}Tela cheia</button>` : ''}
-    ${gastos ? `<button type="button" class="btn ghost" data-gt-precos>${ic('editar')}Tabela de preços</button>` : `<button type="button" class="btn primary" data-topo-novo>${ic('mais')}Novo pedido</button>`}`;
+    ${gastos ? `<button type="button" class="btn ghost" data-gt-precos>${ic(prod ? 'pedidos' : 'editar')}Tabela de preços</button>` : `<button type="button" class="btn primary" data-topo-novo>${ic('mais')}Novo pedido</button>`}`;
+  let subtitulo = 'Topos de bolo e personalizados, do pedido à entrega.';
+  if (gastos) subtitulo = prod ? 'O que você tem a receber pelos topos, os pagamentos e os ganhos de cada mês.' : 'O que pagar a quem faz os topos e o gasto de cada mês.';
   const chips = [['abertos', 'Em aberto'], ...TOPO_STATUS.map(s => [s.codigo, s.nome, s.cor]), ['todos', 'Todos']];
   const esqueleto = {
     quadro: '<div class="tq">' + '<div class="skel" style="height:320px"></div>'.repeat(4) + '</div>',
     lista: '<div class="skel" style="height:280px"></div>',
     gastos: '<div class="skel" style="height:200px;margin-bottom:18px"></div><div class="cols"><div class="skel" style="height:320px"></div><div class="skel" style="height:320px"></div></div>'
   }[vista];
-  el.innerHTML = cabecalho('Topos e personalizados', acoes, gastos ? 'O que pagar a quem faz os topos e o gasto de cada mês.' : 'Topos de bolo e personalizados, do pedido à entrega.') + `
+  el.innerHTML = cabecalho('Topos e personalizados', acoes, subtitulo) + `
     <div class="tq-tvbar" aria-hidden="true"><strong>Topos e personalizados</strong><span id="tqRelogio"></span>
       <button type="button" class="btn sm ghost" data-topos-tv-sair>${ic('x')}Sair da tela cheia</button></div>
     ${lista ? `<div class="filtros">
@@ -4252,7 +4256,7 @@ async function abrirTopo(id, depois) {
         ${t.cliente_nome || t.cliente_telefone ? `<dt>Cliente</dt><dd>${esc(t.cliente_nome || '')}${t.cliente_telefone ? `${t.cliente_nome ? ' · ' : ''}<a href="tel:${esc(String(t.cliente_telefone).replace(/[^\d+]/g, ''))}">${esc(formatarTel(t.cliente_telefone) || t.cliente_telefone)}</a>` : ''}</dd>` : ''}
         ${t.pedido_codigo ? `<dt>Pedido da loja</dt><dd>${isAdmin() && t.pedido_id ? `<button type="button" class="link" data-topo-pedido="${esc(t.pedido_id)}">${esc(t.pedido_codigo)}</button>` : esc(t.pedido_codigo)}</dd>` : ''}
         <dt>Valor do cliente</dt><dd>${Number(t.valor) > 0 ? `${R(t.valor)} · ${t.pago ? 'pago' : 'a receber'}` : '—'}</dd>
-        ${isAdmin() && 'custo_unitario' in t ? `<dt>Pagar a quem faz</dt><dd>${custoFicha(t)}</dd>` : ''}
+        ${'custo_unitario' in t ? `<dt>${ehProdutor() ? 'Você recebe' : 'Pagar a quem faz'}</dt><dd>${custoFicha(t)}</dd>` : ''}
       </dl>
       <p class="secao-t">Histórico</p>
       <ul class="hist">${hist.slice().reverse().map(h => `<li style="--c:${esc(topoStatus(h.status_novo).cor)}"><b>${esc(topoStatus(h.status_novo).nome)}</b>
@@ -4408,6 +4412,7 @@ async function atualizarBadgeTopos() {
   try {
     const n = (await api.admin.topos.listar({ status: 'novo' })).length;
     $$('[data-badge-topos]').forEach(b => { b.textContent = n > 99 ? '99+' : n; b.hidden = !n; b.title = `${n} pedido(s) de topo novo(s)`; });
+    atualizarBadgeFinanceiro();   // quem faz: pagamentos para confirmar
     return true;
   } catch (e) { return false; }
 }
@@ -4487,7 +4492,7 @@ const somaCusto = l => Math.round(l.reduce((s, t) => s + (custoTopo(t) || 0), 0)
 const custoConta = t => (t.quantidade > 1 ? `${t.quantidade} × ${R(t.custo_unitario)} = ${R(custoTopo(t))}` : R(t.custo_unitario));
 const ordemEntrega = (a, b) => a.data_entrega.localeCompare(b.data_entrega) || a.numero - b.numero;
 /** O banco ainda não tem o sql/topos-gastos.sql. */
-const semGastos = e => /topos_precos|topos_pagamentos|custo_unitario|custo_manual|pagamento_id|salvar_precos_topos|registrar_pagamento_topos|42P01|42703|PGRST20[2-5]|schema cache/i.test(`${e?.message} ${e?.codigo}`);
+const semGastos = e => /topos_precos|topos_pagamentos|custo_unitario|custo_manual|pagamento_id|confirmado_em|salvar_precos_topos|registrar_pagamento_topos|confirmar_pagamento_topos|42P01|42703|PGRST20[2-5]|schema cache/i.test(`${e?.message} ${e?.codigo}`);
 async function carregarPrecosTopos() {
   try { precosTopos = await api.admin.topos.precos.listar(); gastosNoBanco = true; }
   catch (e) { if (!semGastos(e)) throw e; precosTopos = []; gastosNoBanco = false; }
@@ -4501,58 +4506,69 @@ async function quemFazTopos() {
   return { nome, primeiro: nome.split(/\s+/)[0] || '', numero: ct.numero || '' };
 }
 const paraQuem = q => (q?.primeiro ? `para ${q.primeiro}` : 'para quem faz os topos');
-/** Na ficha do topo: o valor e se já foi pago. */
+/** Na ficha do topo: o valor e a situação (a Administração paga; quem faz recebe). */
 function custoFicha(t) {
-  if (t.custo_unitario == null) return '<span class="tag pend">Sem valor</span>';
+  const prod = ehProdutor();
+  if (t.custo_unitario == null) return prod ? '<span class="tag cinza">A combinar</span>' : '<span class="tag pend">Sem valor</span>';
   let sit = '<span class="tag cinza">Quando ficar pronto</span>';
-  if (t.pagamento_id) sit = `<span class="tag pago">${ic('ok')}Pago</span>`;
-  else if (FEITOS_TOPO.includes(t.status)) sit = '<span class="tag sinal">A pagar</span>';
+  if (t.pagamento_id) sit = `<span class="tag pago">${ic('ok')}${prod ? 'Recebido' : 'Pago'}</span>`;
+  else if (FEITOS_TOPO.includes(t.status)) sit = `<span class="tag sinal">${prod ? 'A receber' : 'A pagar'}</span>`;
   else if (t.status === 'cancelado') sit = '';
   return `${esc(custoConta(t))} ${sit}`;
 }
 
+/* A mesma tela para os dois lados: a Administração vê "Gastos" (o que pagar) e quem faz os topos vê "Financeiro"
+   (o que tem a receber, os pagamentos que recebeu, para confirmar, e os ganhos de cada mês). */
 async function carregarGastos() {
   const corpo = $('#toposCorpo'); if (!corpo) return;
+  const prod = ehProdutor();
   try {
-    const [todos, emProducao, ultimos, quem] = await Promise.all([
+    const [todos, emProducao, ultimos, quem, novos] = await Promise.all([
       api.admin.topos.listar({ status: FEITOS_TOPO, naoPagos: true }),
       api.admin.topos.listar({ status: ['novo', 'em_producao'] }),
       api.admin.topos.pagamentos.listar({ limite: 1 }),
-      quemFazTopos(),
+      prod ? { nome: perfil.nome, primeiro: String(perfil.nome || '').trim().split(/\s+/)[0] } : quemFazTopos(),
+      prod ? api.admin.topos.pagamentos.listar({ naoConfirmados: true }) : [],
       carregarPrecosTopos()
     ]);
     if (vistaTopos() !== 'gastos' || !$('#toposCorpo')) return;
     gastosDados = { lista: todos, quem };
     const mes = $('#gtMes')?.innerHTML;   // o resumo do mês fica na tela enquanto atualiza
-    corpo.innerHTML = desenharGastos(todos, emProducao, ultimos[0], quem, mes);
+    corpo.innerHTML = desenharGastos(todos, emProducao, ultimos[0], quem, mes, novos);
   } catch (e) {
-    corpo.innerHTML = semGastos(e) ? `<div class="card vazio"><h2>Os gastos com topos ainda não estão no banco</h2>
-        <p>Rode no Supabase o arquivo <code>sql/topos-gastos.sql</code> (SQL Editor). Depois, é só voltar aqui.</p></div>` : erroTopos(e);
+    let msg = erroTopos(e);
+    if (semGastos(e)) msg = prod ? '<div class="card vazio"><h2>O financeiro ainda não está ligado</h2><p>A loja ainda está preparando esta parte. Avise a Administração.</p></div>'
+      : `<div class="card vazio"><h2>Os gastos com topos ainda não estão no banco</h2>
+        <p>Rode no Supabase o arquivo <code>sql/topos-gastos.sql</code> (SQL Editor). Depois, é só voltar aqui.</p></div>`;
+    corpo.innerHTML = msg;
     return;
   }
   carregarMesGastos();
 }
 function recarregarGastos() { if (telaAtual === 'topos' && vistaTopos() === 'gastos') carregarGastos(); }
 
-function desenharGastos(todos, emProducao, ultimo, quem, mesAntes) {
+function desenharGastos(todos, emProducao, ultimo, quem, mesAntes, novos = []) {
+  const prod = ehProdutor();
   const aPagar = todos.filter(t => custoTopo(t) > 0), semValor = todos.filter(t => t.custo_unitario == null), n = aPagar.length;
   const datas = aPagar.map(t => t.data_entrega).sort(), primeira = datas[0], ultima = datas[datas.length - 1];
   const periodo = primeira === ultima ? `com entrega em ${ddmm(primeira || hojeISO())}` : `com entrega de ${ddmm(primeira)} a ${ddmm(ultima)}`;
-  let resumo = 'Nenhum topo pronto esperando pagamento.';
+  let resumo = prod ? 'Nada a receber agora: o que ficou pronto já foi pago.' : 'Nenhum topo pronto esperando pagamento.';
+  if (!n && semValor.length) resumo = 'Nenhum topo com valor esperando pagamento.';
   if (n) resumo = `${n} ${n === 1 ? 'topo pronto ou entregue ainda não foi pago' : 'topos prontos ou entregues ainda não foram pagos'}, ${periodo}.`;
-  if (semValor.length) resumo += ` <b>${semValor.length} ${semValor.length === 1 ? 'está sem valor e ficou' : 'estão sem valor e ficaram'} fora da conta.</b>`;
-  const comeco = precosTopos.length ? '' : `<div class="aviso-box gt-comeco">${ic('info')}<div><b>Comece pela tabela de preços.</b> Diga quanto ${esc(quem.primeiro || 'quem faz os topos')} cobra por cada tipo (ex.: Topo de papel, R$ 15,00): os pedidos de topo já chegam com o valor.</div>
+  if (semValor.length && prod) resumo += ` <b>${semValor.length} ${semValor.length === 1 ? 'está com valor a combinar e ficou' : 'estão com valor a combinar e ficaram'} fora da conta.</b>`;
+  else if (semValor.length) resumo += ` <b>${semValor.length} ${semValor.length === 1 ? 'está sem valor e ficou' : 'estão sem valor e ficaram'} fora da conta.</b>`;
+  const comeco = precosTopos.length || prod ? '' : `<div class="aviso-box gt-comeco">${ic('info')}<div><b>Comece pela tabela de preços.</b> Diga quanto ${esc(quem.primeiro || 'quem faz os topos')} cobra por cada tipo (ex.: Topo de papel, R$ 15,00): os pedidos de topo já chegam com o valor.</div>
     <button type="button" class="btn sm primary" data-gt-precos>${ic('editar')}Montar a tabela</button></div>`;
   const linhas = [...aPagar, ...semValor].sort(ordemEntrega);
-  return `${comeco}<section class="card hero gt-hero" aria-label="A pagar">
+  const acoes = prod ? `<button type="button" class="btn wa" data-gt-conferir ${linhas.length ? '' : 'disabled'}>${ic('wa')}Enviar fechamento para a loja</button>`
+    : `<button type="button" class="btn primary" data-gt-pagar ${n ? '' : 'disabled'}>${ic('moeda')}Registrar pagamento</button>
+       <button type="button" class="btn ghost" data-gt-conferir ${linhas.length ? '' : 'disabled'}>${ic('wa')}Enviar para conferir</button>`;
+  return `${comeco}${novos.map(avisoPagamentoNovo).join('')}<section class="card hero gt-hero" aria-label="${prod ? 'A receber' : 'A pagar'}">
       <div>
-        <p class="eyebrow">A pagar ${esc(paraQuem(quem))}</p>
+        <p class="eyebrow">${prod ? 'A receber' : `A pagar ${esc(paraQuem(quem))}`}</p>
         <p class="gt-total">${R(somaCusto(aPagar))}</p>
         <p class="hero-txt">${resumo}</p>
-        <div class="hero-acts">
-          <button type="button" class="btn primary" data-gt-pagar ${n ? '' : 'disabled'}>${ic('moeda')}Registrar pagamento</button>
-          <button type="button" class="btn ghost" data-gt-conferir ${linhas.length ? '' : 'disabled'}>${ic('wa')}Enviar para conferir</button>
-        </div>
+        <div class="hero-acts">${acoes}</div>
       </div>
       <div class="hero-stats">
         <div><span>Ainda não prontos</span><strong>${valorCurto(somaCusto(emProducao))}</strong><small>${emProducao.length} ${emProducao.length === 1 ? 'topo' : 'topos'} em produção ou novos</small></div>
@@ -4561,26 +4577,38 @@ function desenharGastos(todos, emProducao, ultimo, quem, mesAntes) {
     </section>
     <div class="cols">
       <section class="card tabela gt-lista" aria-labelledby="gtListaT">
-        <div class="gt-cab"><div><p class="eyebrow">Prontos e entregues</p><h2 id="gtListaT">Topos a pagar</h2></div>
+        <div class="gt-cab"><div><p class="eyebrow">Prontos e entregues</p><h2 id="gtListaT">${prod ? 'Topos a receber' : 'Topos a pagar'}</h2></div>
           ${linhas.length ? `<span>${linhas.length} ${linhas.length === 1 ? 'topo' : 'topos'}</span>` : ''}</div>
         ${linhas.length ? `<div class="gt-linhas">${linhas.map(linhaGasto).join('')}</div>`
-          : `<p class="vazio gt-vazio">${ic('ok')}Tudo pago. Quando um topo ficar pronto, ele aparece aqui.</p>`}
+          : `<p class="vazio gt-vazio">${ic('ok')}${prod ? 'Tudo recebido' : 'Tudo pago'}. Quando um topo ficar pronto, ele aparece aqui.</p>`}
       </section>
       <div id="gtMes">${mesAntes || '<div class="skel" style="height:360px"></div>'}</div>
     </div>`;
 }
+/** Para quem faz: pagamento que a loja registrou e ela ainda não confirmou. */
+function avisoPagamentoNovo(p) {
+  const det = [FORMAS[p.forma] || p.forma, formatarData(p.pago_em), `${p.qtd_topos} ${p.qtd_topos === 1 ? 'topo' : 'topos'}`, p.observacao].filter(Boolean).join(' · ');
+  return `<div class="gt-novo" role="status">${ic('moeda')}
+    <div><strong>Você recebeu ${R(p.valor)}</strong><small>${esc(det)}</small></div>
+    <button type="button" class="btn sm ghost" data-gt-pgto="${esc(p.id)}">Ver os topos</button>
+    <button type="button" class="btn sm teal" data-gt-confirmar="${esc(p.id)}">${ic('ok')}Confirmar que recebi</button>
+  </div>`;
+}
 function linhaGasto(t) {
   const v = custoTopo(t), oque = `${t.quantidade > 1 ? `${t.quantidade}× ` : ''}${t.titulo}`;
   const meta = [codigoTopo(t), t.tema, t.cliente_nome].filter(Boolean).map(esc).join(' · ');
-  const det = [t.quantidade > 1 && `${t.quantidade} × ${R(t.custo_unitario)}`, t.custo_manual && 'digitado'].filter(Boolean).join(' · ');
+  const prod = ehProdutor();
+  const det = [t.quantidade > 1 && `${t.quantidade} × ${R(t.custo_unitario)}`, t.custo_manual && !prod && 'digitado'].filter(Boolean).join(' · ');
+  const semValor = prod ? '<span class="tag cinza">A combinar</span>' : '<span class="tag pend">Definir valor</span>';
+  const valor = v == null ? semValor : `<b>${R(v)}</b>${det ? `<small>${esc(det)}</small>` : ''}`;
+  // quem faz só acompanha (o valor é a loja que define); a Administração toca no valor para mudar
+  const lado = prod ? `<span class="gt-l-v">${valor}</span>`
+    : `<button type="button" class="gt-l-v" data-gt-custo="${esc(t.id)}" aria-label="${v == null ? 'Definir' : 'Mudar'} quanto pagar por ${codigoTopo(t)}">${valor}</button>`;
   return `<div class="gt-l ${v == null ? 'sem' : ''}">
     <button type="button" class="gt-l-a" data-topo="${esc(t.id)}" aria-label="Abrir ${codigoTopo(t)}: ${esc(oque)}">
       <span class="gt-l-d">${esc(ddmm(t.data_entrega))}<small>${esc(topoStatus(t.status).nome)}</small></span>
       <span class="gt-l-t"><strong>${esc(oque)}</strong><small>${meta}</small></span>
-    </button>
-    <button type="button" class="gt-l-v" data-gt-custo="${esc(t.id)}" aria-label="${v == null ? 'Definir' : 'Mudar'} quanto pagar por ${codigoTopo(t)}">
-      ${v == null ? '<span class="tag pend">Definir valor</span>' : `<b>${R(v)}</b>${det ? `<small>${esc(det)}</small>` : ''}`}
-    </button>
+    </button>${lado}
   </div>`;
 }
 
@@ -4604,6 +4632,7 @@ async function carregarMesGastos() {
   }
 }
 function desenharMesGastos({ ym, atual, rot, ant, feitos, antes, pagamentos, vem }) {
+  const prod = ehProdutor();   // quem faz vê o mesmo resumo do lado dela: ganhos e recebidos
   const comValor = feitos.filter(t => t.custo_unitario != null), semValor = feitos.length - comValor.length;
   const gasto = somaCusto(feitos), gastoAntes = somaCusto(antes), mes = rot.split(' ')[0], mesAnt = ant.rot.split(' ')[0];
   const pago = Math.round(pagamentos.reduce((s, p) => s + Number(p.valor), 0) * 100) / 100;
@@ -4614,48 +4643,72 @@ function desenharMesGastos({ ym, atual, rot, ant, feitos, antes, pagamentos, vem
     .map(x => ({ rot: x.rot, v: Math.round(x.v * 100) / 100, sub: `${x.n} ${x.n === 1 ? 'pedido' : 'pedidos'}` }));
   const kpi = (r, valor, sub, cls = '') => `<div class="gt-kpi ${cls}"><span>${r}</span><strong>${valor}</strong><small>${sub}</small></div>`;
   return `<section class="card gt-mes" aria-labelledby="gtMesT">
-    <div class="card-h"><div><p class="eyebrow">Mês a mês</p><h2 id="gtMesT">Gastos com topos</h2></div>
+    <div class="card-h"><div><p class="eyebrow">Mês a mês</p><h2 id="gtMesT">${prod ? 'Seus ganhos' : 'Gastos com topos'}</h2></div>
       <div class="sem-nav gt-mes-nav" role="group" aria-label="Escolher mês">
         <button type="button" class="btn icon sm ghost" data-gt-mes="${mesMais(ym, -1)}" aria-label="Mês anterior">${ic('voltar')}</button>
         <span class="sem-rot">${esc(mes.charAt(0).toUpperCase() + mes.slice(1))}${ym === atual ? '<small>este mês</small>' : `<small>${ym.slice(0, 4)}</small>`}</span>
         <button type="button" class="btn icon sm ghost" data-gt-mes="${mesMais(ym, 1)}" aria-label="Próximo mês" ${ym >= atual ? 'disabled' : ''}>${ic('seta')}</button></div></div>
     <div class="gt-kpis">
-      ${kpi('Gasto no mês', R(gasto), `${esc(mesAnt)}: ${R(gastoAntes)}`, 'destaque')}
-      ${kpi('Pago no mês', R(pago), pagamentos.length ? `${pagamentos.length} ${pagamentos.length === 1 ? 'pagamento' : 'pagamentos'}` : 'nenhum pagamento')}
+      ${kpi(prod ? 'Ganhos no mês' : 'Gasto no mês', R(gasto), `${esc(mesAnt)}: ${R(gastoAntes)}`, 'destaque')}
+      ${kpi(prod ? 'Recebido no mês' : 'Pago no mês', R(pago), pagamentos.length ? `${pagamentos.length} ${pagamentos.length === 1 ? 'pagamento' : 'pagamentos'}` : 'nenhum pagamento')}
       ${kpi('Topos feitos', feitos.length, `${unidades} ${unidades === 1 ? 'unidade' : 'unidades'}`)}
-      ${kpi('Média por pedido', comValor.length ? R(gasto / comValor.length) : '—', semValor ? `${semValor} sem valor` : 'de topo')}
+      ${kpi('Média por pedido', comValor.length ? R(gasto / comValor.length) : '—', semValor ? `${semValor} ${prod ? 'a combinar' : 'sem valor'}` : 'de topo')}
     </div>
-    <p class="dica gt-dica">Gasto: os topos prontos e entregues com entrega no mês, pagos ou não. Pago: o que saiu nos pagamentos do mês.</p>
+    <p class="dica gt-dica">${prod ? 'Ganhos: os topos prontos e entregues com entrega no mês, recebidos ou não. Recebido: os pagamentos que chegaram no mês.'
+      : 'Gasto: os topos prontos e entregues com entrega no mês, pagos ou não. Pago: o que saiu nos pagamentos do mês.'}</p>
     ${vem.length ? `<p class="gt-nota">${ic('relogio')}<span>Ainda vêm <b>${R(somaCusto(vem))}</b> em ${vem.length} ${vem.length === 1 ? 'topo' : 'topos'} com entrega até o fim do mês.</span></p>` : ''}
     ${porTipo.length ? `<p class="secao-t">Por tipo</p>${barrasH(porTipo, v => R(v))}` : ''}
-    <p class="secao-t">Pagamentos de ${esc(mes)}</p>
+    <p class="secao-t">${prod ? 'Recebidos em' : 'Pagamentos de'} ${esc(mes)}</p>
     ${pagamentos.length ? `<div class="gt-pgs">${pagamentos.map(linhaPagamento).join('')}</div>` : `<p class="gt-nada">Nenhum pagamento em ${esc(mes)}.</p>`}
   </section>`;
 }
 function linhaPagamento(p) {
   const dif = Math.round((Number(p.valor) - Number(p.valor_topos)) * 100) / 100;
   const det = [FORMAS[p.forma] || p.forma, `${p.qtd_topos} ${p.qtd_topos === 1 ? 'topo' : 'topos'}`, dif && `${dif > 0 ? '+' : '−'}${R(Math.abs(dif))} de ajuste`, p.observacao].filter(Boolean);
+  // recebimento: confirmado por quem faz; para ela, o que falta confirmar fica marcado
+  let conf = '';
+  if (p.confirmado_em) conf = `<span class="tag pago">${ic('ok')}Confirmado</span>`;
+  else if (ehProdutor()) conf = '<span class="tag pend">Confirmar</span>';
   return `<button type="button" class="gt-pg" data-gt-pgto="${esc(p.id)}" aria-label="Pagamento de ${esc(formatarData(p.pago_em))}, ${esc(R(p.valor))}">
     <span class="gt-pg-d">${esc(ddmm(p.pago_em))}</span>
-    <span class="gt-pg-t"><strong>${R(p.valor)}</strong><small>${esc(det.join(' · '))}</small></span>${ic('seta')}</button>`;
+    <span class="gt-pg-t"><strong>${R(p.valor)}</strong><small>${esc(det.join(' · '))}</small></span>${conf}${ic('seta')}</button>`;
 }
 
-/** Mensagem para quem faz: os topos para conferir ou, com o pagamento, o comprovante. */
+/* Mensagens pelo WhatsApp: a Administração manda para quem faz (para conferir, ou o comprovante);
+   quem faz manda o fechamento dela para a loja */
+const linhaAcerto = (t, semValor) => `• ${ddmm(t.data_entrega)} · ${codigoTopo(t)} · ${t.quantidade > 1 ? t.quantidade + '× ' : ''}${t.titulo}${t.tema ? ` (${t.tema})` : ''}: ${custoTopo(t) == null ? semValor : custoConta(t)}`;
+const totalAcerto = (lista, rot) => `*${rot}: ${R(somaCusto(lista))}* (${lista.length} ${lista.length === 1 ? 'topo' : 'topos'})`;
+/** Para quem faz: os topos para conferir ou, com o pagamento, o comprovante. */
 function textoAcertoTopos(topos, quem, pg = null) {
   const lista = [...topos].sort(ordemEntrega), ola = `Olá${quem.primeiro ? ', ' + quem.primeiro : ''}!`;
-  const linhas = lista.map(t => `• ${ddmm(t.data_entrega)} · ${codigoTopo(t)} · ${t.quantidade > 1 ? t.quantidade + '× ' : ''}${t.titulo}${t.tema ? ` (${t.tema})` : ''}: ${custoTopo(t) == null ? 'sem valor' : custoConta(t)}`);
-  const total = `*Total dos topos: ${R(somaCusto(lista))}* (${lista.length} ${lista.length === 1 ? 'topo' : 'topos'})`;
+  const linhas = lista.map(t => linhaAcerto(t, 'sem valor')), total = totalAcerto(lista, 'Total dos topos');
   if (!pg) return [`${ola} Segue o fechamento dos topos para você conferir:`, '', ...linhas, '', total].join('\n');
   return [`${ola} Paguei os topos:`, '', `*Valor pago:* ${R(pg.valor)} (${FORMAS[pg.forma] || pg.forma}, ${formatarData(pg.pago_em)})`,
     ...(pg.observacao ? [`*Obs.:* ${pg.observacao}`] : []), '', ...linhas, '', total].join('\n');
 }
-/** Manda a mensagem pelo WhatsApp de quem faz (o mesmo contato de "Enviar para quem faz o topo"). */
-function modalWhatsAcerto(titulo, texto, quem) {
+/** De quem faz para a loja: os topos prontos e entregues que faltam receber. */
+function textoFechamento(topos, quem) {
+  const lista = [...topos].sort(ordemEntrega);
+  return [`Olá! Aqui é ${quem.nome || 'quem faz os topos'}. Segue o fechamento dos topos que ainda não recebi:`, '',
+    ...lista.map(t => linhaAcerto(t, 'a combinar')), '', totalAcerto(lista, 'Total a receber')].join('\n');
+}
+/** Contato de quem faz para a Administração mandar a mensagem (o mesmo de "Enviar para quem faz o topo"; fica salvo). */
+const destinoQuemFaz = quem => ({
+  numero: quem.numero, nome: quem.nome, rotulo: 'WhatsApp de quem faz os topos', comNome: true,
+  aoEnviar(num, nome) { if (num !== digitosTel(quem.numero) || nome !== quem.nome) { salvarContatoTopos(num, nome); quem.numero = num; quem.nome = nome; } }
+});
+/** WhatsApp da loja, para quem faz os topos (vem do cardápio público, que qualquer um lê). */
+async function whatsappLoja() {
+  try { return (await api.cardapio.obter())?.configuracoes?.whatsapp_numero || ''; } catch (e) { return ''; }
+}
+/** Escreve a mensagem (dá para editar e copiar) e abre o WhatsApp do número informado. */
+function modalWhatsAcerto(titulo, texto, { numero = '', nome = '', rotulo = 'WhatsApp', comNome = false, aoEnviar = null } = {}) {
   const m = abrirModal({
     titulo, largo: true,
-    corpo: `<div class="grid2">${inTxt('waNum', 'WhatsApp de quem faz os topos', formatarTel(quem.numero), { attrs: ATTR_TEL })}${inTxt('waNome', 'Nome <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>', quem.nome, { attrs: 'maxlength="60"' })}</div>
+    corpo: `${comNome ? `<div class="grid2">${inTxt('waNum', rotulo, formatarTel(numero), { attrs: ATTR_TEL })}${inTxt('waNome', 'Nome <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>', nome, { attrs: 'maxlength="60"' })}</div>`
+        : inTxt('waNum', rotulo, formatarTel(numero), { attrs: ATTR_TEL })}
       ${inTa('waMsg', 'Mensagem', texto, { attrs: 'maxlength="6000" style="min-height:260px"' })}
-      <p class="dica" style="margin:0">O número fica salvo para as próximas vezes.</p>`,
+      ${aoEnviar ? '<p class="dica" style="margin:0">O número fica salvo para as próximas vezes.</p>' : ''}`,
     rodape: `<button type="button" class="btn ghost" data-fechar>Fechar</button><button type="button" class="btn ghost" data-copiar>${ic('copiar')}Copiar</button><button type="button" class="btn wa" data-ok>${ic('wa')}Abrir WhatsApp</button>`
   });
   m.$('[data-copiar]').addEventListener('click', async () => {
@@ -4663,10 +4716,10 @@ function modalWhatsAcerto(titulo, texto, quem) {
     catch (e) { m.$('#waMsg').select(); toast('Mensagem selecionada: copie com Ctrl+C.'); }
   });
   m.$('[data-ok]').addEventListener('click', () => {
-    const num = digitosTel(valDe(m, 'waNum')), nome = valDe(m, 'waNome');
-    if (num.length < 10) { toast('Informe o WhatsApp com DDD de quem faz os topos.', { tipo: 'erro' }); m.$('#waNum').focus(); return; }
+    const num = digitosTel(valDe(m, 'waNum'));
+    if (num.length < 10) { toast(`Informe o ${rotulo} com DDD.`, { tipo: 'erro' }); m.$('#waNum').focus(); return; }
     abrirWhatsApp(linkWhatsApp('55' + num, valDe(m, 'waMsg')));   // ainda no clique, para o navegador não bloquear
-    if (num !== digitosTel(quem.numero) || nome !== quem.nome) { salvarContatoTopos(num, nome); quem.numero = num; quem.nome = nome; }
+    aoEnviar?.(num, valDe(m, 'waNome'));
     m.fechar();
   });
 }
@@ -4718,43 +4771,87 @@ function modalPagarTopos() {
         <small>${esc(FORMAS[pg.forma] || pg.forma)} · ${esc(formatarData(pg.pago_em))} · ${pg.qtd_topos} ${pg.qtd_topos === 1 ? 'topo' : 'topos'}</small></div></div>
       <p class="dica" style="margin:12px 0 0">Esses topos saíram de “a pagar”. Para desfazer, abra o pagamento no resumo do mês.</p>`;
     m.$('.modal-f').innerHTML = `<button type="button" class="btn ghost" data-fechar>Fechar</button><button type="button" class="btn wa" data-comprovante>${ic('wa')}Enviar comprovante</button>`;
-    m.$('[data-comprovante]').addEventListener('click', () => { m.fechar(); modalWhatsAcerto('Comprovante para quem faz os topos', textoAcertoTopos(sel, quem, pg), quem); });
+    m.$('[data-comprovante]').addEventListener('click', () => { m.fechar(); modalWhatsAcerto('Comprovante para quem faz os topos', textoAcertoTopos(sel, quem, pg), destinoQuemFaz(quem)); });
     m.$('[data-comprovante]').focus();
     recarregarGastos();
   }));
 }
 
-/** Pagamento já feito: os topos dele, o comprovante e desfazer. */
+/** Pagamento já feito: os topos dele e o recebimento. A Administração reenvia o comprovante ou desfaz; quem faz confirma que recebeu. */
 async function abrirPagamentoTopos(id) {
-  const [pg, topos, quem] = await Promise.all([api.admin.topos.pagamentos.obter(id), api.admin.topos.listar({ pagamentoId: id }), gastosDados?.quem || quemFazTopos()]);
+  const prod = ehProdutor();
+  const [pg, topos, quem] = await Promise.all([api.admin.topos.pagamentos.obter(id), api.admin.topos.listar({ pagamentoId: id }), prod ? null : gastosDados?.quem || quemFazTopos()]);
   const dif = Math.round((Number(pg.valor) - Number(pg.valor_topos)) * 100) / 100;
+  const recebimento = pg.confirmado_em ? `<span class="tag pago">${ic('ok')}Confirmado</span> ${esc(pg.confirmado_por || 'Quem faz')} · ${esc(dataHora(pg.confirmado_em))}`
+    : `<span class="tag ${prod ? 'pend' : 'cinza'}">Ainda não confirmado</span>`;
+  const botoes = prod
+    ? (pg.confirmado_em ? '<button type="button" class="btn primary" data-fechar>Fechar</button>'
+      : `<button type="button" class="btn ghost" data-fechar>Fechar</button><button type="button" class="btn teal" data-confirmar>${ic('ok')}Confirmar que recebi</button>`)
+    : `<button type="button" class="btn danger esq" data-desfazer>${ic('lixo')}Desfazer pagamento</button>
+      <button type="button" class="btn wa" data-comprovante ${topos.length ? '' : 'disabled'}>${ic('wa')}Enviar comprovante</button><button type="button" class="btn primary" data-fechar>Fechar</button>`;
   const m = abrirModal({
     titulo: `Pagamento de ${formatarData(pg.pago_em)}`, largo: true,
     corpo: `<dl class="kv">
-        <dt>Valor pago</dt><dd>${R(pg.valor)}</dd>
+        <dt>${prod ? 'Valor recebido' : 'Valor pago'}</dt><dd>${R(pg.valor)}</dd>
         <dt>Como</dt><dd>${esc(FORMAS[pg.forma] || pg.forma)}</dd>
         <dt>Topos</dt><dd>${pg.qtd_topos} · soma ${R(pg.valor_topos)}${dif ? ` (${dif > 0 ? '+' : '−'}${R(Math.abs(dif))} de ajuste)` : ''}</dd>
         ${pg.observacao ? `<dt>Observação</dt><dd>${esc(pg.observacao)}</dd>` : ''}
         <dt>Registrado</dt><dd>${esc(dataHora(pg.criado_em))}${pg.autor_nome ? ' · ' + esc(pg.autor_nome) : ''}</dd>
+        <dt>Recebimento</dt><dd>${recebimento}</dd>
       </dl>
       <p class="secao-t">Topos deste pagamento</p>
       ${topos.length ? `<div class="lote-lista">${topos.sort(ordemEntrega).map(t => `<div class="lote-it sem-chk">
           <span class="lote-q">${esc(ddmm(t.data_entrega))}<small>${esc(codigoTopo(t))}</small></span>
           <span class="lote-n"><b>${t.quantidade > 1 ? `${t.quantidade}× ` : ''}${esc(t.titulo)}</b><small>${esc([t.tema, t.cliente_nome].filter(Boolean).join(' · '))}</small></span>
           <em>${custoTopo(t) == null ? '—' : R(custoTopo(t))}</em></div>`).join('')}</div>` : '<p class="dica" style="margin:0">Os topos deste pagamento foram excluídos.</p>'}`,
-    rodape: `<button type="button" class="btn danger esq" data-desfazer>${ic('lixo')}Desfazer pagamento</button>
-      <button type="button" class="btn wa" data-comprovante ${topos.length ? '' : 'disabled'}>${ic('wa')}Enviar comprovante</button><button type="button" class="btn primary" data-fechar>Fechar</button>`
+    rodape: botoes
   });
-  m.$('[data-comprovante]').addEventListener('click', () => { m.fechar(); modalWhatsAcerto('Comprovante para quem faz os topos', textoAcertoTopos(topos, quem, pg), quem); });
-  m.$('[data-desfazer]').addEventListener('click', async () => {
+  m.$('[data-confirmar]')?.addEventListener('click', ev => confirmarRecebimento(pg.id, ev.currentTarget).then(ok => { if (ok) m.fechar(); }));
+  m.$('[data-comprovante]')?.addEventListener('click', () => { m.fechar(); modalWhatsAcerto('Comprovante para quem faz os topos', textoAcertoTopos(topos, quem, pg), destinoQuemFaz(quem)); });
+  m.$('[data-desfazer]')?.addEventListener('click', async () => {
     const quantos = topos.length === 1 ? 'O topo volta' : `Os ${topos.length} topos voltam`;
-    if (!await confirmar('Desfazer este pagamento?', `${quantos} para “a pagar” e o registro de ${R(pg.valor)} é apagado.`, { botao: 'Desfazer pagamento', perigo: true })) return;
+    const avisada = pg.confirmado_em ? ` ${pg.confirmado_por || 'Quem faz os topos'} já confirmou que recebeu.` : '';
+    if (!await confirmar('Desfazer este pagamento?', `${quantos} para “a pagar” e o registro de ${R(pg.valor)} é apagado.${avisada}`, { botao: 'Desfazer pagamento', perigo: true })) return;
     await ocupado(m.$('[data-desfazer]'), async () => {
       await api.admin.topos.pagamentos.remover(pg.id);
       m.fechar();
       toast('Pagamento desfeito: os topos voltaram para “a pagar”.');
       recarregarGastos();
     });
+  });
+}
+/** Quem faz os topos confirma que recebeu: a loja passa a ver "Confirmado". */
+function confirmarRecebimento(id, btn) {
+  return ocupado(btn, async () => {
+    const pg = await api.admin.topos.pagamentos.confirmar(id);
+    toast(`Recebimento de ${R(pg.valor)} confirmado. A loja já está vendo.`);
+    recarregarGastos(); atualizarBadgeFinanceiro();
+    return true;
+  });
+}
+/* Quem faz os topos: o contador de pagamentos para confirmar (na aba Financeiro) e o aviso quando chega um novo */
+let pagamentosVistos = null;
+async function atualizarBadgeFinanceiro() {
+  if (!ehProdutor()) return;
+  let novos;
+  try { novos = await api.admin.topos.pagamentos.listar({ naoConfirmados: true }); } catch (e) { return; }   // sem o sql/topos-gastos.sql: sem contador
+  $$('[data-badge-fin]').forEach(b => { b.textContent = novos.length; b.hidden = !novos.length; });
+  // chegou pagamento enquanto ela está no sistema: som e aviso (os de antes de entrar ficam só no contador)
+  if (pagamentosVistos) novos.filter(p => !pagamentosVistos.has(p.id)).forEach(p => {
+    tocarAviso();
+    toast(`Você recebeu um pagamento de ${R(p.valor)}.`, { tipo: 'novo', acao: { rotulo: 'Ver', fn: () => { location.hash = '#topos/financeiro'; } }, tempo: 12000 });
+  });
+  pagamentosVistos = new Set([...(pagamentosVistos || []), ...novos.map(p => p.id)]);
+}
+/** Para quem faz: a tabela de preços combinada com a loja, só para consulta. */
+async function modalPrecosLeitura() {
+  await carregarPrecosTopos();
+  abrirModal({
+    titulo: 'Tabela de preços',
+    corpo: precosTopos.length ? `<p class="dica" style="margin:0 0 12px">Valores combinados com a loja, por unidade. O topo com o mesmo “O que fazer” entra com esse valor; a loja pode combinar outro valor em algum pedido.</p>
+        <div class="gt-ro">${precosTopos.map(p => `<div><span>${esc(p.nome)}</span><b>${R(p.valor)}</b></div>`).join('')}</div>`
+      : '<p class="vazio" style="padding:20px 8px">A loja ainda não montou a tabela de preços.</p>',
+    rodape: '<button type="button" class="btn primary" data-fechar>Fechar</button>'
   });
 }
 
@@ -4845,18 +4942,26 @@ async function modalPrecosTopos() {
   }));
 }
 
-/* Cliques da tela de gastos */
+/** "Enviar para conferir" (a Administração, para quem faz) ou "Enviar fechamento" (quem faz, para a loja). */
+function enviarAcerto(btn, d) {
+  const topos = d.lista.filter(t => custoTopo(t) !== 0);
+  if (!ehProdutor()) { modalWhatsAcerto('Enviar para conferir', textoAcertoTopos(topos, d.quem), destinoQuemFaz(d.quem)); return; }
+  ocupado(btn, async () => modalWhatsAcerto('Enviar fechamento para a loja', textoFechamento(topos, d.quem), { numero: await whatsappLoja(), rotulo: 'WhatsApp da loja' }));
+}
+/* Cliques da tela de gastos (Administração) e do financeiro (quem faz os topos) */
 document.addEventListener('click', e => {
-  if (!perfil || !isAdmin()) return;
-  const b = e.target.closest('[data-gt-pagar],[data-gt-conferir],[data-gt-precos],[data-gt-custo],[data-gt-pgto],[data-gt-mes]');
+  if (!perfil || !podeTopos()) return;
+  const b = e.target.closest('[data-gt-pagar],[data-gt-conferir],[data-gt-precos],[data-gt-custo],[data-gt-pgto],[data-gt-mes],[data-gt-confirmar]');
   if (!b || b.closest('.modal-veu')) return;
-  const d = gastosDados;
+  const d = gastosDados, prod = ehProdutor();
   if (b.dataset.gtMes) { mesGastos = b.dataset.gtMes; carregarMesGastos(); }
-  else if (b.dataset.gtCusto) { const t = d?.lista.find(x => x.id === b.dataset.gtCusto); if (t) ocupado(b, () => modalCustoTopo(t)); }
   else if (b.dataset.gtPgto) ocupado(b, () => abrirPagamentoTopos(b.dataset.gtPgto));
-  else if (b.dataset.gtPrecos !== undefined) ocupado(b, () => modalPrecosTopos());
-  else if (b.dataset.gtPagar !== undefined) modalPagarTopos();
-  else if (b.dataset.gtConferir !== undefined && d) modalWhatsAcerto('Enviar para conferir', textoAcertoTopos(d.lista.filter(t => custoTopo(t) !== 0), d.quem), d.quem);
+  else if (b.dataset.gtConfirmar) confirmarRecebimento(b.dataset.gtConfirmar, b);
+  else if (b.dataset.gtPrecos !== undefined) ocupado(b, () => (prod ? modalPrecosLeitura() : modalPrecosTopos()));
+  else if (b.dataset.gtConferir !== undefined && d) enviarAcerto(b, d);
+  // o valor e o pagamento são da loja: só a Administração
+  else if (!prod && b.dataset.gtCusto) { const t = d?.lista.find(x => x.id === b.dataset.gtCusto); if (t) ocupado(b, () => modalCustoTopo(t)); }
+  else if (!prod && b.dataset.gtPagar !== undefined) modalPagarTopos();
 });
 
 /* =========================================================
