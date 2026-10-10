@@ -607,6 +607,8 @@ function modalConta() {
         <div class="imp-auto"><p class="secao-t" style="margin:4px 0 8px">Etiquetas na Niimbot (Bluetooth)</p>
           ${inChk('nbUsar', 'Imprimir as etiquetas na Niimbot', confNiimbot().usar)}
           <div class="nb-corpo" id="nbCorpo" ${confNiimbot().usar ? '' : 'hidden'}>
+            <label class="sr" for="nbCont">O que sai em cada etiqueta</label>
+            <select class="sel" id="nbCont" style="margin-bottom:8px">${CONTEUDOS_ETIQUETA.map(([v, t]) => `<option value="${v}" ${v === (confNiimbot().conteudo || 'producao') ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
             <div class="imp-linha"><label class="sr" for="nbTam">Tamanho da etiqueta</label>
               <select class="sel" id="nbTam">${TAMANHOS_ETIQUETA.map(([v, t]) => `<option value="${v}" ${v === confNiimbot().tamanho ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
               <button type="button" class="btn ghost sm" data-nb-conectar>${niimbotConectada() ? 'Reconectar' : 'Conectar'}</button>
@@ -630,10 +632,12 @@ function modalConta() {
   };
   m.$('#impAuto')?.addEventListener('change', salvarImp);
   m.$('#impFormato')?.addEventListener('change', () => salvarImpressaoAuto({ ...impressaoAuto(), formato: valDe(m, 'impFormato') }));
+  // pedido para o teste e a prévia: o mais recente, de preferência com bolo
   const pedidoDeTeste = async () => {
-    const { pedidos } = await api.admin.pedidos.listar({ porPagina: 1, ordenarPor: 'criado_em', crescente: false });
+    const { pedidos } = await api.admin.pedidos.listar({ porPagina: 15, ordenarPor: 'criado_em', crescente: false });
     if (!pedidos.length) throw new Error('Ainda não há pedidos para usar no teste.');
-    return api.admin.pedidos.obter(pedidos[0].id);
+    const comItens = await pedidosComItens(pedidos);
+    return comItens.find(p => p.itens.some(ehBoloProducao)) || comItens[0];
   };
   m.$('[data-imp-teste]')?.addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
     const p = await pedidoDeTeste();
@@ -643,9 +647,9 @@ function modalConta() {
   let pedidoPrevia = null;
   const previa = async () => {
     const box = m.$('#nbPrevia'); if (!box || box.closest('[hidden]')) return;
-    try { pedidoPrevia = pedidoPrevia || await pedidoDeTeste(); } catch (e) { box.textContent = 'A prévia aparece quando houver um pedido.'; return; }
+    try { pedidoPrevia = pedidoPrevia || await pedidoDeTeste(); await mapaKitsLoja(); } catch (e) { box.textContent = 'A prévia aparece quando houver um pedido.'; return; }
     const { W, H, pxmm } = medidasEtiqueta(niimbotConectada() ? niim.client.getModelMetadata() : null);
-    const c = canvasEtiqueta(pedidoPrevia, W, H, pxmm, await configLoja() || {});
+    const c = canvasEtiqueta(etiquetasDoPedido(pedidoPrevia)[0], W, H, pxmm, await configLoja() || {});
     const [wMm] = confNiimbot().tamanho.split('x').map(Number);
     c.style.width = `${Math.min(280, wMm * 5.2)}px`; c.setAttribute('role', 'img'); c.setAttribute('aria-label', `Prévia da etiqueta do pedido ${pedidoPrevia.codigo}`);
     box.replaceChildren(c);
@@ -657,6 +661,7 @@ function modalConta() {
     if (e.target.checked) { carregarNiimblue().catch(() => {}); previa(); }   // já deixa o módulo pronto para conectar
   });
   m.$('#nbTam')?.addEventListener('change', e => { salvarConfNiimbot({ tamanho: e.target.value }); previa(); });
+  m.$('#nbCont')?.addEventListener('change', e => { salvarConfNiimbot({ conteudo: e.target.value }); previa(); });
   m.$('[data-nb-conectar]')?.addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
     await conectarNiimbot(); toast(`Niimbot conectada (${niim.nome}).`); previa();
   }));
@@ -1235,6 +1240,15 @@ async function modalPrejuizo(pedido = null) {
   if (pedido) desenharPedido(pedido); else setTimeout(() => m.$('#prjBusca').focus(), 60);
 }
 
+/* Etiquetas em lote: os pedidos da lista filtrada (Pedidos) ou os de hoje (Hoje) */
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-lote-pedidos],[data-lote-hoje]'); if (!b || !perfil || ehProdutor()) return;
+  if (b.dataset.lotePedidos !== undefined) ocupado(b, async () => {
+    const r = await api.admin.pedidos.listar({ ...consultaPedidos(), porPagina: 500, pagina: 1 });
+    await modalEtiquetasLote(r.pedidos, `Etiquetas: ${r.total} ${r.total === 1 ? 'pedido' : 'pedidos'} ${descricaoFiltro()}`);
+  });
+  else ocupado(b, () => modalEtiquetasLote(hojeLista, `Etiquetas do dia · ${dataLonga()}`));
+});
 /* "Limpar filtros" da lista de pedidos */
 document.addEventListener('click', e => {
   if (!e.target.closest('[data-limpar-filtros]') || telaAtual !== 'pedidos') return;
@@ -1284,7 +1298,7 @@ function situacaoPagamento(p) {
 }
 async function telaHoje(el) {
   hojeDia = hojeISO();
-  el.innerHTML = cabecalho('Hoje', `<button type="button" class="btn ghost" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`,
+  el.innerHTML = cabecalho('Hoje', `<button type="button" class="btn ghost" data-lote-hoje>${ic('imprimir')}Etiquetas do dia</button><button type="button" class="btn ghost" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`,
       `${esc(dataLonga())} — retiradas do dia no balcão.`) + `
     <div class="hj-top"><div class="busca">${ic('busca')}<label class="sr" for="hjBusca">Buscar pelo nome</label>
       <input class="in" id="hjBusca" type="search" placeholder="Buscar pelo nome do cliente" value="${esc(hojeBusca)}" autocomplete="off"></div></div>
@@ -1509,7 +1523,7 @@ function telaPedidos(el) {
   const chips = [['abertos', 'Em aberto'], ...STATUS.filter(s => s.ativo).sort((a, b) => a.ordem - b.ordem).map(s => [s.codigo, s.nome, s.cor]), ['todos', 'Todos']];
   const sel = (id, rot, ops, val) => campo(id, rot, `<select class="sel" id="${id}">${ops.map(([v, t]) => `<option value="${esc(v)}" ${String(v) === String(val) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`);
   const extras = filtrosExtrasAtivos();
-  el.innerHTML = cabecalho('Pedidos', `<button type="button" class="btn primary" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`,
+  el.innerHTML = cabecalho('Pedidos', `<button type="button" class="btn ghost" data-lote-pedidos title="Imprimir as etiquetas dos pedidos desta lista">${ic('imprimir')}Etiquetas</button><button type="button" class="btn primary" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`,
       'Pedidos do site, do WhatsApp e do balcão. Toque em um pedido para ver tudo.') + `
     <div class="filtros">
       <div class="linha">
@@ -1943,7 +1957,7 @@ const TAMANHOS_ETIQUETA = [['50x30', '50 × 30 mm'], ['40x30', '40 × 30 mm'], [
   ['30x20', '30 × 20 mm'], ['40x12', '40 × 12 mm (D11, D110)'], ['30x15', '30 × 15 mm (D11, D110)']];
 const CHAVE_NIIMBOT = 'ritabolos.niimbot';
 function confNiimbot() {
-  try { return { usar: false, tamanho: '50x30', ...JSON.parse(localStorage.getItem(CHAVE_NIIMBOT) || '{}') }; } catch (e) { return { usar: false, tamanho: '50x30' }; }
+  try { return { usar: false, tamanho: '50x30', conteudo: 'producao', ...JSON.parse(localStorage.getItem(CHAVE_NIIMBOT) || '{}') }; } catch (e) { return { usar: false, tamanho: '50x30', conteudo: 'producao' }; }
 }
 function salvarConfNiimbot(c) { try { localStorage.setItem(CHAVE_NIIMBOT, JSON.stringify({ ...confNiimbot(), ...c })); } catch (e) { /* sem armazenamento */ } }
 let niim = null;                       // { lib, client, nome }
@@ -2003,19 +2017,68 @@ function atualizarIndicadorNiimbot() {
   const bt = $('[data-nb-conectar]'); if (bt) bt.textContent = ok ? 'Reconectar' : 'Conectar';
 }
 
-/** Desenha a etiqueta do pedido num canvas do tamanho da etiqueta (pxmm: pontos por mm da impressora), já em preto e branco. */
-function canvasEtiqueta(p, W, H, pxmm, loja = {}) {
+/* ---- Etiquetas: o que sai em cada uma ----
+   Produção: uma por bolo, com o que a cozinha precisa (cliente, horário, recheio, massa, formato e se tem topo).
+   Pedido: uma por pedido (código, retirada, cliente, itens e quanto falta pagar). Pedido sem bolo sai assim. */
+const CONTEUDOS_ETIQUETA = [['producao', 'Produção: uma por bolo (cliente, horário, recheio, massa, formato e topo)'], ['pedido', 'Pedido: uma por pedido (código, cliente, itens e pagamento)']];
+/** Bolo inteiro na descrição de um kit: "Bolo de 1 kg", "1,5 kg de bolo" (uma fatia não conta). */
+const BOLO_NO_KIT = /(\d+(?:[.,]\d+)?\s*kg\s+de\s+bolo|bolo\s+de\s+\d+(?:[.,]\d+)?\s*kg)/i;
+/** Bolo para a cozinha: tem peso, massa ou formato, é um kit com bolo, ou o nome começa com "Bolo" (bolo no pote, fatia e topo não contam). */
+const ehBoloProducao = i => !!(i.peso_kg || i.massa || i.formato) || BOLO_NO_KIT.test(kitDoItem(i) || '')
+  || (/^bolo\b/i.test(String(i.nome || '').trim()) && !/bolo no pote|fatia/i.test(i.nome || '') && !ehTopper(i.nome, i.categoria));
+const ehItemFinalizacao = i => /^finaliza[çc][ãa]o/i.test(String(i.nome || '').trim());
+/** As finalizações (colorido, glitter…) de um bolo: o item diz "Bolo: <nome> <peso>"; a que não diz (ou não acha o bolo) vale para todos. */
+function finalizacoesDoBolo(bolo, fins, bolos) {
+  const norm = t => String(t || '').toLowerCase().replace(/\./g, ',').replace(/\s+/g, ' ').trim();
+  const chaves = b => [norm(`${b.nome} ${formatarPeso(b.peso_kg)}`), norm(b.nome)];
+  return fins.filter(f => {
+    const alvo = norm((separarReferencia(f.observacao).texto || '').match(/^bolo:\s*(.+)$/i)?.[1]);
+    return !alvo || chaves(bolo).includes(alvo) || !bolos.some(b => chaves(b).includes(alvo));
+  });
+}
+/** As etiquetas de um pedido: [{ p, item, n, total, topos, fins }] (uma por bolo) ou [{ p }] (a do pedido). Carregue mapaKitsLoja() antes. */
+function etiquetasDoPedido(p, conteudo = confNiimbot().conteudo) {
+  const itens = p.itens || [];
+  if (conteudo !== 'pedido') {
+    const bolos = itens.filter(ehBoloProducao);
+    if (bolos.length) {
+      const topos = itens.filter(i => ehTopper(i.nome, i.categoria) && !bolos.includes(i));   // toppers avulsos (o que vem no kit sai na etiqueta do kit)
+      const fins = itens.filter(ehItemFinalizacao);
+      const total = bolos.reduce((s, i) => s + Math.max(1, Number(i.quantidade) || 1), 0), out = [];
+      bolos.forEach(i => {
+        const f = finalizacoesDoBolo(i, fins, bolos);
+        for (let k = 0; k < Math.max(1, Number(i.quantidade) || 1); k++) out.push({ p, item: i, n: out.length + 1, total, topos, fins: f });
+      });
+      return out;
+    }
+  }
+  return [{ p }];
+}
+const diaEtiqueta = iso => (iso ? `${DIAS[new Date(iso + 'T12:00:00Z').getUTCDay()].toUpperCase()} ${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '');
+/** "2 kg" não se separa na quebra de linha. */
+const colarPeso = t => String(t || '').replace(/(\d)\s+(kg|g)\b/gi, '$1\u00a0$2');
+
+/** Desenha a etiqueta num canvas do tamanho dela (pxmm: pontos por mm da impressora), já em preto e branco. */
+function canvasEtiqueta(et, W, H, pxmm, loja = {}) {
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d');
   g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); g.fillStyle = '#000'; g.strokeStyle = '#000';
-  const M = Math.max(4, Math.round(pxmm * 1.2)), largura = W - 2 * M;   // margem de ~1,2 mm
-  const fonte = (px, peso = 800) => `${peso} ${Math.max(8, Math.round(px))}px Arial, "Helvetica Neue", Helvetica, sans-serif`;
-  const medir = (t, px, peso) => { g.font = fonte(px, peso); return g.measureText(t).width; };
-  const encaixar = (t, px, peso, max) => { while (px > 9 && medir(t, px, peso) > max) px -= 1; return px; };   // diminui a letra até caber
-  const cortar = (t, max) => { if (g.measureText(t).width <= max) return t; while (t.length > 1 && g.measureText(t + '…').width > max) t = t.slice(0, -1); return t.trimEnd() + '…'; };
-  const escrever = (t, x, y, alinhar = 'left') => { g.textAlign = alinhar; g.fillText(t, x, y); };
-  const quebrar = (texto, max, maxLinhas) => {   // quebra em palavras; se não couber tudo, a última linha termina com "…"
-    const palavras = texto.split(/\s+/).filter(Boolean), linhas = [];
+  const k = {
+    g, W, H, M: Math.max(4, Math.round(pxmm * 1.2)), mm: v => v * pxmm, traco: Math.max(2, Math.round(pxmm * 0.3)),   // margem de ~1,2 mm
+    fonte: (px, peso = 800) => `${peso} ${Math.max(8, Math.round(px))}px Arial, "Helvetica Neue", Helvetica, sans-serif`,
+    escrever: (t, x, y, alinhar = 'left') => { g.textAlign = alinhar; g.fillText(t, x, y); },
+    cortar(t, max) { if (g.measureText(t).width <= max) return t; while (t.length > 1 && g.measureText(t + '…').width > max) t = t.slice(0, -1); return t.trimEnd() + '…'; }
+  };
+  k.largura = W - 2 * k.M;
+  k.medir = (t, px, peso) => { g.font = k.fonte(px, peso); return g.measureText(t).width; };
+  k.encaixar = (t, px, peso, max) => {   // diminui a letra até caber
+    const w = k.medir(t, px, peso);
+    if (w > max) px = Math.max(9, Math.floor(px * max / w) + 1);   // a largura cresce junto com a letra: já chega perto
+    while (px > 9 && k.medir(t, px, peso) > max) px -= 1;
+    return px;
+  };
+  k.quebrar = (texto, max, maxLinhas) => {   // quebra nos espaços (o espaço fixo não quebra); se não couber tudo, a última linha termina com "…"
+    const palavras = String(texto).split(/[ \t\r\n]+/).filter(Boolean), linhas = [];
     let atual = '', i = 0;
     for (; i < palavras.length; i++) {
       const t = atual ? `${atual} ${palavras[i]}` : palavras[i];
@@ -2023,60 +2086,245 @@ function canvasEtiqueta(p, W, H, pxmm, loja = {}) {
       else { linhas.push(atual); atual = palavras[i]; if (linhas.length === maxLinhas) break; }
     }
     if (linhas.length < maxLinhas && atual) { linhas.push(atual); i = palavras.length; }
-    if (i < palavras.length) linhas[linhas.length - 1] = cortar(`${linhas[linhas.length - 1]} …`, max);
-    return linhas.map(l => cortar(l, max));
+    if (i < palavras.length && linhas.length) linhas[linhas.length - 1] = k.cortar(`${linhas[linhas.length - 1]} …`, max);
+    return linhas.map(l => k.cortar(l, max));
   };
-  const iso = p.data_retirada || '';
-  const dia = iso ? `${DIAS[new Date(iso + 'T12:00:00Z').getUTCDay()].toUpperCase()} ${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '', horario = p.hora_retirada ? hora(p.hora_retirada) : '';
-  const quando = [dia, horario].filter(Boolean).join(' ');
-  const falta = Math.max(0, Number(p.saldo ?? (Number(p.total) - Number(p.valor_pago))));
-  const pagto = falta > 0 ? `FALTA ${R(falta).replace(/ /g, ' ')}` : 'PAGO';
-  const itens = (p.itens || []).map(i => `${i.quantidade}x ${i.nome}${i.peso_kg ? ' ' + formatarPeso(i.peso_kg) : ''}`).join(' · ');
-  const mm = v => v * pxmm;
-
-  if (H < mm(20)) {
-    // etiqueta estreita (D11, D110): código com o dia e o horário ao lado; o nome do cliente embaixo
-    let fCod = Math.min(mm(5.5), H * 0.46), fDia = fCod * 0.42, fHora = fCod * 0.62;
-    let bloco = Math.max(dia ? medir(dia, fDia, 800) : 0, horario ? medir(horario, fHora, 900) : 0);
-    if (bloco > largura * 0.44) { const k = largura * 0.44 / bloco; fDia *= k; fHora *= k; bloco *= k; }
-    fCod = encaixar(p.codigo, fCod, 900, largura - bloco - mm(1.5));
-    const topo = M * 0.6, base = topo + Math.max(fCod * 0.78, (dia ? fDia * 0.8 + mm(0.5) : 0) + (horario ? fHora * 0.78 : 0));
-    g.font = fonte(fCod, 900); escrever(p.codigo, M, base);
-    if (dia) { g.font = fonte(fDia, 800); escrever(dia, W - M, horario ? topo + fDia * 0.8 : base, 'right'); }
-    if (horario) { g.font = fonte(fHora, 900); escrever(horario, W - M, base, 'right'); }
-    const fN = encaixar(p.cliente_nome || '', Math.min(mm(4.2), (H - base - M * 0.6) * 0.95), 800, largura);
-    g.font = fonte(fN, 800); escrever(cortar(p.cliente_nome || '', largura), M, base + mm(0.5) + fN * 0.8);
-  } else {
-    // código grande; à direita, o dia em cima e o horário embaixo; nome do cliente; itens; pagamento no rodapé
-    let fDia = mm(3.1), fHora = mm(4.6);
-    let blocoQ = Math.max(dia ? medir(dia, fDia, 800) : 0, horario ? medir(horario, fHora, 900) : 0);
-    if (blocoQ > largura * 0.44) { const k = largura * 0.44 / blocoQ; fDia *= k; fHora *= k; blocoQ *= k; }   // etiqueta estreita: o código continua grande
-    const fCod = encaixar(p.codigo, mm(6.2), 900, largura - blocoQ - mm(2));
-    const topo = M, base = topo + Math.max(fCod * 0.78, (dia ? fDia * 0.8 + mm(0.8) : 0) + (horario ? fHora * 0.78 : 0));
-    g.font = fonte(fCod, 900); escrever(p.codigo, M, base);
-    if (dia) { g.font = fonte(fDia, 800); escrever(dia, W - M, horario ? topo + fDia * 0.8 : base, 'right'); }
-    if (horario) { g.font = fonte(fHora, 900); escrever(horario, W - M, base, 'right'); }
-    let y = base + mm(1.4);
-    g.lineWidth = Math.max(2, Math.round(pxmm * 0.3)); g.beginPath(); g.moveTo(M, y); g.lineTo(W - M, y); g.stroke();
-    const fN = encaixar(p.cliente_nome || '', mm(4.2), 800, largura);
-    y += mm(1.2) + fN * 0.8; g.font = fonte(fN, 800); escrever(cortar(p.cliente_nome || '', largura), M, y);
-    const fP = mm(3.4), rodape = H - M;   // linha do pagamento, colada embaixo
-    const fI = mm(2.8), alturaLinha = fI * 1.2, livre = rodape - fP - mm(1) - y;
-    const nLinhas = Math.max(0, Math.floor(livre / alturaLinha));
-    if (nLinhas && itens) {
-      g.font = fonte(fI, 700);
-      quebrar(itens, largura, nLinhas).forEach((l, i) => escrever(l, M, y + mm(0.6) + (i + 1) * alturaLinha - fI * 0.2));
-    }
-    const fPg = encaixar(pagto, fP, 900, largura * 0.62);
-    g.font = fonte(fPg, 900); escrever(pagto, W - M, rodape, 'right');
-    const nomeLoja = loja.nome_loja || 'Rita Bolos', livreLoja = largura - medir(pagto, fPg, 900) - mm(2);
-    if (medir(nomeLoja, mm(2.4), 700) <= livreLoja) { g.font = fonte(mm(2.4), 700); escrever(nomeLoja, M, rodape); }   // só se couber inteiro
-  }
+  /** O texto numa linha, diminuindo a letra até a fração "menor" (nunca abaixo de 1,6 mm, que a térmica não marca bem);
+      se não der, tenta as versões seguintes (mais curtas); se nenhuma couber, quebra a última em até "linhas" linhas
+      ou corta com "…" (cortado: true). Volta [{ t, f, peso, cortado }]. */
+  k.texto = (opcoes, px, peso, max, { linhas = 1, menor = 0.8 } = {}) => {
+    const lista = [].concat(opcoes).filter(Boolean), min = Math.min(px, Math.max(px * menor, pxmm * 1.6));
+    if (!lista.length) return [{ t: '', f: px, peso }];
+    for (const t of lista) { const f = k.encaixar(t, px, peso, max); if (f >= min && k.medir(t, f, peso) <= max) return [{ t, f, peso }]; }
+    const t = lista[lista.length - 1];
+    if (linhas > 1) { g.font = k.fonte(px, peso); return k.quebrar(t, max, linhas).map(l => ({ t: l, f: px, peso, cortado: l.endsWith('…') })); }
+    g.font = k.fonte(min, peso); const c = k.cortar(t, max);
+    return [{ t: c, f: min, peso, cortado: c !== t }];
+  };
+  if (et.item) desenharEtiquetaBolo(k, et); else desenharEtiquetaPedido(k, et.p || et, loja);
   // preto e branco "duro": a impressora não tem cinza, e a borda suave das letras sairia borrada
   const img = g.getImageData(0, 0, W, H), d = img.data;
   for (let i = 0; i < d.length; i += 4) { const preto = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114 < 150; d[i] = d[i + 1] = d[i + 2] = preto ? 0 : 255; d[i + 3] = 255; }
   g.putImageData(img, 0, 0);
   return c;
+}
+/* Linhas empilhadas de cima para baixo: { t, f, peso, antes (espaço acima), dir: [{ t, f, peso }] (à direita, na mesma linha),
+   selo: { t, f, cheio } (à direita; cheio = fundo preto), faixa (fundo preto na largura toda), regra (traço) } */
+const alturaLinha = (k, l) => (l.antes || 0) + (l.regra ? k.traco : l.faixa ? l.f * 1.32
+  : Math.max(l.f, ...(l.dir || []).map(x => x.f), l.selo ? l.selo.f * 1.15 : 0) * 0.8 + l.f * 0.22);
+const alturaLinhas = (k, L) => L.reduce((s, l) => s + alturaLinha(k, l), 0);
+function desenharLinhas(k, L, y) {
+  const { g, W, M, largura, mm, fonte, escrever, traco } = k;
+  for (const l of L) {
+    y += l.antes || 0;
+    if (l.regra) { g.fillRect(M, y, largura, traco); y += traco; continue; }
+    if (l.faixa) {
+      const h = l.f * 1.32; g.fillRect(M, y, largura, h);
+      g.fillStyle = '#fff'; g.font = fonte(l.f, l.peso); escrever(l.t, M + mm(1), y + h * 0.76); g.fillStyle = '#000';
+      y += h; continue;
+    }
+    const base = y + Math.max(l.f, ...(l.dir || []).map(x => x.f), l.selo ? l.selo.f * 1.15 : 0) * 0.8;
+    if (l.t) { g.font = fonte(l.f, l.peso); escrever(l.t, M, base); }
+    let x = W - M;
+    for (const d of [...(l.dir || [])].reverse()) { g.font = fonte(d.f, d.peso); escrever(d.t, x, base, 'right'); x -= g.measureText(d.t).width + mm(0.8); }
+    if (l.selo) {
+      g.font = fonte(l.selo.f, 900);
+      if (l.selo.cheio) {
+        const w = g.measureText(l.selo.t).width + mm(1.2);
+        g.fillRect(x - w, base - l.selo.f * 0.92, w, l.selo.f * 1.15);
+        g.fillStyle = '#fff'; escrever(l.selo.t, x - mm(0.6), base, 'right'); g.fillStyle = '#000';
+      } else escrever(l.selo.t, x, base, 'right');
+    }
+    y = base + l.f * 0.22;
+  }
+  return y;
+}
+/** Largura do que vai à direita na linha (horário, selo), com o respiro até o texto da esquerda. */
+const larguraDireita = (k, dir = [], selo) => {
+  const w = dir.reduce((s, x) => s + k.medir(x.t, x.f, x.peso), 0) + Math.max(0, dir.length - 1) * k.mm(0.8)
+    + (selo ? k.medir(selo.t, selo.f, 900) + (selo.cheio ? k.mm(1.2) : 0) : 0);
+  return w ? w + k.mm(1.5) : 0;
+};
+/** Etiqueta do pedido: código grande, dia e horário, cliente, itens e pagamento. */
+function desenharEtiquetaPedido(k, p, loja) {
+  const { g, W, H, M, largura, mm, fonte, medir, encaixar, cortar, escrever, quebrar } = k;
+  const dia = diaEtiqueta(p.data_retirada), horario = p.hora_retirada ? hora(p.hora_retirada) : '';
+  const falta = Math.max(0, Number(p.saldo ?? (Number(p.total) - Number(p.valor_pago))));
+  const pagto = falta > 0 ? `FALTA ${R(falta).replace(/ /g, ' ')}` : 'PAGO';
+  const itens = (p.itens || []).map(i => `${i.quantidade}x\u00a0${i.nome}${i.peso_kg ? ' ' + colarPeso(formatarPeso(i.peso_kg)) : ''}`).join(' · ');
+  const estreita = H < mm(20);
+  // código grande; à direita, o dia em cima e o horário embaixo
+  let fDia = estreita ? Math.min(mm(5.5), H * 0.46) * 0.42 : mm(3.1), fHora = estreita ? Math.min(mm(5.5), H * 0.46) * 0.62 : mm(4.6);
+  let bloco = Math.max(dia ? medir(dia, fDia, 800) : 0, horario ? medir(horario, fHora, 900) : 0);
+  if (bloco > largura * 0.44) { const r = largura * 0.44 / bloco; fDia *= r; fHora *= r; bloco *= r; }   // etiqueta estreita: o código continua grande
+  const fCod = encaixar(p.codigo, estreita ? Math.min(mm(5.5), H * 0.46) : mm(6.2), 900, largura - bloco - mm(estreita ? 1.5 : 2));
+  const topo = estreita ? M * 0.6 : M;
+  const base = topo + Math.max(fCod * 0.78, (dia ? fDia * 0.8 + mm(estreita ? 0.5 : 0.8) : 0) + (horario ? fHora * 0.78 : 0));
+  g.font = fonte(fCod, 900); escrever(p.codigo, M, base);
+  if (dia) { g.font = fonte(fDia, 800); escrever(dia, W - M, horario ? topo + fDia * 0.8 : base, 'right'); }
+  if (horario) { g.font = fonte(fHora, 900); escrever(horario, W - M, base, 'right'); }
+  if (estreita) {   // D11, D110: só o nome embaixo
+    const fN = encaixar(p.cliente_nome || '', Math.min(mm(4.2), (H - base - M * 0.6) * 0.95), 800, largura);
+    g.font = fonte(fN, 800); escrever(cortar(p.cliente_nome || '', largura), M, base + mm(0.5) + fN * 0.8);
+    return;
+  }
+  let y = base + mm(1.4);
+  g.lineWidth = Math.max(2, Math.round(mm(0.3))); g.beginPath(); g.moveTo(M, y); g.lineTo(W - M, y); g.stroke();
+  const fN = encaixar(p.cliente_nome || '', mm(4.2), 800, largura);
+  y += mm(1.2) + fN * 0.8; g.font = fonte(fN, 800); escrever(cortar(p.cliente_nome || '', largura), M, y);
+  const fP = mm(3.4), rodape = H - M;   // linha do pagamento, colada embaixo
+  const fI = mm(2.8), entre = fI * 1.2, nLinhas = Math.max(0, Math.floor((rodape - fP - mm(1) - y) / entre));
+  if (nLinhas && itens) { g.font = fonte(fI, 700); quebrar(itens, largura, nLinhas).forEach((l, i) => escrever(l, M, y + mm(0.6) + (i + 1) * entre - fI * 0.2)); }
+  const fPg = encaixar(pagto, fP, 900, largura * 0.62);
+  g.font = fonte(fPg, 900); escrever(pagto, W - M, rodape, 'right');
+  const nomeLoja = loja.nome_loja || 'Rita Bolos';
+  if (medir(nomeLoja, mm(2.4), 700) <= largura - medir(pagto, fPg, 900) - mm(2)) { g.font = fonte(mm(2.4), 700); escrever(nomeLoja, M, rodape); }   // só se couber inteiro
+}
+/** O que vai na etiqueta de um bolo, já em texto. */
+function textosEtiquetaBolo({ p, item: i, n, total, topos = [], fins = [] }) {
+  const kit = kitDoItem(i) || '';
+  const boloKit = !i.peso_kg && !i.massa ? kit.match(BOLO_NO_KIT)?.[0] : '';   // kit: o bolo que vem nele
+  const kitComTopo = !!kit && /\btopper|\btopos?\b/i.test(`${i.nome} ${kit}`);
+  const q = topos.reduce((s, t) => s + Math.max(1, Number(t.quantidade) || 1), 0), tb = `${q} topo${q > 1 ? 's' : ''}`;   // toppers avulsos no pedido
+  const juntar = t => colarPeso(t).replace(/\s*\+\s*/g, '\u00a0+\u00a0');   // "Ninho + Morango" não quebra no "+"
+  const sabor = String(i.nome || '').replace(/^bolo\s+(d[aeo]s?\s+)?/i, '');
+  return {
+    nome: String(p.cliente_nome || '').trim(), horario: p.hora_retirada ? hora(p.hora_retirada) : '', dia: diaEtiqueta(p.data_retirada), codigo: p.codigo || '',
+    qual: total > 1 ? `bolo ${n} de ${total}` : '',
+    recheio: juntar([sabor.charAt(0).toUpperCase() + sabor.slice(1), i.peso_kg ? formatarPeso(i.peso_kg) : ''].filter(Boolean).join(' ')),
+    segundo: juntar(i.segundo_recheio || ''), boloKit: colarPeso(boloKit),
+    massa: String(i.massa || '').replace(/^massa\s+/i, '').toUpperCase(), formato: String(i.formato || '').toUpperCase(),
+    fin: fins.map(f => String(f.nome).trim().replace(/^finaliza[çc][ãa]o\s*/i, '')).filter(Boolean).map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(', '),
+    topo: [kitComTopo ? 'vem no kit' : '', ...topos.map(t => (Number(t.quantidade) > 1 ? `${t.quantidade}x ` : '') + t.nome)].filter(Boolean).join(', '),
+    // menos topos que bolos: a cozinha confere no pedido qual bolo leva
+    notaTopo: !kitComTopo && q && q < total ? [`${tb} para ${total} bolos: confira no pedido`, `${tb} p/ ${total} bolos: ver pedido`, `${tb} p/ ${total} bolos`] : [],
+    obs: separarReferencia(i.observacao).texto || ''
+  };
+}
+/** "Maria Aparecida dos Santos" → ["Maria Aparecida dos Santos", "Maria Santos"] e, com curto, também "Maria S." e "Maria". */
+const nomesCurtos = (nome, curto = true) => {
+  const p = String(nome || '').split(/\s+/).filter(Boolean);
+  if (p.length < 2) return [p.join(' ')];
+  const ult = p[p.length - 1], bons = [p.join(' '), `${p[0]} ${ult}`];
+  return [...new Set(curto ? [...bons, `${p[0]} ${ult.charAt(0).toUpperCase()}.`, p[0]] : bons)];
+};
+/**
+ * Cliente à esquerda e horário à direita, na mesma linha. O nome tem preferência: primeiro o horário diminui, depois vale
+ * o primeiro e o último nome ("Maria Santos"). Com curto, encurta mais ("Maria S.", "Maria") e, no fim, corta;
+ * sem curto, volta null quando nem "Maria Santos" cabe.
+ */
+function cabecalhoBolo(k, d, fN, fH, { comDia = false, curto = true } = {}) {
+  const nomes = nomesCurtos(d.nome, curto);
+  const dir = (r, dia) => [dia && d.dia && { t: d.dia.split(' ')[0], f: fH * r * 0.55, peso: 800 }, d.horario && { t: d.horario, f: fH * r, peso: 900 }].filter(Boolean);
+  if (comDia && d.dia) {   // "SÁB 16:00", se o nome inteiro continuar grande
+    const D = dir(1, true), max = k.largura - larguraDireita(k, D), f = k.encaixar(nomes[0], fN, 900, max);
+    if (f >= fN * 0.85 && k.medir(nomes[0], f, 900) <= max) return { t: nomes[0], f, peso: 900, dir: D };
+  }
+  for (const t of nomes) for (const r of [1, 0.9, 0.8, 0.7, 0.65]) {
+    const D = dir(r), max = k.largura - larguraDireita(k, D), f = k.encaixar(t, fN, 900, max);
+    if (f >= fN * 0.7 && k.medir(t, f, 900) <= max) return { t, f, peso: 900, dir: D };
+  }
+  if (!curto) return null;
+  const D = dir(0.65);
+  return { ...k.texto(nomes, fN, 900, k.largura - larguraDireita(k, D), { menor: 0.6 })[0], dir: D };
+}
+/** Sem "cortado": a linha pode sair cortada sem prejudicar (o essencial está no começo dela). */
+const semCorte = ({ cortado, ...l }) => l;
+/**
+ * Procura o maior tamanho (s = 1: o ideal; s < 1: tudo diminui junto) em que as linhas cabem na altura sem cortar nada.
+ * etapas: [[[montar(s) → linhas ou null, ...], s mínimo], ...], na ordem de preferência; dentro da etapa, ganha o arranjo
+ * que deixa a letra maior (no empate, o primeiro). Se nenhuma servir sem cortar: a que coube na altura com menos linhas cortadas.
+ */
+function escolherTamanho(k, etapas, util, sMax = 1) {
+  let reserva = null;
+  for (const [arranjos, sMin] of etapas) {
+    for (let s = sMax; s >= sMin - 1e-6; s -= 0.05) {
+      for (const montar of arranjos) {
+        const L = montar(s);
+        if (!L || alturaLinhas(k, L) > util) continue;
+        const cortes = L.filter(l => l.cortado).length;
+        if (!cortes) return L;
+        if (!reserva || cortes < reserva.cortes) reserva = { L, cortes };
+      }
+    }
+  }
+  return reserva?.L || null;
+}
+/**
+ * Etiqueta de um bolo para a cozinha: cliente e horário; dia, código e qual bolo é; recheio e peso; 2º recheio (ou o bolo do kit);
+ * massa e formato; finalização; topo (faixa preta) ou SEM TOPO; a observação do bolo, se couber. Nada do essencial é cortado: tudo diminui junto.
+ */
+function desenharEtiquetaBolo(k, et) {
+  const { H, M, largura, mm, texto } = k, d = textosEtiquetaBolo(et);
+  if (H < mm(20)) return desenharBoloEstreita(k, d);
+  const subs = [[d.dia, d.codigo, d.qual], [d.dia, d.qual]].map(a => a.filter(Boolean).join(' · '));
+  const mf = [[d.massa && `MASSA ${d.massa}`, d.formato], [d.massa, d.formato]].map(a => a.filter(Boolean).join(' · '));
+  /** cab: 'linha' (cliente e horário lado a lado, nome inteiro), 'duas' (o nome numa linha; embaixo, o horário com o dia e o código)
+      ou 'curto' (lado a lado, o nome pode encurtar). Volta null quando o cabeçalho pedido não cabe. */
+  const montar = (s, cab, comSub = true) => {
+    const fN = mm(4.8) * s, fH = mm(5) * s, fS = mm(2.6) * s, L = [];
+    let sub = comSub && subs[0];
+    if (cab === 'duas') {
+      L.push(texto(nomesCurtos(d.nome, false), fN, 900, largura, { menor: 0.55 })[0]);   // com a linha só para ele, o nome pode diminuir mais
+      if (d.horario) {
+        // ao lado do horário: o dia e o código; "bolo 1 de 2" não pode sumir (se não couber, vai para a linha de baixo)
+        const fh = fH * 0.85, ao = sub ? texto(d.qual ? subs : [...subs, d.dia], fS, 700, largura - k.medir(d.horario, fh, 900) - mm(2), { menor: 0.85 })[0] : null;
+        const lado = ao && !ao.cortado;
+        L.push({ t: d.horario, f: fh, peso: 900, antes: mm(0.4) * s, dir: lado ? [semCorte(ao)] : [] });
+        if (lado) sub = null;
+      }
+    } else {
+      const c = cabecalhoBolo(k, d, fN, fH, { curto: cab === 'curto' });
+      if (!c) return null;
+      L.push(c);
+    }
+    if (sub) L.push({ ...semCorte(texto(subs, fS, 700, largura)[0]), antes: mm(0.6) * s });
+    L.push({ regra: true, antes: mm(1) * s });
+    L.push(...texto(d.recheio, mm(3.6) * s, 800, largura, { linhas: 4 }).map((l, n) => ({ ...l, antes: mm(n ? 0.1 : 0.7) * s })));
+    if (d.segundo || d.boloKit) L.push(...texto(d.segundo ? [`2º recheio: ${d.segundo}`, `2º: ${d.segundo}`] : d.boloKit, mm(3.2) * s, 800, largura, { linhas: 2 }).map(l => ({ ...l, antes: mm(0.2) * s })));
+    if (mf[0]) L.push({ ...texto(mf, mm(3.4) * s, 900, largura)[0], antes: mm(0.3) * s });
+    if (d.fin) L.push({ ...texto([`Finalização: ${d.fin}`, d.fin], mm(3.0) * s, 800, largura)[0], antes: mm(0.2) * s });
+    // topo: faixa preta, para ninguém deixar passar
+    L.push({ ...semCorte(texto(d.topo ? `TOPO: ${d.topo}` : 'SEM TOPO', mm(3.2) * s, d.topo ? 900 : 800, largura - (d.topo ? mm(2) : 0))[0]), faixa: !!d.topo, antes: mm(0.8) * s });
+    if (d.notaTopo.length) L.push({ ...texto(d.notaTopo, mm(2.7) * s, 800, largura)[0], antes: mm(0.4) * s });
+    return L;
+  };
+  const util = H - M * 1.2;   // margem de cima (0,8) e de baixo (0,4)
+  // a observação no que sobrou. modo: 'toda' (inteira ou nada), 'parte' (ao menos 1 linha), 'sobra' (o que couber, até nada)
+  const obs = (s, L, modo) => {
+    if (!L) return null;
+    const fO = mm(2.6) * Math.max(s, 0.85), n = d.obs ? Math.min(4, Math.floor((util - alturaLinhas(k, L)) / (fO * 1.02 + mm(0.3)))) : 0;
+    if (n < 1) return modo === 'sobra' ? L : null;
+    const O = texto(`Obs: ${d.obs}`, fO, 700, largura, { linhas: n, menor: 1 });
+    return modo === 'toda' && O.some(l => l.cortado) ? null : [...L, ...O.map(l => ({ ...semCorte(l), antes: mm(0.3) }))];
+  };
+  const etapa = (modo, cabs, sMin, comSub = true) => [cabs.map(cab => s => obs(s, montar(s, cab, comSub), modo)), sMin];
+  // na ordem de preferência: com a observação inteira; com parte dela; só o essencial; o nome encurtado; sem a linha do dia e do código
+  const etapas = [
+    ...(d.obs ? [etapa('toda', ['linha', 'duas'], 0.85), etapa('parte', ['linha', 'duas'], 0.85)] : []),
+    etapa('sobra', ['linha', 'duas'], 0.75), etapa('sobra', ['curto'], 0.6), etapa('sobra', ['curto'], 0.6, false)
+  ];
+  desenharLinhas(k, escolherTamanho(k, etapas, util, H >= mm(38) ? 1.2 : 1) || montar(0.6, 'curto', false), M * 0.8);
+}
+/** D11, D110 (12 a 15 mm de altura): cliente e horário; recheio; 2º recheio e finalização (se tiver); massa, formato e TOPO. */
+function desenharBoloEstreita(k, d) {
+  const { H, M, largura, mm, texto } = k;
+  const recheios = d.boloKit ? [`${d.recheio} · ${d.boloKit}`, d.boloKit] : d.recheio;
+  const mf = [d.massa, d.formato].filter(Boolean).join(' · ');   // "PRETA · REDONDO": aqui não sobra lugar para "MASSA"
+  const montar = (s, curto = true) => {
+    const f1 = Math.min(mm(4.6), H * 0.38) * s, f2 = Math.min(mm(3.2), H * 0.24) * s, antes = mm(0.3) * s;
+    const selo = { t: d.topo ? 'TOPO' : 'SEM TOPO', f: f2 * (d.topo ? 0.9 : 1), cheio: !!d.topo };
+    const cab = cabecalhoBolo(k, d, f1, f1, { comDia: true, curto });
+    if (!cab) return null;
+    const L = [cab, { ...texto(recheios, f2, 800, largura, { menor: 0.7 })[0], antes }];
+    if (d.segundo) L.push({ ...texto([`2º recheio: ${d.segundo}`, `2º: ${d.segundo}`], f2, 800, largura, { menor: 0.7 })[0], antes });
+    if (d.fin) L.push({ ...texto([`Finalização: ${d.fin}`, d.fin], f2, 800, largura, { menor: 0.7 })[0], antes });
+    const lado = texto(mf, f2, 900, largura - larguraDireita(k, [], selo), { menor: 0.7 })[0];
+    if (!lado.cortado) L.push({ ...lado, selo, antes });
+    else L.push({ ...texto(mf, f2, 900, largura, { menor: 0.7 })[0], antes }, { t: '', f: selo.f, peso: 900, selo, antes });   // não coube ao lado: o TOPO desce
+    return L;
+  };
+  desenharLinhas(k, escolherTamanho(k, [[[s => montar(s, false)], 0.75], [[montar], 0.6]], H - M * 0.8) || montar(0.6), M * 0.45);   // nome inteiro, se der
 }
 /** Tamanho da etiqueta em pontos para a impressora conectada (ou 203 dpi, para a prévia). */
 function medidasEtiqueta(meta) {
@@ -2086,49 +2334,154 @@ function medidasEtiqueta(meta) {
   if (meta?.printheadPixels) { if ((meta.printDirection || 'top') === 'top') W = Math.min(W, meta.printheadPixels); else H = Math.min(H, meta.printheadPixels); }
   return { W, H, pxmm };
 }
-async function imprimirNaNiimbot(p, quantidade = 1) {
+/** Manda as etiquetas para a Niimbot num trabalho só. aoAvancar(feitas, total); parar(): true interrompe. */
+async function imprimirNaNiimbot(etiquetas, { aoAvancar, parar } = {}) {
   const { lib, client } = niim;
   const meta = client.getModelMetadata() || {};
-  const { W, H, pxmm } = medidasEtiqueta(meta);
-  const canvas = canvasEtiqueta(p, W, H, pxmm, await configLoja() || {});
+  const { W, H, pxmm } = medidasEtiqueta(meta), loja = await configLoja() || {};
   const direcao = meta.printDirection || 'top';
-  const encoded = lib.ImageEncoder.encodeCanvas(canvas, lib.PageColorType.SingleColor, direcao);
   const tarefa = client.getPrintTaskType() || (direcao === 'left' ? 'D110' : 'B1');
   const task = client.protocol.newPrintTask(tarefa, {
-    totalPages: quantidade, density: meta.densityDefault || 3, labelType: lib.LabelType.WithGaps, statusPollIntervalMs: 100, statusTimeoutMs: 8000
+    totalPages: etiquetas.length, density: meta.densityDefault || 3, labelType: lib.LabelType.WithGaps, statusPollIntervalMs: 100, statusTimeoutMs: 8000
   });
+  let feitas = 0;
   try {
     await task.printInit();
-    await task.printPage(encoded, quantidade);
-    await task.waitForPageFinished();
-    await task.waitForFinished();
+    for (const et of etiquetas) {
+      if (parar?.()) break;
+      await task.printPage(lib.ImageEncoder.encodeCanvas(canvasEtiqueta(et, W, H, pxmm, loja), lib.PageColorType.SingleColor, direcao), 1);
+      await task.waitForPageFinished();
+      feitas++;
+      aoAvancar?.(feitas, etiquetas.length);
+    }
+    if (feitas === etiquetas.length) await task.waitForFinished();
   } finally {
     await task.printEnd().catch(() => {});
   }
+  return feitas;
 }
+/** Traduz o erro da impressora para a equipe. */
+const erroNiimbot = e => new Error(/print|paper|lid|cover/i.test(e?.message || '') ? `A Niimbot não imprimiu (${e.message}). Confira se a tampa está fechada e se tem etiqueta.` : e?.message || String(e));
 /**
- * Etiqueta do pedido na Niimbot. Num toque (botão Etiqueta, Testar), conecta se precisar.
+ * Etiquetas na Niimbot, uma impressão de cada vez. Num toque (botão Etiqueta, Testar, lote), conecta se precisar.
  * Na impressão automática não dá para abrir a lista do Bluetooth sem um toque: avisa com o botão para conectar.
  */
-function etiquetaNiimbot(p, { automatico = false } = {}) {
+function etiquetasNiimbot(etiquetas, { automatico = false, rotulo = 'Etiqueta', aoAvancar, parar } = {}) {
   const tarefa = filaNiimbot.then(async () => {
     if (!niimbotConectada()) {
       if (automatico) {
-        toast(`A etiqueta do pedido ${p.codigo} não saiu: a Niimbot está desconectada.`, { tipo: 'erro', tempo: 20000,
-          acao: { rotulo: 'Conectar e imprimir', fn: () => etiquetaNiimbot(p).catch(erroToast) } });
-        return false;
+        toast(`${rotulo} não saiu: a Niimbot está desconectada.`, { tipo: 'erro', tempo: 20000,
+          acao: { rotulo: 'Conectar e imprimir', fn: () => etiquetasNiimbot(etiquetas, { rotulo }).catch(erroToast) } });
+        return 0;
       }
       await conectarNiimbot();
     }
-    await imprimirNaNiimbot(p);
-    toast(`Etiqueta do pedido ${p.codigo} impressa na Niimbot.`);
-    return true;
+    const feitas = await imprimirNaNiimbot(etiquetas, { aoAvancar, parar });
+    if (feitas) toast(`${rotulo} impressa${feitas > 1 ? `s (${feitas} etiquetas)` : ''} na Niimbot.`);
+    return feitas;
   });
   filaNiimbot = tarefa.catch(() => {});
-  return tarefa.catch(e => { throw new Error(/print|paper|lid|cover/i.test(e?.message || '') ? `A Niimbot não imprimiu (${e.message}). Confira se a tampa está fechada e se tem etiqueta.` : e?.message || String(e)); });
+  return tarefa.catch(e => { throw erroNiimbot(e); });
+}
+async function etiquetaNiimbot(p, opcoes = {}) {
+  await mapaKitsLoja();   // o que vem em cada kit (para achar bolo e topo dentro dele)
+  return etiquetasNiimbot(etiquetasDoPedido(p), { rotulo: `Etiqueta do pedido ${p.codigo}`, ...opcoes });
+}
+/** Várias etiquetas na térmica de 80 mm (sem Niimbot): o mesmo desenho, uma por página. */
+async function imprimirEtiquetasTermica(etiquetas) {
+  const [wMm, hMm] = confNiimbot().tamanho.split('x').map(Number), pxmm = 8, W = 72 * pxmm, H = Math.round(W * hMm / wMm);
+  const loja = await configLoja() || {};
+  const imgs = etiquetas.map(et => `<img src="${canvasEtiqueta(et, W, H, pxmm, loja).toDataURL('image/png')}" alt="">`).join('');
+  return mandarParaTermica(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiquetas</title><style>
+    @page { size: 80mm auto; margin: 0; } * { margin: 0; padding: 0; } body { width: 80mm; padding: 2mm 4mm; background: #fff; }
+    img { display: block; width: 72mm; break-after: page; page-break-after: always; image-rendering: pixelated; }
+  </style></head><body>${imgs}</body></html>`);
 }
 /** Botão "Etiqueta": na Niimbot, se estiver em uso neste aparelho; senão, na térmica de 80 mm. */
 const imprimirEtiquetaDoPedido = (p, opcoes) => (confNiimbot().usar ? etiquetaNiimbot(p, opcoes) : imprimirEtiqueta(p));
+/** Linhas da lista de pedidos (vw_pedidos) com os itens de cada uma, numa consulta só. */
+async function pedidosComItens(linhas) {
+  const ids = linhas.map(p => p.id), porPedido = new Map(ids.map(id => [id, []]));
+  for (let i = 0; i < ids.length; i += 100) {
+    const itens = await api.admin.pedidos.itens.listar({ filtros: { pedido_id: ids.slice(i, i + 100) }, ordenarPor: [['pedido_id', true], ['ordem', true]] });
+    itens.forEach(it => porPedido.get(it.pedido_id)?.push(it));
+  }
+  return linhas.map(p => ({ ...p, itens: porPedido.get(p.id) || [] }));
+}
+
+/* ---- Etiquetas de vários pedidos de uma vez (Pedidos e Hoje) ---- */
+async function modalEtiquetasLote(linhas, titulo = 'Imprimir etiquetas') {
+  if (!linhas.length) { toast('Não há pedidos nesta lista para imprimir.'); return; }
+  let pedidos;
+  try { [pedidos] = await Promise.all([pedidosComItens(linhas), mapaKitsLoja()]); } catch (e) { erroToast(e); return; }
+  pedidos.sort((a, b) => String(a.data_retirada).localeCompare(String(b.data_retirada)) || String(a.hora_retirada || '99').localeCompare(String(b.hora_retirada || '99')) || a.cliente_nome.localeCompare(b.cliente_nome));
+  let conteudo = confNiimbot().conteudo || 'producao', parar = false, imprimindo = false;
+  const naNiimbot = confNiimbot().usar;
+  const marcados = new Set(pedidos.filter(p => !p.finalizado && p.status !== 'cancelado').map(p => p.id));   // retirados e cancelados começam desmarcados
+  const variosDias = new Set(pedidos.map(p => p.data_retirada)).size > 1;
+  const m = abrirModal({
+    titulo, largo: true,
+    corpo: `<div class="lote-conteudo" role="radiogroup" aria-label="O que sai em cada etiqueta">${CONTEUDOS_ETIQUETA.map(([v, t]) => `<label class="est-tipo"><input type="radio" name="loteCont" value="${v}" ${v === conteudo ? 'checked' : ''}><span><b>${esc(t.split(':')[0])}</b><small>${esc(t.split(':')[1].trim())}</small></span></label>`).join('')}</div>
+      <div class="lote-barra"><button type="button" class="link" data-lote-todos>Marcar todos</button><button type="button" class="link" data-lote-nenhum>Desmarcar todos</button><span id="loteConta"></span></div>
+      <div class="lote-lista" id="loteLista">${pedidos.map(p => `<label class="lote-it ${p.status === 'cancelado' ? 'cancelado' : ''}"><input type="checkbox" data-lote="${esc(p.id)}" ${marcados.has(p.id) ? 'checked' : ''}>
+        <span class="lote-q">${variosDias ? `<small>${esc(dataCurta(p.data_retirada))}</small>` : ''}${p.hora_retirada ? esc(hora(p.hora_retirada)) : '—'}</span>
+        <span class="lote-n"><b>${esc(p.cliente_nome)}</b><small>${esc(p.codigo)} · ${esc(p.status_nome || p.status)}</small></span>
+        <em data-lote-n="${esc(p.id)}"></em></label>`).join('')}</div>
+      <p class="secao-t">Prévia da primeira etiqueta</p><div class="nb-previa" id="lotePrevia"></div>
+      <div class="lote-prog" id="loteProg" hidden><div class="lote-trilho"><i></i></div><span aria-live="polite"></span></div>
+      ${naNiimbot ? '' : '<p class="ajuste-dica" style="margin:8px 0 0">Sem a Niimbot ligada neste aparelho (Minha conta), as etiquetas saem na térmica de 80 mm, uma por página.</p>'}`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Fechar</button><button type="button" class="btn primary" data-ok>${ic('imprimir')}<span>Imprimir</span></button>`
+  });
+  const etiquetas = () => pedidos.filter(p => marcados.has(p.id)).flatMap(p => etiquetasDoPedido(p, conteudo));
+  const atualizar = () => {
+    pedidos.forEach(p => {
+      const n = etiquetasDoPedido(p, conteudo).length, bolo = conteudo !== 'pedido' && p.itens.some(ehBoloProducao);
+      const em = m.$(`[data-lote-n="${CSS.escape(p.id)}"]`);
+      if (em) em.textContent = conteudo === 'pedido' ? '1 etiqueta' : bolo ? `${n} ${n === 1 ? 'bolo' : 'bolos'}` : 'sem bolo: 1 do pedido';
+    });
+    const n = etiquetas().length, sel = marcados.size;
+    m.$('#loteConta').textContent = `${sel} ${sel === 1 ? 'pedido marcado' : 'pedidos marcados'} · ${n} ${n === 1 ? 'etiqueta' : 'etiquetas'}`;
+    const bt = m.$('[data-ok]'); bt.disabled = !n || imprimindo;
+    bt.querySelector('span').textContent = imprimindo ? 'Imprimindo…' : `Imprimir ${n} ${n === 1 ? 'etiqueta' : 'etiquetas'}${naNiimbot ? ' na Niimbot' : ''}`;
+    const prim = etiquetas()[0], box = m.$('#lotePrevia');
+    if (!prim) { box.textContent = 'Marque pelo menos um pedido.'; return; }
+    const { W, H, pxmm } = medidasEtiqueta(niimbotConectada() ? niim.client.getModelMetadata() : null);
+    const c = canvasEtiqueta(prim, W, H, pxmm, cacheLoja || {});
+    c.style.width = `${Math.min(280, Number(confNiimbot().tamanho.split('x')[0]) * 5.2)}px`; c.setAttribute('role', 'img'); c.setAttribute('aria-label', 'Prévia da primeira etiqueta');
+    box.replaceChildren(c);
+  };
+  m.el.addEventListener('change', e => {
+    if (e.target.name === 'loteCont') { conteudo = e.target.value; salvarConfNiimbot({ conteudo }); }
+    if (e.target.dataset.lote) { if (e.target.checked) marcados.add(e.target.dataset.lote); else marcados.delete(e.target.dataset.lote); }
+    atualizar();
+  });
+  m.$('[data-lote-todos]').addEventListener('click', () => { pedidos.forEach(p => marcados.add(p.id)); m.$$('[data-lote]').forEach(c => { c.checked = true; }); atualizar(); });
+  m.$('[data-lote-nenhum]').addEventListener('click', () => { marcados.clear(); m.$$('[data-lote]').forEach(c => { c.checked = false; }); atualizar(); });
+  atualizar();
+  m.$('[data-ok]').addEventListener('click', async () => {
+    if (imprimindo) return;
+    const lista = etiquetas(); if (!lista.length) return;
+    const prog = m.$('#loteProg'), barra = prog.querySelector('i'), txt = prog.querySelector('span');
+    const avancar = (feitas, total) => { barra.style.width = `${Math.round(feitas / total * 100)}%`; txt.textContent = `Impressa${feitas === 1 ? '' : 's'} ${feitas} de ${total}`; };
+    imprimindo = true; parar = false; atualizar();
+    prog.hidden = false; avancar(0, lista.length); txt.textContent = `Enviando ${lista.length} ${lista.length === 1 ? 'etiqueta' : 'etiquetas'}…`;
+    const fechar = m.$('.modal-f [data-fechar]'); fechar.textContent = 'Parar';
+    const pararClique = ev => { if (imprimindo) { ev.stopPropagation(); parar = true; txt.textContent = 'Parando depois da etiqueta atual…'; } };
+    fechar.addEventListener('click', pararClique, true);
+    try {
+      if (naNiimbot) {
+        const feitas = await etiquetasNiimbot(lista, { rotulo: 'Etiquetas', aoAvancar: avancar, parar: () => parar });
+        txt.textContent = parar ? `Parou: ${feitas} de ${lista.length} impressas.` : `Pronto: ${feitas} ${feitas === 1 ? 'etiqueta impressa' : 'etiquetas impressas'}.`;
+      } else {
+        await imprimirEtiquetasTermica(lista);
+        txt.textContent = `Enviadas ${lista.length} etiquetas para a térmica.`; avancar(lista.length, lista.length);
+      }
+    } catch (e) { erroToast(e); txt.textContent = e.message || 'Não deu para imprimir.'; }
+    finally {
+      imprimindo = false; fechar.removeEventListener('click', pararClique, true); fechar.textContent = 'Fechar'; atualizar();
+    }
+  });
+}
 
 /* ---- Impressão automática: cada pedido que vira "Confirmado" sai na térmica deste aparelho ----
    Fica ligada só no computador da impressora (Minha conta). Sem a janela de impressão, só com o
