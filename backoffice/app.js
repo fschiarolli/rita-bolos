@@ -4043,32 +4043,120 @@ async function carregarTopos() {
   atualizarBadgeTopos();
 }
 
-function quadroTopos(lista) {
-  const vazios = { novo: 'Nenhum pedido novo.', em_producao: 'Nada em produção agora.', pronto: 'Nada pronto esperando entrega.', entregue: 'Nada entregue nos últimos dias.' };
-  return `<div class="tq">${TOPO_STATUS.slice(0, 4).map(s => {
-    const itens = lista.filter(t => t.status === s.codigo);
-    if (s.codigo === 'entregue') itens.sort((a, b) => (a.atualizado_em < b.atualizado_em ? 1 : -1));
-    return `<section class="tq-col" style="${corVars(s.cor)}" aria-labelledby="tqc-${s.codigo}">
-      <header class="tq-h"><span class="dot" aria-hidden="true"></span><h2 id="tqc-${s.codigo}">${esc(s.nome)}</h2><span class="tq-n" aria-label="${itens.length} pedidos">${itens.length}</span></header>
-      <div class="tq-cards" data-drop="${s.codigo}">${itens.length ? itens.map(cartaoTopo).join('') : `<p class="tq-vazio">${vazios[s.codigo]}</p>`}</div>
-    </section>`;
-  }).join('')}</div>`;
+/* ---- Quadro: a esteira da produção ----
+   Responde "o que eu faço agora?". No alto, o foco do dia (atrasados, para hoje, para amanhã, prontos para entregar):
+   tocar destaca esses cartões. Nas colunas, os cartões em ordem de prazo, separados por dia. O cartão é uma ficha: o prazo
+   em cima (com quanto falta), a imagem de referência, o que fazer e a frase que vai escrita, e o próximo passo na cor da
+   etapa para onde ele vai. Ao avançar, dá para desfazer. No celular, as etapas viram abas. */
+const COLUNAS_TOPO = {
+  novo: { dica: 'Esperando começar', vazio: 'Nenhum pedido novo.', curto: 'Novo' },
+  em_producao: { dica: 'Na bancada agora', vazio: 'Nada em produção agora.', curto: 'Produção' },
+  pronto: { dica: 'Esperando a entrega', vazio: 'Nada pronto esperando entrega.', curto: 'Pronto' },
+  entregue: { dica: 'Nos últimos dois dias', vazio: 'Nada entregue nos últimos dias.', curto: 'Entregue' }
+};
+const GRUPOS_PRAZO = { atraso: 'Atrasado', hoje: 'Hoje', amanha: 'Amanhã', semana: 'Próximos dias', depois: 'Mais pra frente' };
+const FOCOS_TOPO = [['atraso', 'atrasado', 'atrasados'], ['hoje', 'para hoje', 'para hoje'], ['amanha', 'para amanhã', 'para amanhã'], ['entregar', 'pronto para entregar', 'prontos para entregar']];
+let focoTopos = null, abaTopos = null, topoQueChegou = null;
+/** Quanto tempo, curto: "40 min", "2 h 30", "5 h", "3 dias". */
+function duracao(min) {
+  min = Math.round(Math.abs(min));
+  if (min < 60) return `${min} min`;
+  if (min < 1440) { const h = Math.floor(min / 60), m = min % 60; return h < 3 && m >= 10 ? `${h} h ${String(m).padStart(2, '0')}` : `${Math.round(min / 60)} h`; }
+  const d = Math.round(min / 1440); return `${d} ${d === 1 ? 'dia' : 'dias'}`;
+}
+const chavePrazo = t => `${t.data_entrega}T${hora(t.hora_entrega) || '23:59'}`;   // sem horário, vale até o fim do dia
+const hojeISODe = iso => new Intl.DateTimeFormat('en-CA', { timeZone: FUSO }).format(new Date(iso));   // o dia (em Brasília) de um instante
+/** "Hoje", "Ontem", "Amanhã" ou "ter, 13/10". */
+const nomeDoDia = iso => (iso === hojeISO(-1) ? 'Ontem' : dataCurta(iso));
+/** Em que grupo do quadro cai um dia que ainda não passou. */
+function grupoPrazo(dia) {
+  if (dia === hojeISO()) return 'hoje';
+  if (dia === hojeISO(1)) return 'amanha';
+  return dia <= hojeISO(6) ? 'semana' : 'depois';
+}
+/** Quanto falta, ao lado do prazo ("em 3 h"); para amanhã, o horário já diz tudo. */
+function faltaPrazo(t, minutos) {
+  if (t.data_entrega === hojeISO(1)) return '';
+  if (t.data_entrega === hojeISO() && !t.hora_entrega) return 'até o fim do dia';
+  return `em ${duracao(minutos)}`;
+}
+/** Prazo do pedido de topo no quadro: grupo (atraso, hoje, amanha, semana, depois; feito para o entregue), rótulo e quanto falta. */
+function prazoTopo(t) {
+  if (!ABERTOS_TOPO.includes(t.status)) {
+    const dia = nomeDoDia(t.atualizado_em ? hojeISODe(t.atualizado_em) : t.data_entrega);
+    return { urg: 'feito', rotulo: `Entregue ${{ Hoje: 'hoje', Ontem: 'ontem' }[dia] || dia}`, rel: '' };
+  }
+  const falta = (new Date(`${chavePrazo(t)}:00-03:00`) - Date.now()) / 6e4;   // Brasília (sem horário de verão desde 2019)
+  const rotulo = nomeDoDia(t.data_entrega) + (t.hora_entrega ? ' · ' + hora(t.hora_entrega) : '');
+  if (falta < 0) return { urg: 'atraso', rotulo, rel: t.status === 'pronto' ? 'falta entregar' : `atrasado ${duracao(falta)}` };
+  return { urg: grupoPrazo(t.data_entrega), rotulo, rel: faltaPrazo(t, falta) };
+}
+/** No celular, a etapa aberta: a escolhida antes; senão, a que tem algo atrasado ou para hoje; senão, a primeira com pedidos. */
+function abaInicialTopos(lista) {
+  if (abaTopos) return abaTopos;
+  try { const s = sessionStorage.getItem('ritabolos.topos.aba'); if (COLUNAS_TOPO[s]) return s; } catch (e) { /* sem armazenamento */ }
+  const quente = ['em_producao', 'novo', 'pronto'].find(c => lista.some(t => t.status === c && ['atraso', 'hoje'].includes(prazoTopo(t).urg)));
+  return quente || Object.keys(COLUNAS_TOPO).find(c => lista.some(t => t.status === c)) || 'novo';
 }
 
-function cartaoTopo(t) {
-  const s = topoStatus(t.status), prox = proxTopo(t.status), e = entregaTopo(t), img = t.referencias?.[0];
-  const quem = [t.cliente_nome, t.pedido_codigo].filter(Boolean).join(' · ');
-  return `<article class="tq-card ${e.cls}" draggable="true" data-topo-card="${esc(t.id)}">
-    <button type="button" class="tq-abrir" data-topo="${esc(t.id)}" aria-label="Abrir ${codigoTopo(t)}: ${esc(t.titulo)}">
-      ${img ? `<img class="tq-img" src="${esc(img)}" alt="" loading="lazy">` : ''}
-      <span class="tq-top"><b class="tq-cod">${codigoTopo(t)}</b><span class="tag ${t.tipo === 'personalizado' ? 'tp-pers' : 'cinza'}">${esc(TOPO_TIPOS[t.tipo] || t.tipo)}</span></span>
-      <strong class="tq-tit">${t.quantidade > 1 ? `${t.quantidade}× ` : ''}${esc(t.titulo)}</strong>
-      ${t.tema ? `<span class="tq-l"><b>Tema:</b> ${esc(t.tema)}</span>` : ''}
-      ${t.texto ? `<span class="tq-l tq-txt">“${esc(t.texto)}”</span>` : ''}
-      <span class="tq-quando ${e.cls}">${ic('relogio')}${esc(e.txt)}</span>
-      ${quem ? `<span class="tq-l tq-cli">${esc(quem)}</span>` : ''}
+function quadroTopos(lista) {
+  const conta = { atraso: 0, hoje: 0, amanha: 0, entregar: 0 };
+  lista.filter(t => ABERTOS_TOPO.includes(t.status)).forEach(t => {
+    const u = prazoTopo(t).urg; if (u in conta) conta[u]++;
+    if (t.status === 'pronto') conta.entregar++;
+  });
+  if (focoTopos && !conta[focoTopos]) focoTopos = null;   // o destaque esvaziou (ex.: o último atrasado ficou pronto)
+  const aba = abaInicialTopos(lista), etapas = TOPO_STATUS.slice(0, 4);
+  const doStatus = c => lista.filter(t => t.status === c);
+  return `<div class="tq-quadro" ${focoTopos ? `data-foco="${focoTopos}"` : ''}>
+    <div class="tq-foco" role="group" aria-label="Destacar no quadro">${FOCOS_TOPO.map(([v, um, varios]) => `<button type="button" class="tq-chip ${v}" data-tq-foco="${v}" aria-pressed="${focoTopos === v}" ${conta[v] ? '' : 'disabled'}><b>${conta[v]}</b>${conta[v] === 1 ? um : varios}</button>`).join('')}
+      ${focoTopos ? '<button type="button" class="link tq-limpar" data-tq-foco="">Mostrar tudo</button>' : ''}</div>
+    <div class="tq-abas" role="tablist" aria-label="Etapas">${etapas.map(s => {
+      const itens = doStatus(s.codigo), quente = s.codigo !== 'entregue' && itens.some(t => ['atraso', 'hoje'].includes(prazoTopo(t).urg));
+      return `<button type="button" role="tab" class="tq-aba" data-tq-aba="${s.codigo}" aria-selected="${s.codigo === aba}" style="${corVars(s.cor)}">${esc(COLUNAS_TOPO[s.codigo].curto)}<span class="tq-n">${itens.length}${quente ? '<i aria-label="tem pedido para hoje ou atrasado"></i>' : ''}</span></button>`;
+    }).join('')}</div>
+    <div class="tq">${etapas.map(s => colunaTopo(s, doStatus(s.codigo), s.codigo === aba)).join('')}</div>
+  </div>`;
+}
+function colunaTopo(s, itens, ativa) {
+  const fim = s.codigo === 'entregue', c = COLUNAS_TOPO[s.codigo];
+  if (fim) itens.sort((a, b) => (a.atualizado_em < b.atualizado_em ? 1 : -1));
+  else itens.sort((a, b) => chavePrazo(a).localeCompare(chavePrazo(b)));
+  let grupo = null;
+  const cartoes = itens.map(t => {
+    const p = prazoTopo(t), divisa = !fim && p.urg !== grupo ? `<p class="tq-grupo ${p.urg}">${GRUPOS_PRAZO[p.urg]}</p>` : '';
+    grupo = p.urg;
+    return divisa + cartaoTopo(t, p);
+  }).join('');
+  return `<section class="tq-col ${fim ? 'fim' : ''} ${ativa ? 'ativa' : ''}" data-col="${s.codigo}" style="${corVars(s.cor)}" aria-labelledby="tqc-${s.codigo}">
+    <header class="tq-h"><h2 id="tqc-${s.codigo}">${esc(s.nome)}</h2><span class="tq-n" aria-label="${itens.length} pedidos">${itens.length}</span><small>${esc(c.dica)}</small></header>
+    <div class="tq-cards" data-drop="${s.codigo}" data-solte="Soltar em ${esc(s.nome)}">${cartoes || `<p class="tq-vazio">${ic(fim ? 'ok' : 'topo')}${esc(c.vazio)}</p>`}</div>
+  </section>`;
+}
+
+function cartaoTopo(t, p = prazoTopo(t)) {
+  const s = topoStatus(t.status), prox = proxTopo(t.status), img = t.referencias?.[0];
+  const icone = t.tipo === 'personalizado' ? 'presente' : 'topo';   // sem imagem de referência: o ícone do tipo
+  const mini = img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ic(icone);
+  if (p.urg === 'feito') return `<article class="tq-card mini" data-topo-card="${esc(t.id)}" data-st="${t.status}">
+    <button type="button" class="tq-corpo" data-topo="${esc(t.id)}" aria-label="Abrir ${codigoTopo(t)}: ${esc(t.titulo)}, ${esc(p.rotulo)}">
+      <span class="tq-mini">${mini}</span>
+      <span class="tq-txt"><strong class="tq-tit">${t.quantidade > 1 ? `${t.quantidade}× ` : ''}${esc(t.titulo)}</strong><span class="tq-meta">${esc(p.rotulo)}${t.cliente_nome ? ' · ' + esc(t.cliente_nome) : ''}</span></span>
+    </button></article>`;
+  const nw = v => `<span class="nw">${esc(v)}</span>`;   // código não quebra no hífen
+  const meta = [t.tema && esc(t.tema), t.cliente_nome && esc(t.cliente_nome), t.pedido_codigo && nw(t.pedido_codigo)].filter(Boolean).join(' · ');
+  return `<article class="tq-card ${t.id === topoQueChegou ? 'chegou' : ''}" draggable="true" data-topo-card="${esc(t.id)}" data-urg="${p.urg}" data-st="${t.status}">
+    <div class="tq-prazo">${ic(p.urg === 'atraso' ? 'alerta' : 'relogio')}<span>${esc(p.rotulo)}</span>${p.rel ? `<em>${esc(p.rel)}</em>` : ''}</div>
+    <button type="button" class="tq-corpo" data-topo="${esc(t.id)}" aria-label="Abrir ${codigoTopo(t)}: ${esc(t.titulo)}, ${esc(p.rotulo)}">
+      <span class="tq-mini">${mini}${t.quantidade > 1 ? `<b class="tq-qtd">${t.quantidade}×</b>` : ''}</span>
+      <span class="tq-txt">
+        <span class="tq-tipo">${esc(TOPO_TIPOS[t.tipo] || t.tipo)} · ${nw(codigoTopo(t))}</span>
+        <strong class="tq-tit">${esc(t.titulo)}</strong>
+        ${t.texto ? `<q class="tq-frase">${esc(t.texto)}</q>` : ''}
+        ${meta ? `<span class="tq-meta">${meta}</span>` : ''}
+      </span>
     </button>
-    ${prox ? `<button type="button" class="btn sm teal tq-avancar" data-topo-avancar="${esc(t.id)}" data-para="${prox.codigo}">${ic('ok')}${esc(s.acao)}</button>` : ''}
+    ${prox ? `<button type="button" class="tq-ir" data-topo-avancar="${esc(t.id)}" data-para="${prox.codigo}" style="--n:${esc(prox.cor)};--n-rgb:${rgbDe(prox.cor)}">${esc(s.acao)}${ic('seta')}</button>` : ''}
   </article>`;
 }
 
@@ -4087,19 +4175,32 @@ function listaTopos(lista) {
     }).join('')}</div></section>`;
 }
 
-/** Muda o status (botão do cartão, arrastar no quadro ou a ficha do pedido). */
-async function mudarStatusTopo(id, para, btn) {
-  const t = toposCache.find(x => x.id === id);
+/** Muda o status (botão do cartão, arrastar no quadro ou a ficha do pedido). O aviso traz "Desfazer", que volta para onde estava. */
+async function mudarStatusTopo(id, para, btn, { desfazer = true } = {}) {
+  const t = toposCache.find(x => x.id === id), de = t?.status;
   if (t && t.status === para) return true;
   if (para === 'cancelado' && !await confirmar('Cancelar este pedido?', `${t ? codigoTopo(t) + ': ' + t.titulo : 'O pedido'} sai do quadro. Dá para voltar o status depois.`, { botao: 'Cancelar pedido', perigo: true })) return false;
   return ocupado(btn, async () => {
     const r = await api.admin.topos.alterarStatus(id, para);
-    toast(`${codigoTopo(r)}: ${topoStatus(para).nome}.`);
+    topoQueChegou = id;   // o cartão chega brilhando na coluna nova
+    setTimeout(() => { if (topoQueChegou === id) topoQueChegou = null; }, 1600);
+    const volta = desfazer && de && de !== para ? { rotulo: 'Desfazer', fn: () => mudarStatusTopo(id, de, null, { desfazer: false }) } : null;
+    toast(`${codigoTopo(r)} foi para ${topoStatus(para).nome}.`, { acao: volta, tempo: volta ? 7000 : 4200 });
     if (telaAtual === 'topos') await carregarTopos();
     else atualizarBadgeTopos();
     return true;
   });
 }
+/* Foco do dia (destacar) e, no celular, as abas das etapas: só redesenham o quadro, sem buscar de novo */
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-tq-foco],[data-tq-aba]'); if (!b || !$('#toposCorpo')) return;
+  if (b.dataset.tqAba) {
+    abaTopos = b.dataset.tqAba;
+    try { sessionStorage.setItem('ritabolos.topos.aba', abaTopos); } catch (err) { /* só nesta visita */ }
+  } else focoTopos = b.dataset.tqFoco && b.dataset.tqFoco !== focoTopos ? b.dataset.tqFoco : null;
+  $('#toposCorpo').innerHTML = quadroTopos(toposCache);
+  $(`[data-tq-${b.dataset.tqAba ? 'aba' : 'foco'}="${b.dataset.tqAba || focoTopos || ''}"]`)?.focus();   // o foco do teclado fica no botão tocado
+});
 
 /* Cliques e arrastar do módulo (quadro, lista, botões do cabeçalho) */
 document.addEventListener('click', e => {

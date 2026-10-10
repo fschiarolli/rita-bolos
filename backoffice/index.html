@@ -1029,35 +1029,88 @@ a.chip { text-decoration: none; }
 /* ---------- Topos e personalizados ---------- */
 .vista-sel { display: inline-flex; gap: 4px; padding: 3px; border-radius: 12px; background: var(--surface-2); }
 .vista-sel .btn.ghost { border-color: transparent; background: transparent; box-shadow: none; }
-.tq { display: grid; grid-template-columns: repeat(4, minmax(220px, 1fr)); gap: 14px; align-items: start; overflow-x: auto; padding-bottom: 6px; }
-.tq-col { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r); padding: 10px; min-width: 0; }
-.tq-h { display: flex; align-items: center; gap: 8px; padding: 4px 4px 10px; }
-.tq-h .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); filter: var(--dot-filter); flex: none; }
-.tq-h h2 { font-size: 14.5px; font-weight: 700; flex: 1; margin: 0; }
+/* Quadro ("esteira da produção"): foco do dia no alto, colunas por etapa em ordem de prazo e cartões em forma de ficha */
+.tq-foco { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+.tq-chip { display: inline-flex; align-items: center; gap: 9px; min-height: 42px; padding: 0 16px 0 8px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--surface); color: var(--ink-2); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow-sm); transition: background .15s, color .15s, border-color .15s, transform .1s; }
+.tq-chip b { min-width: 28px; height: 28px; padding: 0 8px; border-radius: 999px; display: inline-grid; place-items: center; font-family: var(--font-display); font-size: 15px; font-weight: 700; background: var(--surface-2); color: var(--ink); }
+.tq-chip.atraso b { background: var(--error); color: var(--bg); }
+.tq-chip.hoje b { background: var(--rose-600); color: var(--bg); }
+.tq-chip.amanha b { background: var(--gold); color: var(--bg); }
+.tq-chip.entregar b { background: var(--teal); color: var(--bg); }
+.tq-chip:hover:not(:disabled) { border-color: var(--ink-3); color: var(--ink); }
+.tq-chip:active:not(:disabled) { transform: translateY(1px); }
+.tq-chip[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); box-shadow: var(--glow); }
+.tq-chip:disabled { opacity: .5; cursor: default; box-shadow: none; }
+.tq-chip:disabled b { background: var(--surface-2); color: var(--ink-3); }
+.tq-limpar { margin-left: 4px; font-size: 13.5px; }
+.tq { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, .75fr); gap: 14px; align-items: start; }
+.tq-col { position: relative; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-xl); padding: 12px 10px 10px; min-width: 0; }
+.tq-col::before { content: ''; position: absolute; left: 18px; right: 18px; top: -1px; height: 3px; border-radius: 0 0 3px 3px; background: var(--c); filter: var(--dot-filter); }
+.tq-h { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 8px; padding: 4px 6px 12px; }
+.tq-h h2 { font-family: var(--font-display); font-size: 16px; font-weight: 700; letter-spacing: -.01em; margin: 0; }
+.tq-h small { grid-column: 1 / -1; font-size: 12px; color: var(--ink-3); }
 .tq-n { font-family: var(--font-num); font-weight: 700; font-size: 13px; min-width: 26px; height: 24px; padding: 0 8px; border-radius: 999px; display: inline-grid; place-items: center; background: rgba(var(--c-rgb), .18); color: var(--ink); }
-.tq-cards { display: grid; gap: 10px; min-height: 90px; border-radius: var(--r-sm); transition: background .15s, box-shadow .15s; }
-.tq-cards.sobre { background: rgba(var(--c-rgb), .10); box-shadow: inset 0 0 0 2px rgba(var(--c-rgb), .55); }
-.tq-vazio { margin: 0; padding: 22px 8px; text-align: center; color: var(--ink-3); font-size: 13px; }
-.tq-card { display: grid; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: var(--r-sm); box-shadow: var(--shadow); overflow: hidden; }
-.tq-card.atraso { border-color: var(--error); }
-.tq-card.arrastando { opacity: .45; }
+.tq-cards { position: relative; display: grid; gap: 10px; min-height: 120px; align-content: start; border-radius: var(--r); transition: background .15s, box-shadow .15s; }
+.tq-cards.sobre { background: rgba(var(--c-rgb), .08); box-shadow: inset 0 0 0 2px rgba(var(--c-rgb), .5); }
+.tq-cards.sobre::after { content: attr(data-solte); position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); padding: 6px 12px; border-radius: 999px; background: var(--c); color: var(--bg); font-size: 12.5px; font-weight: 700; white-space: nowrap; pointer-events: none; }
+.tq-grupo { display: flex; align-items: center; gap: 8px; margin: 4px 6px -2px; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+.tq-grupo::after { content: ''; flex: 1; height: 1px; background: var(--line-2); }
+.tq-grupo.atraso { color: var(--error); } .tq-grupo.hoje { color: var(--rose-600); } .tq-grupo.amanha { color: var(--gold); }
+.tq-vazio { display: grid; justify-items: center; gap: 6px; margin: 0; padding: 26px 10px; text-align: center; color: var(--ink-3); font-size: 13px; border: 1.5px dashed var(--line-2); border-radius: var(--r); }
+.tq-vazio .ic { width: 22px; height: 22px; opacity: .7; }
+.tq-card { position: relative; display: grid; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow-sm); overflow: hidden; transition: transform .15s var(--ease), box-shadow .15s, opacity .2s, filter .2s; }
+.tq-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
 .tq-card[draggable="true"] { cursor: grab; }
-.tq-abrir { display: grid; gap: 4px; text-align: left; padding: 10px 12px; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; }
-.tq-abrir:hover { background: var(--surface-2); }
-.tq-img { width: 100%; height: 120px; object-fit: cover; border-radius: 8px; margin-bottom: 4px; background: var(--surface-2); }
-.tq-top { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
-.tq-cod { font-family: var(--font-num); font-size: 12px; color: var(--ink-3); font-weight: 600; }
-.tq-tit { font-size: 15px; font-weight: 700; line-height: 1.3; }
-.tq-l { font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
-.tq-l b { font-weight: 600; }
-.tq-txt { font-weight: 600; color: var(--ink); }
-.tq-cli { color: var(--ink-3); font-size: 12.5px; }
+.tq-card.arrastando { opacity: .45; transform: rotate(-1.5deg) scale(.98); }
+.tq-card.chegou { animation: tqChegou 1.4s var(--ease); }
+@keyframes tqChegou { 0% { transform: scale(.96); box-shadow: 0 0 0 0 rgba(var(--c-rgb), 0); } 25% { transform: scale(1.01); box-shadow: 0 0 0 4px rgba(var(--c-rgb), .45); } 100% { transform: none; box-shadow: var(--shadow-sm); } }
+/* o prazo em cima: quanto mais perto, mais forte (atrasado: faixa cheia, não passa despercebido) */
+.tq-prazo { display: flex; align-items: center; gap: 6px; padding: 7px 12px; font-size: 12.5px; font-weight: 700; color: var(--ink-2); background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.tq-prazo .ic { width: 15px; height: 15px; flex: none; }
+.tq-prazo em { margin-left: auto; font-style: normal; font-weight: 600; font-size: 12px; white-space: nowrap; }
+.tq-card[data-urg="atraso"] .tq-prazo { background: var(--error); color: var(--bg); border-bottom-color: transparent; }
+.tq-card[data-urg="hoje"] .tq-prazo { background: var(--rose-50); color: var(--rose-600); }
+.tq-card[data-urg="amanha"] .tq-prazo { background: var(--warm-50); color: var(--gold); }
+.tq-corpo { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 12px; align-items: start; width: 100%; padding: 12px; text-align: left; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; }
+.tq-mini { position: relative; width: 58px; height: 58px; border-radius: 14px; display: grid; place-items: center; background: rgba(var(--c-rgb), .14); color: var(--c); }
+.tq-mini .ic { width: 26px; height: 26px; stroke-width: 1.6; filter: var(--dot-filter); }
+.tq-mini img { width: 100%; height: 100%; object-fit: cover; border-radius: 14px; box-shadow: 0 0 0 1px var(--line); }
+.tq-qtd { position: absolute; right: -6px; bottom: -6px; min-width: 26px; height: 22px; padding: 0 6px; border-radius: 999px; display: grid; place-items: center; background: var(--primary); color: var(--on-primary); font-size: 11.5px; font-weight: 700; box-shadow: 0 0 0 2px var(--surface); }
+.tq-txt { display: grid; gap: 3px; min-width: 0; }
+.tq-tipo { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.tq-tit { font-size: 15px; font-weight: 700; line-height: 1.25; }
+.tq-frase { font-family: var(--font-display); font-size: 17px; font-weight: 600; line-height: 1.25; letter-spacing: -.01em; color: var(--ink); overflow-wrap: anywhere; }
+.tq-meta { font-size: 12.5px; color: var(--ink-3); overflow-wrap: anywhere; }
+.tq-card .nw { white-space: nowrap; }
+/* o próximo passo, na cor da etapa para onde o cartão vai */
+.tq-ir { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 0 12px 12px; min-height: 38px; border-radius: var(--r-sm); border: 1px solid rgba(var(--n-rgb), .42); background: rgba(var(--n-rgb), .12); color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer; transition: background .15s, transform .1s; }
+.tq-ir::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--n); filter: var(--dot-filter); }
+.tq-ir .ic { width: 15px; height: 15px; }
+.tq-ir:hover { background: rgba(var(--n-rgb), .24); }
+.tq-ir:active { transform: translateY(1px); }
+@media (pointer: coarse) { .tq-ir { min-height: 44px; } }
+/* entregues: compactos, sem pedir atenção */
+.tq-col.fim .tq-cards { gap: 6px; }
+.tq-card.mini { box-shadow: none; }
+.tq-card.mini:hover { transform: none; box-shadow: var(--shadow-sm); }
+.tq-card.mini .tq-corpo { grid-template-columns: 34px minmax(0, 1fr); gap: 10px; align-items: center; padding: 8px 10px; }
+.tq-card.mini .tq-mini { width: 34px; height: 34px; border-radius: 10px; }
+.tq-card.mini .tq-mini img { border-radius: 10px; }
+.tq-card.mini .tq-mini .ic { width: 18px; height: 18px; }
+.tq-card.mini .tq-tit { font-size: 13.5px; }
+.tq-card.mini .tq-meta { font-size: 12px; }
+/* foco: os cartões que não são do destaque ficam apagados */
+.tq-quadro[data-foco="atraso"] .tq-card:not([data-urg="atraso"]), .tq-quadro[data-foco="hoje"] .tq-card:not([data-urg="hoje"]),
+.tq-quadro[data-foco="amanha"] .tq-card:not([data-urg="amanha"]), .tq-quadro[data-foco="entregar"] .tq-card:not([data-st="pronto"]) { opacity: .28; filter: saturate(.3); }
+.tq-quadro[data-foco] .tq-grupo { opacity: .55; }
+.tq-abas { display: none; }
+@media (max-width: 1199px) { .tq { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* datas na ficha do pedido de topo */
 .tq-quando { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
 .tq-quando .ic { width: 14px; height: 14px; flex: none; }
 .tq-quando.hoje { color: var(--rose-600); }
 .tq-quando.amanha { color: var(--gold); }
 .tq-quando.atraso { color: var(--error); }
-.tq-avancar { margin: 0 10px 10px; justify-content: center; }
 .tag.tp-pers { background: var(--teal-50); color: var(--teal); }
 .it-topo { display: flex; flex-wrap: wrap; gap: 6px; }
 .it-topo:empty { display: none; }
@@ -1074,9 +1127,24 @@ a.chip { text-decoration: none; }
 .tf-add:focus-within { outline: 3px solid rgba(var(--teal-rgb), .4); }
 .tf-pago { align-content: end; padding-bottom: 10px; }
 .tq-tvbar { display: none; }
+/* celular: uma etapa por vez, escolhida nas abas (com quantos pedidos e um ponto quando tem algo atrasado ou para hoje) */
 @media (max-width: 760px) {
-  .tq { grid-template-columns: repeat(4, 84%); scroll-snap-type: x mandatory; }
-  .tq-col { scroll-snap-align: start; }
+  .tq-foco { flex-wrap: nowrap; overflow-x: auto; margin: 0 -14px 12px; padding: 2px 14px 4px; scrollbar-width: none; }
+  .tq-foco::-webkit-scrollbar { display: none; }
+  .tq-chip { flex: none; }
+  .tq-abas { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 4px; margin-bottom: 12px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--line); }
+  .tq-aba { position: relative; display: grid; justify-items: center; gap: 3px; padding: 8px 2px 9px; border: 0; border-radius: 11px; background: none; color: var(--ink-3); font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+  .tq-aba .tq-n { height: 22px; min-width: 24px; font-size: 12px; }
+  .tq-aba[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
+  .tq-aba[aria-selected="true"]::after { content: ''; position: absolute; left: 30%; right: 30%; bottom: 3px; height: 3px; border-radius: 3px; background: var(--c); }
+  .tq-aba .tq-n { position: relative; }
+  .tq-aba i { position: absolute; top: -3px; right: -4px; width: 9px; height: 9px; border-radius: 50%; background: var(--error); box-shadow: 0 0 0 2px var(--surface); }
+  .tq { grid-template-columns: minmax(0, 1fr); }
+  .tq > .tq-col:not(.ativa) { display: none; }
+  /* a aba já diz a etapa: os cartões usam a largura toda */
+  .tq-col { background: none; border: 0; padding: 0; }
+  .tq-col::before, .tq-h { display: none; }
+  [data-topos-tv] { display: none; }   /* tela cheia é para a TV da bancada, não para o celular */
 }
 /* tela cheia (TV na bancada) */
 body.tv-topos .side, body.tv-topos .topo, body.tv-topos .rodape, body.tv-topos .nav-mob, body.tv-topos .page-head { display: none !important; }
@@ -1085,11 +1153,16 @@ body.tv-topos main.conteudo { max-width: none; padding: 16px 20px; }
 body.tv-topos .tq-tvbar { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
 body.tv-topos .tq-tvbar strong { font-family: var(--font-display); font-size: 26px; font-weight: 600; flex: 1; }
 body.tv-topos .tq-tvbar span { font-family: var(--font-num); font-size: 20px; font-weight: 600; color: var(--ink-2); }
-body.tv-topos .tq { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-body.tv-topos .tq-h h2 { font-size: 19px; }
-body.tv-topos .tq-tit { font-size: 19px; }
-body.tv-topos .tq-l, body.tv-topos .tq-quando { font-size: 15.5px; }
-body.tv-topos .tq-img { height: 150px; }
+body.tv-topos .tq { grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, .7fr); }
+body.tv-topos .tq-h h2 { font-size: 20px; }
+body.tv-topos .tq-chip { min-height: 48px; font-size: 16px; }
+body.tv-topos .tq-prazo { font-size: 15px; padding: 9px 14px; }
+body.tv-topos .tq-prazo em { font-size: 14px; }
+body.tv-topos .tq-corpo { grid-template-columns: 72px minmax(0, 1fr); }
+body.tv-topos .tq-mini { width: 72px; height: 72px; }
+body.tv-topos .tq-tit { font-size: 18px; }
+body.tv-topos .tq-frase { font-size: 22px; }
+body.tv-topos .tq-meta { font-size: 14px; }
 
 /* ---------- Novo pedido ---------- */
 .np-item { display: grid; grid-template-columns: minmax(0, 2fr) 90px auto; gap: 8px; align-items: end; padding: 14px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line); margin-bottom: 10px; }
@@ -1305,6 +1378,7 @@ body.tv-topos .tq-img { height: 150px; }
     <symbol id="i-sino" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></symbol>
     <symbol id="i-foto" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></symbol>
     <symbol id="i-topo" viewBox="0 0 24 24"><path d="M12 2.5l1.41 3.56 3.82.24-2.95 2.44.95 3.71L12 10.4l-3.23 2.05.95-3.71L6.77 6.3l3.82-.24z"/><path d="M12 10.4V21"/><path d="M8.5 21h7"/></symbol>
+    <symbol id="i-presente" viewBox="0 0 24 24"><rect x="3.5" y="8" width="17" height="4.5" rx="1"/><path d="M5 12.5v8h14v-8M12 8v12.5"/><path d="M12 8c-1-3.6-5.6-3.9-5.2-.9.2 1.4 2.6 1 5.2.9zM12 8c1-3.6 5.6-3.9 5.2-.9-.2 1.4-2.6 1-5.2.9z"/></symbol>
     <symbol id="i-estoque" viewBox="0 0 24 24"><path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5z"/><path d="M3.5 7.5 12 12l8.5-4.5"/><path d="M12 12v9"/><path d="m7.8 5.3 8.4 4.5"/></symbol>
     <symbol id="i-pote" viewBox="0 0 24 24"><path d="M4.5 4.5h15V7h-15z"/><path d="M6 7h12l-1.4 13.5H7.4z"/><path d="M6.6 12.5h10.8"/></symbol>
     <symbol id="i-externo" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14L21 3"/></symbol>
