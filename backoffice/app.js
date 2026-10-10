@@ -501,17 +501,22 @@ function telaShell() {
 }
 
 /* Tema claro/escuro: sem escolha segue o sistema; a escolha fica salva neste aparelho */
-/* ---- Temas: Automático (segue o aparelho), Claro, Escuro e Morango ----
-   As cores ficam no index.html (:root[data-theme="..."]). Para criar outro: um bloco de cores lá e uma linha aqui. */
+/* ---- Temas: Automático (segue o aparelho), Claro, Escuro, Morango, Canela e Vidro ----
+   As cores ficam no index.html (:root[data-theme="..."]). Para criar outro: um bloco de cores lá e uma linha aqui
+   (e, se tiver fonte própria, em FONTES_TEMA e no script do <head> do index.html, que aplica o tema antes de desenhar). */
 const TEMAS = [
   { id: 'auto', nome: 'Automático', desc: 'Claro ou escuro, como o aparelho', attr: null },
   { id: 'claro', nome: 'Claro', desc: 'Creme e chocolate', attr: 'light', meta: '#F8F2EA', icone: 'sol', amostra: ['#F8F2EA', '#FFFFFF', '#4A2A1C', '#2B7465'] },
   { id: 'escuro', nome: 'Escuro', desc: 'Para pouca luz', attr: 'dark', meta: '#120B08', icone: 'lua', amostra: ['#120B08', '#1C130F', '#F2DCC6', '#8FD3BF'] },
   { id: 'morango', nome: 'Morango', desc: 'Rosa suave e framboesa', attr: 'morango', meta: '#FCF0F3', icone: 'morango', amostra: ['#FCF0F3', '#FFFFFF', '#A8345C', '#2B7465'] },
-  { id: 'canela', nome: 'Canela', desc: 'Papel quadriculado, chocolate e tons pastel', attr: 'canela', meta: '#FFF4CC', icone: 'canela', amostra: ['#FFF4CC', '#FFFBEA', '#4A2418', '#A5B6EC'] }
+  { id: 'canela', nome: 'Canela', desc: 'Papel quadriculado, chocolate e tons pastel', attr: 'canela', meta: '#FFF4CC', icone: 'canela', amostra: ['#FFF4CC', '#FFFBEA', '#4A2418', '#A5B6EC'] },
+  { id: 'vidro', nome: 'Vidro', desc: 'Vidro fosco, grafite e verde-petróleo', attr: 'vidro', meta: '#EDF1F7', icone: 'vidro', amostra: ['#E9EEF6', 'rgba(255, 255, 255, .62)', '#0F172A', '#0F766E'] }
 ];
 /** Fontes próprias de um tema: só são baixadas quando ele é escolhido. */
-const FONTES_TEMA = { canela: 'https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,400..800,0..100&family=Source+Serif+4:opsz,wght@8..60,400..700&display=swap' };
+const FONTES_TEMA = {
+  canela: 'https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,400..800,0..100&family=Source+Serif+4:opsz,wght@8..60,400..700&display=swap',
+  vidro: 'https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&display=swap'
+};
 function carregarFontesTema(id) {
   const url = FONTES_TEMA[id]; if (!url || document.querySelector(`link[data-fontes="${id}"]`)) return;
   const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = url; l.setAttribute('data-fontes', id); document.head.appendChild(l);
