@@ -146,10 +146,14 @@ create table if not exists topos_historico (
 create index if not exists topos_historico_topo_idx on topos_historico (topo_id, criado_em);
 
 -- quem mexeu e quando: atualizado_em e histórico de status preenchidos pelo banco
+-- (pagar ou acertar o valor de quem faz, do sql/topos-gastos.sql, não conta como mexer no pedido)
 create or replace function topos_antes_salvar()
 returns trigger language plpgsql as $$
 begin
-  new.atualizado_em := now();
+  if (to_jsonb(new) - '{atualizado_em,custo_unitario,custo_manual,pagamento_id}'::text[])
+     is distinct from (to_jsonb(old) - '{atualizado_em,custo_unitario,custo_manual,pagamento_id}'::text[]) then
+    new.atualizado_em := now();
+  end if;
   return new;
 end;
 $$;

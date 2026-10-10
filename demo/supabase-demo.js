@@ -30,6 +30,21 @@ function avisoTopoPronto(lista, t) {
     pedido_id: t.pedido_id || null, topo_id: t.id, criado_em: new Date().toISOString(), lida_em: null });
   return lista[lista.length - 1];
 }
+/* Gastos com topos (igual a sql/topos-gastos.sql): "Topo de Papel " e "topo de papel" são o mesmo tipo na tabela de preços */
+const chaveTopo = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
+/** Valor da tabela para o "O que fazer": o nome igual ou o mais comprido que começa o título (igual a topos_preco_de). */
+function precoTopo(precos, titulo) {
+  const k = chaveTopo(titulo);
+  let melhor = null;
+  for (const p of precos || []) {
+    const n = chaveTopo(p.nome);
+    if (n && (k === n || k.startsWith(n + ' ')) && (!melhor || n.length > chaveTopo(melhor.nome).length)) melhor = p;
+  }
+  return melhor ? Number(melhor.valor) : null;
+}
+/** Colunas do pagamento a quem faz: mudar só elas não conta como mexer no pedido (atualizado_em fica). */
+const CAMPOS_CUSTO_TOPO = ['custo_unitario', 'custo_manual', 'pagamento_id'];
+const mudouPedidoTopo = (a, b) => Object.keys({ ...a, ...b }).some(k => k !== 'atualizado_em' && !CAMPOS_CUSTO_TOPO.includes(k) && JSON.stringify(a[k] ?? null) !== JSON.stringify(b[k] ?? null));
 const UNICOS = { categorias: ['slug'], produtos: ['slug'], bolo_massas: ['slug'], bolo_formatos: ['slug'], status_pedido: ['codigo'], bolo_pesos: ['peso_kg'] };
 const CHAVES = { status_pedido: 'codigo', bolo_pesos: 'peso_kg', administradores: 'user_id' };
 
@@ -74,6 +89,7 @@ export function criarSupabaseDemo(opcoes = {}) {
     b.produtores_personalizados = b.produtores_personalizados || [{ ...PRODUTORA_DEMO, criado_em: agora() }];
     if (!b.topos_pedidos) semearTopos(b);
     if (!b.notificacoes) { b.notificacoes = []; b.topos_pedidos.filter(t => t.status === 'pronto').forEach(t => avisoTopoPronto(b.notificacoes, t)); }
+    if (!b.topos_precos) semearGastosTopos(b);
     // Estoque (igual a sql/estoque.sql), com itens de exemplo
     if (!b.estoque_itens) semearEstoque(b);
     const adic = (b.categorias || []).find(c => c.slug === 'adicionais');
@@ -112,11 +128,44 @@ export function criarSupabaseDemo(opcoes = {}) {
       t({ tipo: 'personalizado', titulo: 'Caixinhas para doces', tema: 'Chá de bebê, tons de verde', texto: 'Chá da Helena', quantidade: 30, data_entrega: hojeSP(3), valor: 90,
         cliente_nome: 'Juliana Prado', cliente_telefone: '(19) 99812-3344', detalhes: 'Caixinha milk com laço de cetim.' }),
       t({ tipo: 'personalizado', titulo: 'Tags para lembrancinhas', tema: 'Batizado', texto: 'Batizado do Miguel', quantidade: 50, data_entrega: hojeSP(-1), status: 'entregue', valor: 60, pago: true,
-        cliente_nome: 'Marcos Silva', cliente_telefone: '(19) 98111-2233' })
+        cliente_nome: 'Marcos Silva', cliente_telefone: '(19) 98111-2233', atualizado_em: new Date(Date.now() - 864e5).toISOString() })
     ];
     const caminho = { novo: ['novo'], em_producao: ['novo', 'em_producao'], pronto: ['novo', 'em_producao', 'pronto'], entregue: ['novo', 'em_producao', 'pronto', 'entregue'] };
     b.topos_pedidos.forEach(p => (caminho[p.status] || ['novo']).forEach((s, i, l) => b.topos_historico.push({ id: b.topos_historico.length + 1, topo_id: p.id,
       status_anterior: i ? l[i - 1] : null, status_novo: s, autor_id: i ? PRODUTORA_DEMO.user_id : USUARIO_DEMO.id, autor_nome: i ? PRODUTORA_DEMO.nome : 'Rita', criado_em: agora() })));
+  }
+  /** Gastos com topos (igual a sql/topos-gastos.sql): tabela de preços, topos das últimas semanas e um pagamento já feito. */
+  function semearGastosTopos(b) {
+    const em = dias => new Date(Date.now() + dias * 864e5).toISOString();
+    b.topos_precos = [['Topo de papel', 15], ['Topo 3D em camadas', 35], ['Caixinhas para doces', 2.5], ['Tags para lembrancinhas', 0.8]]
+      .map(([nome, valor], i) => ({ id: novoId(), nome, valor, ordem: i + 1, criado_em: agora() }));
+    b.topos_pagamentos = [];
+    b.topos_pedidos.forEach(t => { t.custo_manual = !!t.custo_manual; t.pagamento_id = t.pagamento_id || null; });
+    // entregues nas últimas semanas: os mais antigos já foram pagos; os desta semana ainda não
+    const entregue = (dias, o) => {
+      const t = { id: novoId(), numero: b._seqTopo = (b._seqTopo || 0) + 1, tipo: 'topo', titulo: 'Topo de papel', tema: null, texto: null, quantidade: 1, detalhes: null,
+        referencias: [], cliente_nome: null, cliente_telefone: null, pedido_id: null, pedido_codigo: null, pedido_item_id: null, data_entrega: hojeSP(dias), hora_entrega: null,
+        status: 'entregue', valor: 0, pago: false, custo_unitario: null, custo_manual: false, pagamento_id: null, criado_por: USUARIO_DEMO.id,
+        criado_em: em(dias - 4), atualizado_em: em(dias), ...o };
+      b.topos_pedidos.push(t);
+      ['novo', 'em_producao', 'pronto', 'entregue'].forEach((s, i, l) => b.topos_historico.push({ id: b.topos_historico.length + 1, topo_id: t.id,
+        status_anterior: i ? l[i - 1] : null, status_novo: s, autor_id: i ? PRODUTORA_DEMO.user_id : USUARIO_DEMO.id, autor_nome: i ? PRODUTORA_DEMO.nome : 'Rita', criado_em: em(dias - 4 + i) }));
+      return t;
+    };
+    const pagos = [
+      entregue(-13, { tema: 'Unicórnio', texto: 'Laura, 7 anos', cliente_nome: 'Patrícia Gomes' }),
+      entregue(-11, { titulo: 'Topo 3D em camadas', tema: 'Dinossauros', texto: 'Davi, 3 anos', cliente_nome: 'Renata Alves' }),
+      entregue(-10, { tipo: 'personalizado', titulo: 'Caixinhas para doces', quantidade: 20, tema: 'Batizado, tons de azul', cliente_nome: 'Fernanda Dias' })
+    ];
+    entregue(-5, { texto: 'Bodas de prata', tema: 'Prata e branco', cliente_nome: 'Sônia Ribeiro' });
+    entregue(-4, { tipo: 'personalizado', titulo: 'Toppers para docinhos', quantidade: 40, tema: 'Futebol', cliente_nome: 'Carlos Nunes' });   // sem preço na tabela
+    pagos.forEach(t => { t.custo_unitario = precoTopo(b.topos_precos, t.titulo); });
+    const soma = r2(pagos.reduce((s, t) => s + t.custo_unitario * t.quantidade, 0));
+    const pg = { id: novoId(), pago_em: hojeSP(-8), valor: soma, valor_topos: soma, qtd_topos: pagos.length, forma: 'pix', observacao: null,
+      criado_por: USUARIO_DEMO.id, autor_nome: 'Rita', criado_em: em(-8) };
+    b.topos_pagamentos.push(pg);
+    pagos.forEach(t => { t.pagamento_id = pg.id; });
+    b.topos_pedidos.forEach(t => { if (!t.custo_manual && !t.pagamento_id) t.custo_unitario = precoTopo(b.topos_precos, t.titulo); });
   }
   function semearEstoque(b) {
     b.estoque_itens = []; b.estoque_consumos = []; b.estoque_movimentos = [];
@@ -293,6 +342,13 @@ export function criarSupabaseDemo(opcoes = {}) {
       if (q.op === 'insert' || q.op === 'delete') return erro('new row violates row-level security policy', '42501');
       if (!adminLoja()) q.filtros.push(n => !String(n.tipo || '').startsWith('estoque'));   // avisos de estoque: só a Administração
     }
+    // gastos com topos: a tabela de preços quem produz só lê; pagamentos, só a Administração (e criados só pela função)
+    if (tabela === 'topos_precos' && (q.op === 'select' ? !podeTopos() : !adminLoja()))
+      return q.op === 'select' ? finalizar([], q, 0) : erro('new row violates row-level security policy', '42501');
+    if (tabela === 'topos_pagamentos') {
+      if (!adminLoja()) return q.op === 'select' ? finalizar([], q, 0) : erro('new row violates row-level security policy', '42501');
+      if (q.op === 'insert' || q.op === 'update') return erro('new row violates row-level security policy', '42501');
+    }
     if (TABELAS_ESTOQUE.includes(tabela)) {   // estoque: só a Administração; movimentos só pelas funções
       if (!adminLoja()) return q.op === 'select' ? finalizar([], q, 0) : erro('new row violates row-level security policy', '42501');
       if (tabela === 'estoque_movimentos' && q.op !== 'select') return erro('new row violates row-level security policy', '42501');
@@ -321,6 +377,7 @@ export function criarSupabaseDemo(opcoes = {}) {
       const novos = (Array.isArray(q.dados) ? q.dados : [q.dados]).map(d => ({ ...padroes(tabela), ...clone(d) }));
       for (const n of novos) {
         for (const col of UNICOS[tabela] || []) if (fonte.some(r => r[col] == n[col])) return erro('duplicate key value violates unique constraint', '23505');
+        if (tabela === 'topos_pedidos') custoTopo(n, null);
         fonte.push(n);
         aposEscrever(tabela, n, null);
       }
@@ -333,7 +390,8 @@ export function criarSupabaseDemo(opcoes = {}) {
         const antigo = clone(r);
         for (const col of UNICOS[tabela] || []) if (q.dados[col] !== undefined && fonte.some(x => x !== r && x[col] == q.dados[col])) return erro('duplicate key value violates unique constraint', '23505');
         Object.assign(r, clone(q.dados));
-        if (TABELAS_COM_ATUALIZADO.includes(tabela)) r.atualizado_em = agora();
+        if (tabela === 'topos_pedidos') custoTopo(r, antigo);
+        if (TABELAS_COM_ATUALIZADO.includes(tabela) && (tabela !== 'topos_pedidos' || mudouPedidoTopo(antigo, r))) r.atualizado_em = agora();
         aposEscrever(tabela, r, antigo);
       }
       salvar();
@@ -366,7 +424,7 @@ export function criarSupabaseDemo(opcoes = {}) {
       status_pedido: { ativo: true, ordem: 0, finalizado: false }, administradores: { ativo: true, papel: 'admin' },
       pedido_observacoes: { fixada: false, autor_id: USUARIO_DEMO.id }, pedido_pagamentos: { tipo: 'sinal', forma: 'pix', pago_em: agora() },
       prejuizos: { quantidade: 1, data: hojeSP(), registrado_por: USUARIO_DEMO.id },
-      topos_pedidos: { tipo: 'topo', quantidade: 1, referencias: [], status: 'novo', valor: 0, pago: false, criado_por: usuarioId() },
+      topos_pedidos: { tipo: 'topo', quantidade: 1, referencias: [], status: 'novo', valor: 0, pago: false, custo_unitario: null, custo_manual: false, pagamento_id: null, criado_por: usuarioId() },
       estoque_itens: { unidade: 'unidade', quantidade: 0, minimo: 0, ativo: true, categoria: null, observacao: null },
       estoque_consumos: { por_kg: false }
     }[tabela] || {};
@@ -414,6 +472,33 @@ export function criarSupabaseDemo(opcoes = {}) {
       if (novo?.status === 'pronto' && antigo?.status !== 'pronto') emitir('INSERT', avisoTopoPronto(db.notificacoes = db.notificacoes || [], novo), null, 'notificacoes');
     }
     if (tabela === 'notificacoes' && novo) emitir('UPDATE', novo, antigo, 'notificacoes');
+    if (tabela === 'topos_precos') aplicarPrecosTopos();   // mudou a tabela: os topos que seguem a tabela mudam junto
+    if (tabela === 'topos_pagamentos' && !novo && antigo) {
+      // apagar o pagamento desfaz: os topos voltam para "a pagar" (e, sem valor digitado, pegam o preço de agora)
+      const voltam = (db.topos_pedidos || []).filter(t => t.pagamento_id === antigo.id);
+      voltam.forEach(t => { t.pagamento_id = null; if (!t.custo_manual) t.custo_unitario = precoTopo(db.topos_precos, t.titulo); });
+      if (voltam.length) emitir('UPDATE', voltam[0], null, 'topos_pedidos');
+    }
+  }
+  /* ---- Gastos com topos: o que os gatilhos de sql/topos-gastos.sql fazem ---- */
+  /** Quem não é da Administração não mexe no valor nem no pagamento; sem valor digitado (e ainda não pago), vale a tabela. */
+  function custoTopo(novo, antigo) {
+    if (usuarioId() && !adminLoja()) {
+      novo.custo_unitario = antigo ? antigo.custo_unitario ?? null : null;
+      novo.custo_manual = antigo ? !!antigo.custo_manual : false;
+      novo.pagamento_id = antigo ? antigo.pagamento_id ?? null : null;
+    }
+    if (!novo.custo_manual && !novo.pagamento_id) novo.custo_unitario = precoTopo(db.topos_precos, novo.titulo);
+  }
+  /** Os topos ainda não pagos (e sem valor digitado) seguem a tabela de preços. */
+  function aplicarPrecosTopos() {
+    let mudou = null;
+    for (const t of db.topos_pedidos || []) {
+      if (t.custo_manual || t.pagamento_id) continue;
+      const v = precoTopo(db.topos_precos, t.titulo);
+      if ((t.custo_unitario ?? null) !== v) { t.custo_unitario = v; mudou = t; }
+    }
+    if (mudou) emitir('UPDATE', mudou, null, 'topos_pedidos');
   }
 
   /* ----------------------- funções da API (rpc) ----------------------- */
@@ -667,6 +752,41 @@ export function criarSupabaseDemo(opcoes = {}) {
       exigirEquipe();
       if (p_user_id === USUARIO_DEMO.id) throw 'Você não pode remover o seu próprio acesso.';
       db.administradores = db.administradores.filter(a => a.user_id !== p_user_id); salvar(); return listarEquipe();
+    },
+    /* Gastos com topos (sql/topos-gastos.sql) */
+    salvar_precos_topos: ({ p_precos }) => {
+      if (!adminLoja()) throw ['Só a Administração mexe na tabela de preços.', '42501'];
+      const vistos = new Set();
+      const lista = (p_precos || []).map(x => {
+        const nome = String(x?.nome ?? '').trim(), v = String(x?.valor ?? '');
+        if (!nome) throw 'Informe o nome de cada linha da tabela.';
+        if (!/^\d+(\.\d+)?$/.test(v)) throw `Confira o valor de "${nome}".`;
+        if (vistos.has(chaveTopo(nome))) throw `"${nome}" aparece duas vezes na tabela.`;
+        vistos.add(chaveTopo(nome));
+        return { nome, valor: r2(v) };
+      });
+      db.topos_precos = lista.map((p, i) => ({ id: novoId(), ...p, ordem: i + 1, criado_em: agora() }));
+      aplicarPrecosTopos(); salvar();
+      return clone(db.topos_precos);
+    },
+    registrar_pagamento_topos: ({ p_topos, p_valor, p_forma, p_pago_em, p_observacao }) => {
+      if (!adminLoja()) throw ['Só a Administração registra pagamentos.', '42501'];
+      const ids = [...new Set((p_topos || []).filter(Boolean))];
+      if (!ids.length) throw 'Escolha os topos deste pagamento.';
+      const topos = db.topos_pedidos.filter(t => ids.includes(t.id));
+      if (topos.length !== ids.length) throw 'Algum topo não foi encontrado. Atualize a tela e confira.';
+      if (topos.some(t => t.pagamento_id)) throw 'Algum desses topos já foi pago. Atualize a tela e confira.';
+      if (topos.some(t => !['pronto', 'entregue'].includes(t.status))) throw 'Só entram topos prontos ou entregues.';
+      if (topos.some(t => t.custo_unitario == null)) throw 'Algum topo está sem valor. Diga quanto pagar por ele antes.';
+      const soma = r2(topos.reduce((s, t) => s + Number(t.custo_unitario) * Number(t.quantidade || 1), 0));
+      const valor = r2(p_valor ?? soma);
+      if (!(valor > 0)) throw 'Informe o valor pago.';
+      const pg = { id: novoId(), pago_em: p_pago_em || hojeSP(), valor, valor_topos: soma, qtd_topos: topos.length, forma: String(p_forma || '').trim() || 'pix',
+        observacao: String(p_observacao || '').trim() || null, criado_por: usuarioId(), autor_nome: db.administradores.find(a => a.user_id === usuarioId())?.nome || null, criado_em: agora() };
+      db.topos_pagamentos.push(pg);
+      topos.forEach(t => { t.pagamento_id = pg.id; });
+      salvar(); emitir('UPDATE', topos[0], null, 'topos_pedidos');
+      return pg;
     }
   });
 

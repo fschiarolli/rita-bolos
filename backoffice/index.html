@@ -873,6 +873,80 @@ body.tv-topos .tq-mini { width: 72px; height: 72px; }
 body.tv-topos .tq-tit { font-size: 18px; }
 body.tv-topos .tq-frase { font-size: 22px; }
 body.tv-topos .tq-meta { font-size: 14px; }
+/* Gastos com topos: o que pagar a quem faz (em cima), a lista dos topos e o resumo do mês */
+.gt-hero { margin-bottom: 18px; }
+.gt-total { margin: 2px 0 0; font-family: var(--font-display); font-size: 42px; font-weight: 700; letter-spacing: -.03em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.gt-hero .hero-txt b { color: var(--rose-600); }
+.gt-hero .hero-stats > div { display: grid; gap: 4px; align-content: start; }
+.gt-hero .hero-stats small { font-size: 12.5px; color: var(--ink-3); }
+.gt-comeco { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.gt-comeco > .ic { color: var(--gold); }
+.gt-comeco > div { flex: 1 1 280px; line-height: 1.45; }
+.gt-cab { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; padding: 18px 22px 12px; }
+.gt-cab h2 { font-family: var(--font-display); font-weight: 600; font-size: 19px; letter-spacing: -.015em; }
+.gt-cab > span { font-size: 13px; font-weight: 600; color: var(--ink-3); white-space: nowrap; }
+.gt-l { display: grid; grid-template-columns: minmax(0, 1fr) auto; border-top: 1px solid var(--line); }
+.gt-l-a, .gt-l-v { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; transition: background .12s; }
+.gt-l-a:hover, .gt-l-v:hover { background: var(--surface-2); }
+.gt-l-a { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 14px; align-items: center; min-width: 0; padding: 12px 8px 12px 22px; text-align: left; }
+.gt-l-d { font-family: var(--font-num); font-weight: 600; font-size: 14px; line-height: 1.25; }
+.gt-l-d small { display: block; font-family: var(--font-ui); font-size: 11.5px; font-weight: 600; color: var(--ink-3); }
+.gt-l-t { display: grid; gap: 2px; min-width: 0; }
+.gt-l-t strong, .gt-l-t small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gt-l-t strong { font-weight: 600; }
+.gt-l-t small { font-size: 12.5px; color: var(--ink-3); }
+.gt-l-v { display: grid; justify-items: end; align-content: center; gap: 2px; min-width: 128px; padding: 10px 22px 10px 12px; text-align: right; }
+.gt-l-v b { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.gt-l-v small { font-size: 12px; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gt-l.sem .gt-l-t strong { color: var(--ink-2); }
+.gt-vazio { display: grid; justify-items: center; gap: 8px; border-top: 1px solid var(--line); }
+.gt-vazio .ic { width: 24px; height: 24px; color: var(--teal); }
+.gt-mes .card-h { flex-wrap: wrap; }
+.sem-nav.gt-mes-nav { flex-wrap: nowrap; }
+.gt-mes-nav .sem-rot { min-width: 96px; font-size: 15px; }
+.gt-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.gt-kpi { display: grid; gap: 2px; min-width: 0; padding: 12px 14px; border-radius: var(--r-sm); background: var(--surface-2); }
+.gt-kpi span { font-size: 12.5px; font-weight: 500; color: var(--ink-3); }
+.gt-kpi strong { font-family: var(--font-display); font-size: 22px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.gt-kpi small { font-size: 12px; color: var(--ink-3); }
+.gt-kpi.destaque { background: rgba(var(--rose-rgb), .10); box-shadow: inset 0 0 0 1px rgba(var(--rose-rgb), .22); }
+.gt-dica { margin: 10px 0 0; font-size: 12.5px; color: var(--ink-3); }
+.gt-nota { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; padding: 10px 12px; border-radius: var(--r-sm); background: var(--warm-50); font-size: 13.5px; }
+.gt-nota .ic { width: 16px; height: 16px; color: var(--gold); }
+.gt-pgs { display: grid; gap: 6px; }
+.gt-pg { display: grid; grid-template-columns: 50px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background .12s; }
+.gt-pg:hover { background: var(--surface-2); }
+.gt-pg-d { font-family: var(--font-num); font-weight: 600; font-size: 13.5px; }
+.gt-pg-t { display: grid; min-width: 0; }
+.gt-pg-t strong { font-variant-numeric: tabular-nums; }
+.gt-pg-t small { font-size: 12.5px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gt-pg > .ic { width: 16px; height: 16px; color: var(--ink-3); }
+.gt-nada { margin: 0; font-size: 13.5px; color: var(--ink-3); }
+/* modais: pagamento, valor de um topo, tabela de preços e o formulário do pedido de topo */
+.gp-dif { margin: -6px 0 14px; color: var(--gold); font-weight: 600; }
+.gt-feito { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: var(--r-sm); background: var(--teal-50); }
+.gt-feito > .ic { width: 38px; height: 38px; padding: 8px; border-radius: 50%; background: var(--teal); color: var(--on-teal); stroke-width: 2.6; }
+.gt-feito strong { display: block; font-family: var(--font-display); font-size: 21px; letter-spacing: -.01em; }
+.gt-feito small { font-size: 13px; color: var(--ink-2); }
+.lote-it.sem-chk { grid-template-columns: 64px minmax(0, 1fr) auto; cursor: default; }
+.lote-it.sem-chk:hover { background: none; }
+.gt-ct-total { display: block; padding: 8px 0; font-family: var(--font-display); font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.gt-ct-dica { margin: -4px 0 0 28px; }
+.gt-precos { display: grid; gap: 8px; margin-bottom: 10px; }
+.gt-preco { display: grid; grid-template-columns: minmax(0, 1fr) 150px auto; gap: 8px; align-items: center; }
+.gt-preco.cab { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+.gt-tf { padding: 12px 14px 0; margin-bottom: 14px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line); }
+.gt-tf-dica { margin: 0 0 14px; align-self: center; font-size: 13px; color: var(--ink-2); }
+.gt-tf-pago { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 13.5px; }
+.gt-tf-pago .ic { width: 16px; height: 16px; color: var(--teal); }
+@media (max-width: 1150px) { .gt-hero .hero-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .gt-total { font-size: 34px; }
+  .gt-cab { padding: 16px 16px 10px; }
+  .gt-l-a { grid-template-columns: 48px minmax(0, 1fr); gap: 10px; padding-left: 16px; }
+  .gt-l-v { min-width: 0; padding-right: 16px; }
+  .gt-preco { grid-template-columns: minmax(0, 1fr) 112px auto; }
+}
 
 /* ---------- Novo pedido ---------- */
 .np-item { display: grid; grid-template-columns: minmax(0, 2fr) 90px auto; gap: 8px; align-items: end; padding: 14px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line); margin-bottom: 10px; }

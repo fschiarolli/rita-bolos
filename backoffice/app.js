@@ -3987,15 +3987,24 @@ function erroTopos(e) {
     <p>${semTabela ? 'Rode no Supabase o arquivo <code>sql/topos.sql</code> (SQL Editor). Depois, é só voltar aqui.' : esc(e?.message || 'Tente de novo.')}</p></div>`;
 }
 
-async function telaTopos(el, sub) {
-  const lista = sub === 'lista';
-  const acoes = `<div class="vista-sel" role="group" aria-label="Ver como">
-      <a class="btn sm ${lista ? 'ghost' : 'primary'}" href="#topos" ${lista ? '' : 'aria-current="page"'}>${ic('painel')}Quadro</a>
-      <a class="btn sm ${lista ? 'primary' : 'ghost'}" href="#topos/lista" ${lista ? 'aria-current="page"' : ''}>${ic('pedidos')}Lista</a></div>
-    ${lista ? '' : `<button type="button" class="btn ghost" data-topos-tv>${ic('tv')}Tela cheia</button>`}
-    <button type="button" class="btn primary" data-topo-novo>${ic('mais')}Novo pedido</button>`;
+/** Quadro, Lista ou Gastos (o que pagar a quem faz: só a Administração). */
+const vistaTopos = () => {
+  if (rotaAtual === 'topos/lista') return 'lista';
+  return rotaAtual === 'topos/gastos' && isAdmin() ? 'gastos' : 'quadro';
+};
+async function telaTopos(el) {
+  const vista = vistaTopos(), lista = vista === 'lista', gastos = vista === 'gastos';
+  const botao = (v, href, icone, rot) => `<a class="btn sm ${vista === v ? 'primary' : 'ghost'}" href="${href}" ${vista === v ? 'aria-current="page"' : ''}>${ic(icone)}${rot}</a>`;
+  const acoes = `<div class="vista-sel" role="group" aria-label="Ver como">${botao('quadro', '#topos', 'painel', 'Quadro')}${botao('lista', '#topos/lista', 'pedidos', 'Lista')}${isAdmin() ? botao('gastos', '#topos/gastos', 'moeda', 'Gastos') : ''}</div>
+    ${vista === 'quadro' ? `<button type="button" class="btn ghost" data-topos-tv>${ic('tv')}Tela cheia</button>` : ''}
+    ${gastos ? `<button type="button" class="btn ghost" data-gt-precos>${ic('editar')}Tabela de preços</button>` : `<button type="button" class="btn primary" data-topo-novo>${ic('mais')}Novo pedido</button>`}`;
   const chips = [['abertos', 'Em aberto'], ...TOPO_STATUS.map(s => [s.codigo, s.nome, s.cor]), ['todos', 'Todos']];
-  el.innerHTML = cabecalho('Topos e personalizados', acoes, 'Topos de bolo e personalizados, do pedido à entrega.') + `
+  const esqueleto = {
+    quadro: '<div class="tq">' + '<div class="skel" style="height:320px"></div>'.repeat(4) + '</div>',
+    lista: '<div class="skel" style="height:280px"></div>',
+    gastos: '<div class="skel" style="height:200px;margin-bottom:18px"></div><div class="cols"><div class="skel" style="height:320px"></div><div class="skel" style="height:320px"></div></div>'
+  }[vista];
+  el.innerHTML = cabecalho('Topos e personalizados', acoes, gastos ? 'O que pagar a quem faz os topos e o gasto de cada mês.' : 'Topos de bolo e personalizados, do pedido à entrega.') + `
     <div class="tq-tvbar" aria-hidden="true"><strong>Topos e personalizados</strong><span id="tqRelogio"></span>
       <button type="button" class="btn sm ghost" data-topos-tv-sair>${ic('x')}Sair da tela cheia</button></div>
     ${lista ? `<div class="filtros">
@@ -4003,7 +4012,7 @@ async function telaTopos(el, sub) {
         <input class="in" id="tBusca" type="search" placeholder="O que fazer, tema, nome, cliente ou pedido" value="${esc(filtroTopos.busca)}" autocomplete="off"></div></div>
       <div class="chips" role="group" aria-label="Filtrar por status">${chips.map(([v, t, cor]) => `<button type="button" class="chip" data-tfst="${v}" aria-pressed="${v === filtroTopos.status}">${cor ? `<span class="dot" style="background:${cor}"></span>` : ''}${t}</button>`).join('')}</div>
     </div>` : ''}
-    <div id="toposCorpo">${lista ? '<div class="skel" style="height:280px"></div>' : '<div class="tq">' + '<div class="skel" style="height:320px"></div>'.repeat(4) + '</div>'}</div>`;
+    <div id="toposCorpo">${esqueleto}</div>`;
   if (lista) {
     let t;
     $('#tBusca').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => { filtroTopos.busca = e.target.value; carregarTopos(); }, 300); });
@@ -4013,7 +4022,8 @@ async function telaTopos(el, sub) {
 
 async function carregarTopos() {
   const corpo = $('#toposCorpo'); if (!corpo) return;
-  const lista = rotaAtual === 'topos/lista';
+  if (vistaTopos() === 'gastos') { await carregarGastos(); atualizarBadgeTopos(); return; }
+  const lista = vistaTopos() === 'lista';
   try {
     if (lista) {
       const st = filtroTopos.status === 'abertos' ? ABERTOS_TOPO : filtroTopos.status === 'todos' ? null : filtroTopos.status;
@@ -4241,7 +4251,8 @@ async function abrirTopo(id, depois) {
         ${t.detalhes ? `<dt>Detalhes</dt><dd style="white-space:pre-line;text-align:left">${esc(t.detalhes)}</dd>` : ''}
         ${t.cliente_nome || t.cliente_telefone ? `<dt>Cliente</dt><dd>${esc(t.cliente_nome || '')}${t.cliente_telefone ? `${t.cliente_nome ? ' · ' : ''}<a href="tel:${esc(String(t.cliente_telefone).replace(/[^\d+]/g, ''))}">${esc(formatarTel(t.cliente_telefone) || t.cliente_telefone)}</a>` : ''}</dd>` : ''}
         ${t.pedido_codigo ? `<dt>Pedido da loja</dt><dd>${isAdmin() && t.pedido_id ? `<button type="button" class="link" data-topo-pedido="${esc(t.pedido_id)}">${esc(t.pedido_codigo)}</button>` : esc(t.pedido_codigo)}</dd>` : ''}
-        <dt>Valor</dt><dd>${Number(t.valor) > 0 ? `${R(t.valor)} · ${t.pago ? 'pago' : 'a receber'}` : '—'}</dd>
+        <dt>Valor do cliente</dt><dd>${Number(t.valor) > 0 ? `${R(t.valor)} · ${t.pago ? 'pago' : 'a receber'}` : '—'}</dd>
+        ${isAdmin() && 'custo_unitario' in t ? `<dt>Pagar a quem faz</dt><dd>${custoFicha(t)}</dd>` : ''}
       </dl>
       <p class="secao-t">Histórico</p>
       <ul class="hist">${hist.slice().reverse().map(h => `<li style="--c:${esc(topoStatus(h.status_novo).cor)}"><b>${esc(topoStatus(h.status_novo).nome)}</b>
@@ -4268,7 +4279,8 @@ async function abrirTopo(id, depois) {
     abrirWhatsApp(linkWhatsApp(tel, msg));
   });
   m.$('[data-topo-excluir]')?.addEventListener('click', async () => {
-    if (!await confirmar(`Excluir ${codigoTopo(t)}?`, 'O pedido e o histórico dele serão apagados de vez. Para desistências, prefira o status “Cancelado”.', { botao: 'Excluir de vez', perigo: true })) return;
+    const pago = t.pagamento_id ? ' Ele já foi pago a quem faz: o pagamento continua registrado, sem este topo.' : '';
+    if (!await confirmar(`Excluir ${codigoTopo(t)}?`, `O pedido e o histórico dele serão apagados de vez. Para desistências, prefira o status “Cancelado”.${pago}`, { botao: 'Excluir de vez', perigo: true })) return;
     await ocupado(m.$('[data-topo-excluir]'), async () => { await api.admin.topos.remover(t.id); m.fechar(); toast(`${codigoTopo(t)} excluído.`); mudou(); });
   });
 }
@@ -4289,9 +4301,34 @@ function modalTopoForm(t = null, base = {}, depois) {
       <div class="grid2">${campo('tfData', 'Data de entrega', `<input class="in" id="tfData" type="date" value="${esc(d.data_entrega || '')}">`, d.pedido_id ? 'Topo de bolo: até a retirada do bolo.' : '')}${campo('tfHora', 'Horário', `<input class="in" id="tfHora" type="time" value="${esc(hora(d.hora_entrega))}">`)}</div>
       <div class="grid2">${inTxt('tfCli', 'Cliente', d.cliente_nome || '', { attrs: 'maxlength="120"' })}${inTxt('tfTel', 'Telefone (DDD + número)', formatarTel(d.cliente_telefone) || '', { attrs: ATTR_TEL })}</div>
       ${d.pedido_id ? '' : inTxt('tfPed', 'Pedido da loja (opcional)', d.pedido_codigo || '', { attrs: 'maxlength="20" placeholder="Ex.: RB-01042"', dica: 'Código do pedido do bolo, quando o topo é para um bolo da loja.' })}
-      <div class="grid2">${inDin('tfValor', 'Valor', d.valor, { dica: 'Opcional.' })}<div class="field tf-pago">${inChk('tfPago', 'Já está pago', d.pago)}</div></div>`,
+      <div class="grid2">${inDin('tfValor', 'Valor cobrado do cliente', d.valor, { dica: 'Opcional.' })}<div class="field tf-pago">${inChk('tfPago', 'O cliente já pagou', d.pago)}</div></div>
+      ${isAdmin() ? `<div class="gt-tf" id="tfCustoBox" hidden>${d.pagamento_id
+        ? `<p class="gt-tf-pago">${ic('ok')}<span>Já pago a quem faz: <b>${esc(custoConta(d))}</b>. Esse valor não muda mais.</span></p>`
+        : `<div class="grid2">${inDin('tfCusto', 'Pagar a quem faz (por unidade)', d.custo_unitario ?? '')}<p class="gt-tf-dica" id="tfCustoDica"></p></div>`}</div>` : ''}`,
     rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>${novo ? 'Criar pedido' : 'Salvar'}</button>`
   });
+  // tabela de preços: os nomes entram nas sugestões do "O que fazer"; a Administração vê quanto vai pagar a quem faz
+  const custo = m.$('#tfCusto');
+  if (custo && d.custo_manual) custo.dataset.manual = '1';   // valor digitado antes: não acompanha a tabela
+  const atualizarCusto = (preencher = false) => {
+    if (!custo) return;
+    const tab = precoDaTabela(valDe(m, 'tfTitulo')), qtd = Math.max(1, Math.round(numDe(m, 'tfQtd') || 1));
+    if (preencher && !custo.dataset.manual) custo.value = tab ? valorTxt(tab.valor) : '';
+    const v = lerValor(custo.value);
+    let txt = 'Sem preço na tabela para esse “O que fazer”: digite o valor ou deixe em branco para definir depois.';
+    if (tab) txt = custo.dataset.manual && v !== Number(tab.valor) ? `Na tabela, “${tab.nome}” é ${R(tab.valor)}.` : `Pela tabela de preços (“${tab.nome}”).`;
+    m.$('#tfCustoDica').textContent = txt + (v > 0 && qtd > 1 ? ` Total: ${R(Math.round(v * qtd * 100) / 100)}.` : '');
+  };
+  carregarPrecosTopos().then(() => {
+    if (!document.contains(m.el)) return;
+    m.$('#tfSugestoes').innerHTML = sugestoesTopo().map(x => `<option value="${esc(x)}"></option>`).join('');
+    if (!m.$('#tfCustoBox') || gastosNoBanco !== true) return;
+    m.$('#tfCustoBox').hidden = false;
+    atualizarCusto(!d.custo_manual && !d.pagamento_id);
+  }).catch(() => { /* sem a tabela de preços: sugestões de sempre */ });
+  m.$('#tfTitulo').addEventListener('input', () => atualizarCusto(true));
+  m.$('#tfQtd').addEventListener('input', () => atualizarCusto());
+  custo?.addEventListener('input', () => { custo.dataset.manual = custo.value.trim() ? '1' : ''; atualizarCusto(); });
   const desenharRefs = () => {
     m.$('#tfRefs').innerHTML = refs.map((u, i) => `<span class="tf-ref"><img src="${esc(u)}" alt="Referência ${i + 1}"><button type="button" class="btn icon sm" data-tirar-ref="${i}" aria-label="Tirar a imagem ${i + 1}">${ic('x')}</button></span>`).join('')
       + `<label class="tf-add">${ic('foto')}<span>${refs.length ? 'Mais uma' : 'Anexar imagem'}</span><input type="file" accept="image/*" multiple class="sr" id="tfArq"></label>`;
@@ -4324,6 +4361,12 @@ function modalTopoForm(t = null, base = {}, depois) {
       cliente_nome: valDe(m, 'tfCli') || null, cliente_telefone: formatarTel(valDe(m, 'tfTel')) || null, valor: valor || 0, pago: chkDe(m, 'tfPago'),
       pedido_id: d.pedido_id || null, pedido_codigo: d.pedido_id ? d.pedido_codigo : (valDe(m, 'tfPed').toUpperCase() || null), pedido_item_id: d.pedido_item_id || null
     };
+    // quanto pagar a quem faz: igual à tabela, segue a tabela; outro valor fica só neste pedido; em branco, a tabela (ou definir depois)
+    if (custo && !m.$('#tfCustoBox').hidden) {
+      const vC = lerValor(custo.value), tab = precoDaTabela(dados.titulo);
+      if (Number.isNaN(vC) || vC < 0) { custo.setAttribute('aria-invalid', 'true'); throw new Error('Confira quanto pagar a quem faz (ex.: 15,00).'); }
+      Object.assign(dados, vC === null ? { custo_unitario: null, custo_manual: false } : { custo_unitario: vC, custo_manual: !(tab && Number(tab.valor) === vC) });
+    }
     // a Administração pode ligar pelo código a um pedido da loja (quem produz não vê os pedidos)
     if (!dados.pedido_id && dados.pedido_codigo && isAdmin()) {
       const { pedidos } = await api.admin.pedidos.listar({ busca: dados.pedido_codigo, porPagina: 5 }).catch(() => ({ pedidos: [] }));
@@ -4409,6 +4452,412 @@ function sairTvTopos() {
 }
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && tvTopos) sairTvTopos(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && tvTopos && !pilhaModais.length) sairTvTopos(); });
+
+/* ---- Gastos com topos (sql/topos-gastos.sql), só a Administração ----
+   Quanto pagar a quem faz os topos. Cada pedido de topo tem o valor por unidade: vem sozinho da tabela de preços pelo
+   "O que fazer", ou é digitado no pedido. Os prontos e entregues ainda não pagos somam o "a pagar"; registrar o pagamento
+   marca esses topos como pagos (desfazer o pagamento volta tudo para "a pagar"). */
+const FEITOS_TOPO = ['pronto', 'entregue'];
+const FORMAS_TOPO = ['pix', 'dinheiro', 'transferencia', 'outro'].map(f => [f, FORMAS[f]]);
+let precosTopos = [], gastosNoBanco = null, mesGastos = null, gastosDados = null, vezMesGastos = 0;
+const chaveTopo = s => semAcento(s).trim().replace(/\s+/g, ' ');
+/** Linha da tabela de preços para o "O que fazer": o nome igual ou o mais comprido que começa o título ("Topo de papel com glitter" usa "Topo de papel"). */
+function precoDaTabela(titulo) {
+  const k = chaveTopo(titulo);
+  let melhor = null;
+  for (const p of precosTopos) {
+    const n = chaveTopo(p.nome);
+    if (n && (k === n || k.startsWith(n + ' ')) && (!melhor || n.length > chaveTopo(melhor.nome).length)) melhor = p;
+  }
+  return melhor;
+}
+/** Sugestões do "O que fazer": os tipos da tabela de preços e os de sempre, sem repetir. */
+function sugestoesTopo() {
+  const vistos = new Set(), lista = [];
+  for (const s of [...precosTopos.map(p => p.nome), ...SUGESTOES_TOPO]) {
+    const k = chaveTopo(s);
+    if (!vistos.has(k)) { vistos.add(k); lista.push(s); }
+  }
+  return lista;
+}
+/** Quanto pagar pelo pedido de topo (valor por unidade × quantidade); null quando ainda não tem valor. */
+const custoTopo = t => (t.custo_unitario == null ? null : Math.round(Number(t.custo_unitario) * (Number(t.quantidade) || 1) * 100) / 100);
+const somaCusto = l => Math.round(l.reduce((s, t) => s + (custoTopo(t) || 0), 0) * 100) / 100;
+/** "R$ 15,00" ou "30 × R$ 2,50 = R$ 75,00" */
+const custoConta = t => (t.quantidade > 1 ? `${t.quantidade} × ${R(t.custo_unitario)} = ${R(custoTopo(t))}` : R(t.custo_unitario));
+const ordemEntrega = (a, b) => a.data_entrega.localeCompare(b.data_entrega) || a.numero - b.numero;
+/** O banco ainda não tem o sql/topos-gastos.sql. */
+const semGastos = e => /topos_precos|topos_pagamentos|custo_unitario|custo_manual|pagamento_id|salvar_precos_topos|registrar_pagamento_topos|42P01|42703|PGRST20[2-5]|schema cache/i.test(`${e?.message} ${e?.codigo}`);
+async function carregarPrecosTopos() {
+  try { precosTopos = await api.admin.topos.precos.listar(); gastosNoBanco = true; }
+  catch (e) { if (!semGastos(e)) throw e; precosTopos = []; gastosNoBanco = false; }
+  return precosTopos;
+}
+/** Quem faz os topos: a pessoa com acesso "Topos e personalizados" (se for uma só) ou o contato de "Enviar para quem faz o topo". */
+async function quemFazTopos() {
+  const [prods, ct] = await Promise.all([api.admin.personalizados.listar().catch(() => []), contatoTopos().catch(() => ({}))]);
+  const ativos = prods.filter(p => p.ativo);
+  const nome = String((ativos.length === 1 && ativos[0].nome) || ct.nome || '').trim();
+  return { nome, primeiro: nome.split(/\s+/)[0] || '', numero: ct.numero || '' };
+}
+const paraQuem = q => (q?.primeiro ? `para ${q.primeiro}` : 'para quem faz os topos');
+/** Na ficha do topo: o valor e se já foi pago. */
+function custoFicha(t) {
+  if (t.custo_unitario == null) return '<span class="tag pend">Sem valor</span>';
+  let sit = '<span class="tag cinza">Quando ficar pronto</span>';
+  if (t.pagamento_id) sit = `<span class="tag pago">${ic('ok')}Pago</span>`;
+  else if (FEITOS_TOPO.includes(t.status)) sit = '<span class="tag sinal">A pagar</span>';
+  else if (t.status === 'cancelado') sit = '';
+  return `${esc(custoConta(t))} ${sit}`;
+}
+
+async function carregarGastos() {
+  const corpo = $('#toposCorpo'); if (!corpo) return;
+  try {
+    const [todos, emProducao, ultimos, quem] = await Promise.all([
+      api.admin.topos.listar({ status: FEITOS_TOPO, naoPagos: true }),
+      api.admin.topos.listar({ status: ['novo', 'em_producao'] }),
+      api.admin.topos.pagamentos.listar({ limite: 1 }),
+      quemFazTopos(),
+      carregarPrecosTopos()
+    ]);
+    if (vistaTopos() !== 'gastos' || !$('#toposCorpo')) return;
+    gastosDados = { lista: todos, quem };
+    const mes = $('#gtMes')?.innerHTML;   // o resumo do mês fica na tela enquanto atualiza
+    corpo.innerHTML = desenharGastos(todos, emProducao, ultimos[0], quem, mes);
+  } catch (e) {
+    corpo.innerHTML = semGastos(e) ? `<div class="card vazio"><h2>Os gastos com topos ainda não estão no banco</h2>
+        <p>Rode no Supabase o arquivo <code>sql/topos-gastos.sql</code> (SQL Editor). Depois, é só voltar aqui.</p></div>` : erroTopos(e);
+    return;
+  }
+  carregarMesGastos();
+}
+function recarregarGastos() { if (telaAtual === 'topos' && vistaTopos() === 'gastos') carregarGastos(); }
+
+function desenharGastos(todos, emProducao, ultimo, quem, mesAntes) {
+  const aPagar = todos.filter(t => custoTopo(t) > 0), semValor = todos.filter(t => t.custo_unitario == null), n = aPagar.length;
+  const datas = aPagar.map(t => t.data_entrega).sort(), primeira = datas[0], ultima = datas[datas.length - 1];
+  const periodo = primeira === ultima ? `com entrega em ${ddmm(primeira || hojeISO())}` : `com entrega de ${ddmm(primeira)} a ${ddmm(ultima)}`;
+  let resumo = 'Nenhum topo pronto esperando pagamento.';
+  if (n) resumo = `${n} ${n === 1 ? 'topo pronto ou entregue ainda não foi pago' : 'topos prontos ou entregues ainda não foram pagos'}, ${periodo}.`;
+  if (semValor.length) resumo += ` <b>${semValor.length} ${semValor.length === 1 ? 'está sem valor e ficou' : 'estão sem valor e ficaram'} fora da conta.</b>`;
+  const comeco = precosTopos.length ? '' : `<div class="aviso-box gt-comeco">${ic('info')}<div><b>Comece pela tabela de preços.</b> Diga quanto ${esc(quem.primeiro || 'quem faz os topos')} cobra por cada tipo (ex.: Topo de papel, R$ 15,00): os pedidos de topo já chegam com o valor.</div>
+    <button type="button" class="btn sm primary" data-gt-precos>${ic('editar')}Montar a tabela</button></div>`;
+  const linhas = [...aPagar, ...semValor].sort(ordemEntrega);
+  return `${comeco}<section class="card hero gt-hero" aria-label="A pagar">
+      <div>
+        <p class="eyebrow">A pagar ${esc(paraQuem(quem))}</p>
+        <p class="gt-total">${R(somaCusto(aPagar))}</p>
+        <p class="hero-txt">${resumo}</p>
+        <div class="hero-acts">
+          <button type="button" class="btn primary" data-gt-pagar ${n ? '' : 'disabled'}>${ic('moeda')}Registrar pagamento</button>
+          <button type="button" class="btn ghost" data-gt-conferir ${linhas.length ? '' : 'disabled'}>${ic('wa')}Enviar para conferir</button>
+        </div>
+      </div>
+      <div class="hero-stats">
+        <div><span>Ainda não prontos</span><strong>${valorCurto(somaCusto(emProducao))}</strong><small>${emProducao.length} ${emProducao.length === 1 ? 'topo' : 'topos'} em produção ou novos</small></div>
+        <div><span>Último pagamento</span><strong>${ultimo ? esc(ddmm(ultimo.pago_em)) : '—'}</strong><small>${ultimo ? esc(R(ultimo.valor)) : 'nenhum ainda'}</small></div>
+      </div>
+    </section>
+    <div class="cols">
+      <section class="card tabela gt-lista" aria-labelledby="gtListaT">
+        <div class="gt-cab"><div><p class="eyebrow">Prontos e entregues</p><h2 id="gtListaT">Topos a pagar</h2></div>
+          ${linhas.length ? `<span>${linhas.length} ${linhas.length === 1 ? 'topo' : 'topos'}</span>` : ''}</div>
+        ${linhas.length ? `<div class="gt-linhas">${linhas.map(linhaGasto).join('')}</div>`
+          : `<p class="vazio gt-vazio">${ic('ok')}Tudo pago. Quando um topo ficar pronto, ele aparece aqui.</p>`}
+      </section>
+      <div id="gtMes">${mesAntes || '<div class="skel" style="height:360px"></div>'}</div>
+    </div>`;
+}
+function linhaGasto(t) {
+  const v = custoTopo(t), oque = `${t.quantidade > 1 ? `${t.quantidade}× ` : ''}${t.titulo}`;
+  const meta = [codigoTopo(t), t.tema, t.cliente_nome].filter(Boolean).map(esc).join(' · ');
+  const det = [t.quantidade > 1 && `${t.quantidade} × ${R(t.custo_unitario)}`, t.custo_manual && 'digitado'].filter(Boolean).join(' · ');
+  return `<div class="gt-l ${v == null ? 'sem' : ''}">
+    <button type="button" class="gt-l-a" data-topo="${esc(t.id)}" aria-label="Abrir ${codigoTopo(t)}: ${esc(oque)}">
+      <span class="gt-l-d">${esc(ddmm(t.data_entrega))}<small>${esc(topoStatus(t.status).nome)}</small></span>
+      <span class="gt-l-t"><strong>${esc(oque)}</strong><small>${meta}</small></span>
+    </button>
+    <button type="button" class="gt-l-v" data-gt-custo="${esc(t.id)}" aria-label="${v == null ? 'Definir' : 'Mudar'} quanto pagar por ${codigoTopo(t)}">
+      ${v == null ? '<span class="tag pend">Definir valor</span>' : `<b>${R(v)}</b>${det ? `<small>${esc(det)}</small>` : ''}`}
+    </button>
+  </div>`;
+}
+
+/* Mês a mês: gasto (topos prontos e entregues com entrega no mês), pago no mês, por tipo e os pagamentos */
+async function carregarMesGastos() {
+  const box = $('#gtMes'); if (!box) return;
+  const vez = ++vezMesGastos, atual = hojeISO().slice(0, 7);
+  const ym = mesGastos && mesGastos < atual ? mesGastos : atual;
+  const { de, ate, rot } = limitesMes(ym), ant = limitesMes(mesMais(ym, -1));
+  try {
+    const [feitos, antes, pagamentos, vem] = await Promise.all([
+      api.admin.topos.listar({ status: FEITOS_TOPO, entregaDesde: de, entregaAte: ate }),
+      api.admin.topos.listar({ status: FEITOS_TOPO, entregaDesde: ant.de, entregaAte: ant.ate }),
+      api.admin.topos.pagamentos.listar({ de, ate }),
+      ym === atual ? api.admin.topos.listar({ status: ['novo', 'em_producao'], entregaDesde: de, entregaAte: ate }) : []
+    ]);
+    if (vez !== vezMesGastos || !$('#gtMes')) return;   // trocou de mês (ou de tela) no meio do caminho
+    $('#gtMes').innerHTML = desenharMesGastos({ ym, atual, rot, ant, feitos, antes, pagamentos, vem });
+  } catch (e) {
+    if (vez === vezMesGastos && $('#gtMes')) $('#gtMes').innerHTML = `<section class="card"><p class="vazio">${esc(e?.message || 'Não foi possível carregar o mês.')}</p></section>`;
+  }
+}
+function desenharMesGastos({ ym, atual, rot, ant, feitos, antes, pagamentos, vem }) {
+  const comValor = feitos.filter(t => t.custo_unitario != null), semValor = feitos.length - comValor.length;
+  const gasto = somaCusto(feitos), gastoAntes = somaCusto(antes), mes = rot.split(' ')[0], mesAnt = ant.rot.split(' ')[0];
+  const pago = Math.round(pagamentos.reduce((s, p) => s + Number(p.valor), 0) * 100) / 100;
+  const unidades = feitos.reduce((s, t) => s + (Number(t.quantidade) || 1), 0);
+  const tipos = {};
+  comValor.forEach(t => { const k = chaveTopo(t.titulo); tipos[k] = tipos[k] || { rot: t.titulo, v: 0, n: 0 }; tipos[k].v += custoTopo(t); tipos[k].n++; });
+  const porTipo = Object.values(tipos).sort((a, b) => b.v - a.v).slice(0, 6)
+    .map(x => ({ rot: x.rot, v: Math.round(x.v * 100) / 100, sub: `${x.n} ${x.n === 1 ? 'pedido' : 'pedidos'}` }));
+  const kpi = (r, valor, sub, cls = '') => `<div class="gt-kpi ${cls}"><span>${r}</span><strong>${valor}</strong><small>${sub}</small></div>`;
+  return `<section class="card gt-mes" aria-labelledby="gtMesT">
+    <div class="card-h"><div><p class="eyebrow">Mês a mês</p><h2 id="gtMesT">Gastos com topos</h2></div>
+      <div class="sem-nav gt-mes-nav" role="group" aria-label="Escolher mês">
+        <button type="button" class="btn icon sm ghost" data-gt-mes="${mesMais(ym, -1)}" aria-label="Mês anterior">${ic('voltar')}</button>
+        <span class="sem-rot">${esc(mes.charAt(0).toUpperCase() + mes.slice(1))}${ym === atual ? '<small>este mês</small>' : `<small>${ym.slice(0, 4)}</small>`}</span>
+        <button type="button" class="btn icon sm ghost" data-gt-mes="${mesMais(ym, 1)}" aria-label="Próximo mês" ${ym >= atual ? 'disabled' : ''}>${ic('seta')}</button></div></div>
+    <div class="gt-kpis">
+      ${kpi('Gasto no mês', R(gasto), `${esc(mesAnt)}: ${R(gastoAntes)}`, 'destaque')}
+      ${kpi('Pago no mês', R(pago), pagamentos.length ? `${pagamentos.length} ${pagamentos.length === 1 ? 'pagamento' : 'pagamentos'}` : 'nenhum pagamento')}
+      ${kpi('Topos feitos', feitos.length, `${unidades} ${unidades === 1 ? 'unidade' : 'unidades'}`)}
+      ${kpi('Média por pedido', comValor.length ? R(gasto / comValor.length) : '—', semValor ? `${semValor} sem valor` : 'de topo')}
+    </div>
+    <p class="dica gt-dica">Gasto: os topos prontos e entregues com entrega no mês, pagos ou não. Pago: o que saiu nos pagamentos do mês.</p>
+    ${vem.length ? `<p class="gt-nota">${ic('relogio')}<span>Ainda vêm <b>${R(somaCusto(vem))}</b> em ${vem.length} ${vem.length === 1 ? 'topo' : 'topos'} com entrega até o fim do mês.</span></p>` : ''}
+    ${porTipo.length ? `<p class="secao-t">Por tipo</p>${barrasH(porTipo, v => R(v))}` : ''}
+    <p class="secao-t">Pagamentos de ${esc(mes)}</p>
+    ${pagamentos.length ? `<div class="gt-pgs">${pagamentos.map(linhaPagamento).join('')}</div>` : `<p class="gt-nada">Nenhum pagamento em ${esc(mes)}.</p>`}
+  </section>`;
+}
+function linhaPagamento(p) {
+  const dif = Math.round((Number(p.valor) - Number(p.valor_topos)) * 100) / 100;
+  const det = [FORMAS[p.forma] || p.forma, `${p.qtd_topos} ${p.qtd_topos === 1 ? 'topo' : 'topos'}`, dif && `${dif > 0 ? '+' : '−'}${R(Math.abs(dif))} de ajuste`, p.observacao].filter(Boolean);
+  return `<button type="button" class="gt-pg" data-gt-pgto="${esc(p.id)}" aria-label="Pagamento de ${esc(formatarData(p.pago_em))}, ${esc(R(p.valor))}">
+    <span class="gt-pg-d">${esc(ddmm(p.pago_em))}</span>
+    <span class="gt-pg-t"><strong>${R(p.valor)}</strong><small>${esc(det.join(' · '))}</small></span>${ic('seta')}</button>`;
+}
+
+/** Mensagem para quem faz: os topos para conferir ou, com o pagamento, o comprovante. */
+function textoAcertoTopos(topos, quem, pg = null) {
+  const lista = [...topos].sort(ordemEntrega), ola = `Olá${quem.primeiro ? ', ' + quem.primeiro : ''}!`;
+  const linhas = lista.map(t => `• ${ddmm(t.data_entrega)} · ${codigoTopo(t)} · ${t.quantidade > 1 ? t.quantidade + '× ' : ''}${t.titulo}${t.tema ? ` (${t.tema})` : ''}: ${custoTopo(t) == null ? 'sem valor' : custoConta(t)}`);
+  const total = `*Total dos topos: ${R(somaCusto(lista))}* (${lista.length} ${lista.length === 1 ? 'topo' : 'topos'})`;
+  if (!pg) return [`${ola} Segue o fechamento dos topos para você conferir:`, '', ...linhas, '', total].join('\n');
+  return [`${ola} Paguei os topos:`, '', `*Valor pago:* ${R(pg.valor)} (${FORMAS[pg.forma] || pg.forma}, ${formatarData(pg.pago_em)})`,
+    ...(pg.observacao ? [`*Obs.:* ${pg.observacao}`] : []), '', ...linhas, '', total].join('\n');
+}
+/** Manda a mensagem pelo WhatsApp de quem faz (o mesmo contato de "Enviar para quem faz o topo"). */
+function modalWhatsAcerto(titulo, texto, quem) {
+  const m = abrirModal({
+    titulo, largo: true,
+    corpo: `<div class="grid2">${inTxt('waNum', 'WhatsApp de quem faz os topos', formatarTel(quem.numero), { attrs: ATTR_TEL })}${inTxt('waNome', 'Nome <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>', quem.nome, { attrs: 'maxlength="60"' })}</div>
+      ${inTa('waMsg', 'Mensagem', texto, { attrs: 'maxlength="6000" style="min-height:260px"' })}
+      <p class="dica" style="margin:0">O número fica salvo para as próximas vezes.</p>`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Fechar</button><button type="button" class="btn ghost" data-copiar>${ic('copiar')}Copiar</button><button type="button" class="btn wa" data-ok>${ic('wa')}Abrir WhatsApp</button>`
+  });
+  m.$('[data-copiar]').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(valDe(m, 'waMsg')); toast('Mensagem copiada.'); }
+    catch (e) { m.$('#waMsg').select(); toast('Mensagem selecionada: copie com Ctrl+C.'); }
+  });
+  m.$('[data-ok]').addEventListener('click', () => {
+    const num = digitosTel(valDe(m, 'waNum')), nome = valDe(m, 'waNome');
+    if (num.length < 10) { toast('Informe o WhatsApp com DDD de quem faz os topos.', { tipo: 'erro' }); m.$('#waNum').focus(); return; }
+    abrirWhatsApp(linkWhatsApp('55' + num, valDe(m, 'waMsg')));   // ainda no clique, para o navegador não bloquear
+    if (num !== digitosTel(quem.numero) || nome !== quem.nome) { salvarContatoTopos(num, nome); quem.numero = num; quem.nome = nome; }
+    m.fechar();
+  });
+}
+
+/** Registrar pagamento: escolhe os topos (todos marcados), o valor pago (a soma, ou outro), como e quando. */
+function modalPagarTopos() {
+  const { lista = [], quem = {} } = gastosDados || {};
+  const itens = lista.filter(t => custoTopo(t) > 0).sort(ordemEntrega), semValor = lista.filter(t => t.custo_unitario == null).length;
+  if (!itens.length) return;
+  const m = abrirModal({
+    titulo: `Pagamento ${paraQuem(quem)}`, largo: true,
+    corpo: `<div class="lote-barra"><label class="chk"><input type="checkbox" id="gpTodos" checked>Todos os topos</label><span id="gpConta"></span></div>
+      <div class="lote-lista">${itens.map(t => `<label class="lote-it"><input type="checkbox" data-gp="${esc(t.id)}" checked>
+          <span class="lote-q">${esc(ddmm(t.data_entrega))}<small>${esc(codigoTopo(t))}</small></span>
+          <span class="lote-n"><b>${t.quantidade > 1 ? `${t.quantidade}× ` : ''}${esc(t.titulo)}</b><small>${esc([t.tema, t.cliente_nome].filter(Boolean).join(' · ') || topoStatus(t.status).nome)}</small></span>
+          <em>${R(custoTopo(t))}</em></label>`).join('')}</div>
+      ${semValor ? `<p class="dica" style="margin:8px 0 0">${semValor === 1 ? '1 topo sem valor não aparece' : `${semValor} topos sem valor não aparecem`} aqui: defina o valor na lista para pagar junto.</p>` : ''}
+      <div class="grid2" style="margin-top:16px">${inDin('gpValor', 'Valor pago', somaCusto(itens))}${inSel('gpForma', 'Como pagou', FORMAS_TOPO, 'pix')}</div>
+      <p class="dica gp-dif" id="gpDif" hidden></p>
+      <div class="grid2">${campo('gpData', 'Data do pagamento', `<input class="in" id="gpData" type="date" value="${hojeISO()}" max="${hojeISO()}">`)}${inTxt('gpObs', 'Observação <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>', '', { attrs: 'maxlength="200" placeholder="Ex.: inclui o material"' })}</div>`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>${ic('ok')}Registrar pagamento</button>`
+  });
+  const marcados = () => itens.filter(t => m.$(`[data-gp="${t.id}"]`).checked);
+  const atualizar = () => {
+    const sel = marcados(), soma = somaCusto(sel), valor = m.$('#gpValor'), todos = m.$('#gpTodos');
+    if (!valor.dataset.manual) valor.value = valorTxt(soma);   // o valor acompanha os topos marcados até ser digitado
+    const v = lerValor(valor.value), dif = v > 0 ? Math.round((v - soma) * 100) / 100 : 0;
+    m.$('#gpConta').textContent = `${sel.length} de ${itens.length} · ${R(soma)}`;
+    todos.checked = sel.length === itens.length; todos.indeterminate = sel.length > 0 && sel.length < itens.length;
+    const aviso = m.$('#gpDif');
+    aviso.hidden = !dif || !sel.length;
+    aviso.textContent = `${R(Math.abs(dif))} a ${dif > 0 ? 'mais' : 'menos'} que a soma dos topos marcados (${R(soma)}).`;
+    const ok = m.$('[data-ok]');
+    ok.disabled = !sel.length;
+    ok.innerHTML = `${ic('ok')}${sel.length && v > 0 ? `Registrar ${R(v)}` : 'Registrar pagamento'}`;
+  };
+  m.$('#gpTodos').addEventListener('change', e => { itens.forEach(t => { m.$(`[data-gp="${t.id}"]`).checked = e.target.checked; }); atualizar(); });
+  m.el.addEventListener('change', e => { if (e.target.dataset.gp) atualizar(); });
+  m.$('#gpValor').addEventListener('input', e => { e.target.dataset.manual = '1'; atualizar(); });
+  atualizar();
+  m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    const sel = marcados(), valor = lerValor(valDe(m, 'gpValor'));
+    if (!sel.length) throw new Error('Marque os topos deste pagamento.');
+    if (!(valor > 0)) { m.$('#gpValor').setAttribute('aria-invalid', 'true'); throw new Error('Informe o valor pago (ex.: 120,00).'); }
+    const pg = await api.admin.topos.pagamentos.registrar({ topos: sel.map(t => t.id), valor, forma: valDe(m, 'gpForma'), pagoEm: valDe(m, 'gpData') || null, observacao: valDe(m, 'gpObs') || null });
+    // o modal vira a confirmação, com o próximo passo: mandar o comprovante para quem faz
+    m.$('.modal-h h2').textContent = 'Pagamento registrado';
+    m.$('.modal-b').innerHTML = `<div class="gt-feito">${ic('ok')}<div><strong>${R(pg.valor)} ${esc(paraQuem(quem))}</strong>
+        <small>${esc(FORMAS[pg.forma] || pg.forma)} · ${esc(formatarData(pg.pago_em))} · ${pg.qtd_topos} ${pg.qtd_topos === 1 ? 'topo' : 'topos'}</small></div></div>
+      <p class="dica" style="margin:12px 0 0">Esses topos saíram de “a pagar”. Para desfazer, abra o pagamento no resumo do mês.</p>`;
+    m.$('.modal-f').innerHTML = `<button type="button" class="btn ghost" data-fechar>Fechar</button><button type="button" class="btn wa" data-comprovante>${ic('wa')}Enviar comprovante</button>`;
+    m.$('[data-comprovante]').addEventListener('click', () => { m.fechar(); modalWhatsAcerto('Comprovante para quem faz os topos', textoAcertoTopos(sel, quem, pg), quem); });
+    m.$('[data-comprovante]').focus();
+    recarregarGastos();
+  }));
+}
+
+/** Pagamento já feito: os topos dele, o comprovante e desfazer. */
+async function abrirPagamentoTopos(id) {
+  const [pg, topos, quem] = await Promise.all([api.admin.topos.pagamentos.obter(id), api.admin.topos.listar({ pagamentoId: id }), gastosDados?.quem || quemFazTopos()]);
+  const dif = Math.round((Number(pg.valor) - Number(pg.valor_topos)) * 100) / 100;
+  const m = abrirModal({
+    titulo: `Pagamento de ${formatarData(pg.pago_em)}`, largo: true,
+    corpo: `<dl class="kv">
+        <dt>Valor pago</dt><dd>${R(pg.valor)}</dd>
+        <dt>Como</dt><dd>${esc(FORMAS[pg.forma] || pg.forma)}</dd>
+        <dt>Topos</dt><dd>${pg.qtd_topos} · soma ${R(pg.valor_topos)}${dif ? ` (${dif > 0 ? '+' : '−'}${R(Math.abs(dif))} de ajuste)` : ''}</dd>
+        ${pg.observacao ? `<dt>Observação</dt><dd>${esc(pg.observacao)}</dd>` : ''}
+        <dt>Registrado</dt><dd>${esc(dataHora(pg.criado_em))}${pg.autor_nome ? ' · ' + esc(pg.autor_nome) : ''}</dd>
+      </dl>
+      <p class="secao-t">Topos deste pagamento</p>
+      ${topos.length ? `<div class="lote-lista">${topos.sort(ordemEntrega).map(t => `<div class="lote-it sem-chk">
+          <span class="lote-q">${esc(ddmm(t.data_entrega))}<small>${esc(codigoTopo(t))}</small></span>
+          <span class="lote-n"><b>${t.quantidade > 1 ? `${t.quantidade}× ` : ''}${esc(t.titulo)}</b><small>${esc([t.tema, t.cliente_nome].filter(Boolean).join(' · '))}</small></span>
+          <em>${custoTopo(t) == null ? '—' : R(custoTopo(t))}</em></div>`).join('')}</div>` : '<p class="dica" style="margin:0">Os topos deste pagamento foram excluídos.</p>'}`,
+    rodape: `<button type="button" class="btn danger esq" data-desfazer>${ic('lixo')}Desfazer pagamento</button>
+      <button type="button" class="btn wa" data-comprovante ${topos.length ? '' : 'disabled'}>${ic('wa')}Enviar comprovante</button><button type="button" class="btn primary" data-fechar>Fechar</button>`
+  });
+  m.$('[data-comprovante]').addEventListener('click', () => { m.fechar(); modalWhatsAcerto('Comprovante para quem faz os topos', textoAcertoTopos(topos, quem, pg), quem); });
+  m.$('[data-desfazer]').addEventListener('click', async () => {
+    const quantos = topos.length === 1 ? 'O topo volta' : `Os ${topos.length} topos voltam`;
+    if (!await confirmar('Desfazer este pagamento?', `${quantos} para “a pagar” e o registro de ${R(pg.valor)} é apagado.`, { botao: 'Desfazer pagamento', perigo: true })) return;
+    await ocupado(m.$('[data-desfazer]'), async () => {
+      await api.admin.topos.pagamentos.remover(pg.id);
+      m.fechar();
+      toast('Pagamento desfeito: os topos voltaram para “a pagar”.');
+      recarregarGastos();
+    });
+  });
+}
+
+/** Quanto pagar por um topo: só neste, ou guardando na tabela de preços (vale para os próximos do mesmo tipo). */
+async function modalCustoTopo(t) {
+  await carregarPrecosTopos();
+  const tab = precoDaTabela(t.titulo), igual = !!tab && chaveTopo(tab.nome) === chaveTopo(t.titulo), qtd = Number(t.quantidade) || 1;
+  const m = abrirModal({
+    titulo: 'Quanto pagar a quem faz',
+    corpo: `<div class="prj-ped"><div><strong>${qtd > 1 ? `${qtd}× ` : ''}${esc(t.titulo)}</strong>
+        <small>${esc([codigoTopo(t), t.tema, t.cliente_nome, `entrega ${formatarData(t.data_entrega)}`].filter(Boolean).join(' · '))}</small></div></div>
+      <div class="grid2">${inDin('ctValor', qtd > 1 ? 'Valor por unidade' : 'Valor', t.custo_unitario ?? tab?.valor ?? '', { attrs: 'autofocus' })}
+        <div class="field"><span class="lbl">${qtd > 1 ? `Total (${qtd} unidades)` : 'Total'}</span><strong class="gt-ct-total" id="ctTotal"></strong></div></div>
+      ${inChk('ctTabela', igual ? 'Mudar também na tabela de preços' : 'Guardar na tabela de preços', !igual)}
+      <p class="dica gt-ct-dica" id="ctDica"></p>`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>Salvar</button>`
+  });
+  const atualizar = () => {
+    const v = lerValor(valDe(m, 'ctValor'));
+    m.$('#ctTotal').textContent = v >= 0 && v !== null ? R(Math.round(v * qtd * 100) / 100) : '—';
+    let dica = tab ? `Só neste topo. A tabela continua com ${R(tab.valor)} para “${tab.nome}”.` : 'Só neste topo.';
+    if (chkDe(m, 'ctTabela')) dica = igual ? `“${tab.nome}” passa a ter esse valor, também nos outros topos ainda não pagos.` : `Os próximos “${t.titulo}” já chegam com esse valor.`;
+    m.$('#ctDica').textContent = dica;
+  };
+  m.el.addEventListener('input', atualizar); m.el.addEventListener('change', atualizar); atualizar();
+  m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    const v = lerValor(valDe(m, 'ctValor'));
+    if (v === null || Number.isNaN(v) || v < 0) { m.$('#ctValor').setAttribute('aria-invalid', 'true'); throw new Error('Informe o valor (ex.: 15,00).'); }
+    if (chkDe(m, 'ctTabela')) {
+      const nova = precosTopos.map(p => ({ nome: p.nome, valor: igual && p.id === tab.id ? v : Number(p.valor) }));
+      if (!igual) nova.push({ nome: t.titulo.trim(), valor: v });
+      precosTopos = await api.admin.topos.precos.salvar(nova);
+      await api.admin.topos.atualizar(t.id, { custo_unitario: v, custo_manual: false });
+    } else await api.admin.topos.atualizar(t.id, { custo_unitario: v, custo_manual: !(tab && Number(tab.valor) === v) });   // igual à tabela: segue a tabela
+    m.fechar();
+    toast(`${codigoTopo(t)}: ${R(Math.round(v * qtd * 100) / 100)} para quem faz.`);
+    recarregarGastos();
+  }));
+}
+
+/** Tabela de preços: quanto quem faz cobra por unidade de cada tipo. Linhas sem valor não entram. */
+async function modalPrecosTopos() {
+  await carregarPrecosTopos();
+  if (gastosNoBanco === false) { toast('Rode o sql/topos-gastos.sql no Supabase para usar a tabela de preços.', { tipo: 'erro', tempo: 8000 }); return; }
+  const quem = gastosDados?.quem || {};
+  // sem tabela ainda: começa com os tipos mais comuns, é só pôr o valor
+  let linhas = precosTopos.length ? precosTopos.map(p => ({ nome: p.nome, txt: valorTxt(p.valor) })) : SUGESTOES_TOPO.slice(0, 6).map(nome => ({ nome, txt: '' }));
+  const m = abrirModal({
+    titulo: 'Tabela de preços', largo: true,
+    corpo: `<p class="dica" style="margin:0 0 14px">Quanto ${esc(quem.primeiro || 'quem faz os topos')} cobra por <b>unidade</b> de cada tipo. O pedido de topo com o mesmo “O que fazer” já chega com o valor, e dá para mudar nele. Ex.: 30 caixinhas a R$ 2,50 = R$ 75,00.</p>
+      <div class="gt-precos" id="gtPrecos"></div>
+      <button type="button" class="btn sm ghost" data-gt-linha>${ic('mais')}Adicionar tipo</button>
+      <p class="dica" style="margin:12px 0 0">Linhas sem valor não são salvas. Os topos ainda não pagos passam a seguir os valores novos (menos os que tiveram o valor digitado no pedido).</p>
+      <datalist id="gtSug">${sugestoesTopo().map(s => `<option value="${esc(s)}"></option>`).join('')}</datalist>`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>Salvar tabela</button>`
+  });
+  const ler = () => m.$$('.gt-preco[data-i]').map(l => ({ nome: l.querySelector('[data-pn]').value.trim(), txt: l.querySelector('[data-pv]').value.trim() }));
+  const desenhar = () => {
+    m.$('#gtPrecos').innerHTML = '<div class="gt-preco cab" aria-hidden="true"><span>O que fazer</span><span>Por unidade</span><span></span></div>'
+      + linhas.map((p, i) => `<div class="gt-preco" data-i="${i}">
+        <input class="in" data-pn value="${esc(p.nome)}" list="gtSug" maxlength="80" placeholder="Ex.: Topo de papel" aria-label="O que fazer, linha ${i + 1}" autocomplete="off">
+        <div class="money"><input class="in" data-pv inputmode="decimal" value="${esc(p.txt)}" placeholder="0,00" aria-label="Valor por unidade, linha ${i + 1}"></div>
+        <button type="button" class="btn icon sm ghost" data-tirar="${i}" aria-label="Tirar a linha ${i + 1}">${ic('lixo')}</button></div>`).join('');
+  };
+  desenhar();
+  m.el.addEventListener('click', e => {
+    const tirar = e.target.closest('[data-tirar]');
+    if (tirar) { linhas = ler(); linhas.splice(Number(tirar.dataset.tirar), 1); desenhar(); return; }
+    if (!e.target.closest('[data-gt-linha]')) return;
+    linhas = [...ler(), { nome: '', txt: '' }]; desenhar();
+    m.$$('[data-pn]').at(-1).focus();
+  });
+  m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    const lista = [], vistos = new Set();
+    for (const x of ler().filter(l => l.nome || l.txt)) {
+      const v = lerValor(x.txt);
+      if (!x.nome) throw new Error('Falta o “O que fazer” em uma linha com valor.');
+      if (v === null) continue;
+      if (Number.isNaN(v) || v < 0) throw new Error(`Confira o valor de “${x.nome}” (ex.: 15,00).`);
+      if (vistos.has(chaveTopo(x.nome))) throw new Error(`“${x.nome}” aparece duas vezes.`);
+      vistos.add(chaveTopo(x.nome));
+      lista.push({ nome: x.nome, valor: v });
+    }
+    precosTopos = await api.admin.topos.precos.salvar(lista);
+    m.fechar();
+    toast(lista.length ? `Tabela salva: ${lista.length} ${lista.length === 1 ? 'tipo' : 'tipos'}.` : 'A tabela de preços ficou vazia.');
+    recarregarGastos();
+  }));
+}
+
+/* Cliques da tela de gastos */
+document.addEventListener('click', e => {
+  if (!perfil || !isAdmin()) return;
+  const b = e.target.closest('[data-gt-pagar],[data-gt-conferir],[data-gt-precos],[data-gt-custo],[data-gt-pgto],[data-gt-mes]');
+  if (!b || b.closest('.modal-veu')) return;
+  const d = gastosDados;
+  if (b.dataset.gtMes) { mesGastos = b.dataset.gtMes; carregarMesGastos(); }
+  else if (b.dataset.gtCusto) { const t = d?.lista.find(x => x.id === b.dataset.gtCusto); if (t) ocupado(b, () => modalCustoTopo(t)); }
+  else if (b.dataset.gtPgto) ocupado(b, () => abrirPagamentoTopos(b.dataset.gtPgto));
+  else if (b.dataset.gtPrecos !== undefined) ocupado(b, () => modalPrecosTopos());
+  else if (b.dataset.gtPagar !== undefined) modalPagarTopos();
+  else if (b.dataset.gtConferir !== undefined && d) modalWhatsAcerto('Enviar para conferir', textoAcertoTopos(d.lista.filter(t => custoTopo(t) !== 0), d.quem), d.quem);
+});
 
 /* =========================================================
    ESTOQUE (sql/estoque.sql), só a Administração.

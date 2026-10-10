@@ -544,7 +544,10 @@ export function criarApi(supabase, opcoes = {}) {
        * Status: novo, em_producao, pronto, entregue, cancelado. O histórico é gravado pelo banco.
        */
       topos: {
-        /** filtros: status (texto ou lista), entregaDesde / entregaAte (YYYY-MM-DD), busca, pedidoId */
+        /**
+         * filtros: status (texto ou lista), entregaDesde / entregaAte (YYYY-MM-DD), busca, pedidoId,
+         * naoPagos (ainda não pagos a quem faz) e pagamentoId (os de um pagamento), estes dois do sql/topos-gastos.sql
+         */
         async listar(f = {}) {
           let q = supabase.from('topos_pedidos').select('*');
           if (Array.isArray(f.status) && f.status.length) q = q.in('status', f.status);
@@ -552,6 +555,8 @@ export function criarApi(supabase, opcoes = {}) {
           if (f.entregaDesde) q = q.gte('data_entrega', f.entregaDesde);
           if (f.entregaAte) q = q.lte('data_entrega', f.entregaAte);
           if (f.pedidoId) q = q.eq('pedido_id', f.pedidoId);
+          if (f.naoPagos) q = q.is('pagamento_id', null);
+          if (f.pagamentoId) q = q.eq('pagamento_id', f.pagamentoId);
           const termo = (f.busca || '').trim().replace(/[,()*%\\]/g, ' ').trim();
           if (termo) q = q.or(['titulo', 'tema', 'texto', 'cliente_nome', 'pedido_codigo'].map(c => `${c}.ilike.*${termo}*`).join(','));
           q = q.order('data_entrega', { ascending: f.crescente ?? true }).order('hora_entrega', { ascending: true, nullsFirst: false }).order('numero');
@@ -570,6 +575,35 @@ export function criarApi(supabase, opcoes = {}) {
           return true;
         },
         historico: async (id) => conferir(await supabase.from('topos_historico').select('*').eq('topo_id', id).order('criado_em'), 'histórico do topo'),
+        /*
+         * Gastos com topos (sql/topos-gastos.sql): quanto pagar a quem faz. Cada pedido tem custo_unitario (vem da
+         * tabela de preços pelo "O que fazer"; custo_manual quando a Administração digitou) e, depois de pago, pagamento_id.
+         */
+        precos: {
+          listar: async () => conferir(await supabase.from('topos_precos').select('*').order('ordem').order('nome'), 'tabela de preços'),
+          /** Troca a tabela inteira: [{ nome, valor }] (valor por unidade). Os topos ainda não pagos passam a seguir a tabela nova. */
+          salvar: (lista) => rpc('salvar_precos_topos', { p_precos: lista })
+        },
+        pagamentos: {
+          /** Pagamentos a quem faz, do mais recente para o mais antigo. de / ate (YYYY-MM-DD): pela data do pagamento. */
+          async listar({ de, ate, limite } = {}) {
+            let q = supabase.from('topos_pagamentos').select('*');
+            if (de) q = q.gte('pago_em', de);
+            if (ate) q = q.lte('pago_em', ate);
+            q = q.order('pago_em', { ascending: false }).order('criado_em', { ascending: false });
+            if (limite) q = q.limit(limite);
+            return conferir(await q, 'pagamentos dos topos');
+          },
+          obter: async (id) => conferir(await supabase.from('topos_pagamentos').select('*').eq('id', id).single(), 'pagamento'),
+          /** Paga os topos escolhidos (prontos ou entregues, com valor). valor: o que foi pago de fato (sem ele, a soma dos topos). */
+          registrar: ({ topos, valor = null, forma = 'pix', pagoEm = null, observacao = null }) =>
+            rpc('registrar_pagamento_topos', { p_topos: topos, p_valor: valor, p_forma: forma, p_pago_em: pagoEm, p_observacao: observacao }),
+          /** Desfaz: apaga o pagamento e os topos dele voltam para "a pagar". */
+          async remover(id) {
+            conferir(await supabase.from('topos_pagamentos').delete().eq('id', id), 'pagamento');
+            return true;
+          }
+        },
         /** Avisa quando um pedido de topo é criado, alterado ou apagado. Devolve uma função para parar de ouvir. */
         aoMudar(callback, aoEstado) {
           const canal = supabase
