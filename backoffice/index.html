@@ -865,6 +865,9 @@ a.chip { text-decoration: none; }
 .secao-t { font-family: var(--font-ui); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--ink-3); margin: 20px 0 10px; }
 .secao-t.linha { border-top: 1px solid var(--line); padding-top: 18px; margin-top: 8px; }   /* seções de Ajustes > Loja */
 .ajuste-dica { font-size: 12.5px; color: var(--ink-3); margin: -6px 0 14px; }
+.pesos-faixa { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; align-items: end; }   /* Opções de bolo: vários pesos de uma vez */
+.pesos-faixa .field { margin: 0; }
+@media (max-width: 560px) { .pesos-faixa { grid-template-columns: 1fr 1fr; } .pesos-faixa .btn { grid-column: 1 / -1; } }
 .aviso-box { padding: 12px 14px; border-radius: var(--r-sm); background: var(--warm-50); font-size: 13.5px; margin-bottom: 14px; }
 .aviso-box code { background: var(--surface); padding: 1px 6px; border-radius: 6px; font-family: var(--font-num); font-size: 12px; }
 

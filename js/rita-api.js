@@ -520,7 +520,7 @@ export function criarApi(supabase, opcoes = {}) {
         alternarAtivo: (id, ativo) => produtosTabela.atualizar(id, { ativo })
       },
       faixasPreco: tabela('produto_faixas_preco', { ordem: [['produto_id', true], ['quantidade_minima', true]] }),
-      pesosBolo: tabela('bolo_pesos', { chave: 'peso_kg', ordem: [['ordem', true], ['peso_kg', true]] }),
+      pesosBolo: tabela('bolo_pesos', { chave: 'peso_kg', ordem: [['peso_kg', true]] }),   // do menor para o maior (a coluna ordem não vale para peso)
       massasBolo: tabela('bolo_massas'),
       formatosBolo: tabela('bolo_formatos'),
       banners: tabela('banners'),

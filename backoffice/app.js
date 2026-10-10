@@ -3094,7 +3094,11 @@ function catalogoPedido(c) {
   return { prods, bolos, finalizacoes, opcoesProd, precoUnitario };
 }
 async function carregarCardapioAtivo(forcar = false) {
-  if (!cardapioAtivo || forcar) cardapioAtivo = await api.cardapio.obter();
+  if (!cardapioAtivo || forcar) {
+    cardapioAtivo = await api.cardapio.obter();
+    // pesos do menor para o maior: o banco manda na ordem de cadastro (o 1 kg cadastrado depois ia para o fim)
+    if (Array.isArray(cardapioAtivo?.bolo?.pesos)) cardapioAtivo.bolo.pesos = cardapioAtivo.bolo.pesos.map(Number).sort((a, b) => a - b);
+  }
   return cardapioAtivo;
 }
 let cacheLoja = null;
@@ -3769,6 +3773,13 @@ async function ajBolos(box) {
         <button type="button" class="btn icon sm ghost" data-tirar-peso="${p.peso_kg}" aria-label="Excluir ${esc(formatarPeso(p.peso_kg))}">${ic('lixo')}</button></div>`).join('')}</div>
       <form id="fPeso" style="display:flex;gap:8px;margin-top:12px;align-items:end"><div class="field" style="margin:0;flex:1"><label for="novoPeso">Novo peso (kg)</label>
         <input class="in" id="novoPeso" inputmode="decimal" placeholder="Ex.: 5,5"></div><button type="submit" class="btn primary">${ic('mais')}Adicionar</button></form>
+      <p class="secao-t linha">Vários de uma vez (bolos grandes)</p>
+      <form id="fPesos" class="pesos-faixa">
+        <div class="field"><label for="pesoDe">De (kg)</label><input class="in" id="pesoDe" inputmode="decimal" placeholder="6"></div>
+        <div class="field"><label for="pesoAte">Até (kg)</label><input class="in" id="pesoAte" inputmode="decimal" placeholder="20"></div>
+        <div class="field"><label for="pesoPasso">A cada</label><select class="sel" id="pesoPasso"><option value="1">1 kg</option><option value="0.5">0,5 kg</option><option value="2">2 kg</option></select></div>
+        <button type="submit" class="btn">${ic('mais')}Adicionar</button></form>
+      <p class="ajuste-dica" style="margin:8px 0 0">Ex.: de 6 a 20 kg, a cada 1 kg. Os que já existem ficam como estão. No site, quando há mais de três pesos acima de 5 kg, eles aparecem juntos no botão “+ de 5 kg”.</p>
     </div>
     <div>
     <div class="card"><div class="card-h"><h2>Massas</h2><button type="button" class="btn sm primary" data-nova-massa>${ic('mais')}Massa</button></div>
@@ -3788,6 +3799,22 @@ async function ajBolos(box) {
       if (pesos.some(p => Number(p.peso_kg) === v)) throw new Error('Esse peso já existe.');
       await api.admin.pesosBolo.criar({ peso_kg: v, ordem: Math.round(v * 10), ativo: true });
       toast(`${formatarPeso(v)} adicionado.`); cardapioAtivo = null; kitsCache = null; ajBolos(box);
+    });
+  });
+  // vários pesos numa faixa (ex.: de 6 a 20 kg, a cada 1 kg): cria só os que ainda não existem
+  box.querySelector('#fPesos').addEventListener('submit', e => {
+    e.preventDefault();
+    ocupado(e.submitter, async () => {
+      const de = lerValor(box.querySelector('#pesoDe').value), ate = lerValor(box.querySelector('#pesoAte').value), passo = Number(box.querySelector('#pesoPasso').value);
+      if (!(de > 0 && ate >= de && ate < 100)) throw new Error('Informe de quantos até quantos kg, por exemplo de 6 a 20.');
+      const faixa = [];
+      for (let v = de; v <= ate + 1e-9; v += passo) faixa.push(Math.round(v * 100) / 100);
+      if (faixa.length > 60) throw new Error(`Seriam ${faixa.length} pesos de uma vez. Use uma faixa menor (até 60).`);
+      const novos = faixa.filter(v => !pesos.some(p => Number(p.peso_kg) === v));
+      if (!novos.length) throw new Error('Esses pesos já existem.');
+      for (const v of novos) await api.admin.pesosBolo.criar({ peso_kg: v, ordem: Math.round(v * 10), ativo: true });
+      toast(`${novos.length} ${novos.length === 1 ? 'peso adicionado' : 'pesos adicionados'}: de ${formatarPeso(novos[0])} a ${formatarPeso(novos[novos.length - 1])}.`);
+      cardapioAtivo = null; kitsCache = null; ajBolos(box);
     });
   });
   box.onclick = async e => {

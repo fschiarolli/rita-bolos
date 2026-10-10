@@ -214,6 +214,7 @@ textarea.input { height: auto; min-height: 76px; padding: 12px 15px; resize: ver
 .input:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 4px color-mix(in srgb, var(--teal) 18%, transparent); }
 .input[aria-invalid="true"] { border-color: var(--error); }
 .dica { font-size: 13px; color: var(--ink-3); margin-top: 6px; }
+.dica.ok { color: var(--teal); font-weight: 700; }   /* "colocamos o 9 que faltava" */
 .erro { display: none; font-size: 13.5px; font-weight: 700; color: var(--error); margin-top: 6px; }
 .erro.mostra { display: block; }
 
@@ -508,10 +509,25 @@ function erroCelular(v) {
   if (!d) return 'Informe seu WhatsApp com DDD, por exemplo (19) 99999-9999.';
   if (d.length < 10) return 'Faltam números: informe o DDD e o celular, por exemplo (19) 99999-9999.';
   if (!DDDS.has(d.slice(0, 2))) return `O DDD ${d.slice(0, 2)} não existe. Confira o número.`;
+  if (d.length === 10 && /[2-5]/.test(d[2])) return 'Esse número é de telefone fixo. Informe um celular com WhatsApp.';
   if (d.length === 10 || d[2] !== '9') return 'O celular tem 9 números depois do DDD, começando com 9. Ex.: (19) 99999-9999.';
   const m = d.slice(2);   // os 9 números depois do DDD: recusa só os inventados de sempre (um celular de verdade nunca pode ficar de fora)
   if (/^9(\d)\1{7}$/.test(m) || m === '912345678' || m === '987654321') return 'Esse número não parece um celular de verdade. Confira o seu WhatsApp.';
   return '';
+}
+/** Celular digitado do jeito antigo, sem o 9 (8 números começando com 6, 7, 8 ou 9): ganha o 9 na frente, como a Anatel
+    fez em todo o Brasil até 2016. Telefone fixo (começa com 2 a 5) fica como está. */
+function comNoveDigito(v) {
+  const d = digitosTel(v);
+  return d.length === 10 && /[6-9]/.test(d[2]) ? formatarTel(d.slice(0, 2) + '9' + d.slice(2)) : v;
+}
+const DICA_FONE = 'É por ele que avisamos cada etapa do pedido.';
+/** Põe o 9 que faltava e avisa embaixo do campo, para a pessoa conferir. */
+function corrigirNoveDigito(fone) {
+  const novo = comNoveDigito(fone.value), dica = $('#hFone');
+  if (novo === fone.value) return;
+  fone.value = novo;
+  dica.textContent = 'Colocamos o 9 que faltava na frente do celular. Confira se está certo.'; dica.classList.add('ok');
 }
 /** Mostra (msg) ou esconde ('') o erro embaixo do campo. Volta true quando está certo. */
 function marcarCampo(el, erro, msg) {
@@ -523,12 +539,13 @@ function marcarCampo(el, erro, msg) {
 document.addEventListener('focusout', e => {   // ao sair do campo já avisa o que corrigir (vazio, só no Enviar)
   const t = e.target;
   if (t.id === 'cNome' && t.value.trim()) { t.value = limparNome(t.value); marcarCampo(t, $('#eNome'), erroNome(t.value)); }
-  if (t.id === 'cFone' && t.value.trim()) marcarCampo(t, $('#eFone'), erroCelular(t.value));
+  if (t.id === 'cFone' && t.value.trim()) { corrigirNoveDigito(t); marcarCampo(t, $('#eFone'), erroCelular(t.value)); }
 });
 document.addEventListener('input', e => {   // com o erro aparecendo, ele some assim que o campo fica certo
   const t = e.target;
   if (t.id === 'cNome' && t.getAttribute('aria-invalid') === 'true' && !erroNome(t.value)) marcarCampo(t, $('#eNome'), '');
   if (t.id === 'cFone' && t.getAttribute('aria-invalid') === 'true' && !erroCelular(t.value)) marcarCampo(t, $('#eFone'), '');
+  if (t.id === 'cFone' && $('#hFone').classList.contains('ok')) { $('#hFone').textContent = DICA_FONE; $('#hFone').classList.remove('ok'); }   // mexeu de novo: volta a dica de sempre
 });
 
 /* WhatsApp: no celular abre direto o aplicativo; no computador, o WhatsApp Web.
@@ -873,6 +890,7 @@ function validar() {
   let ok = true, primeiro = null;
   const nome = $('#cNome'), fone = $('#cFone');
   if (!marcarCampo(nome, $('#eNome'), erroNome(nome.value))) { ok = false; primeiro = nome; }
+  corrigirNoveDigito(fone);
   if (!marcarCampo(fone, $('#eFone'), erroCelular(fone.value))) { ok = false; primeiro = primeiro || fone; }
   const agora = new Date(), passou = ret.dia === hojeISO() && ret.hora && minutosDe(ret.hora) <= agora.getHours() * 60 + agora.getMinutes();
   const dOk = !!ret.dia && ret.dia >= minData, hOk = !!ret.hora && !passou;

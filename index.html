@@ -580,6 +580,8 @@ a { color: var(--teal); }
 .hint.ok { color: var(--teal); font-weight: 800; }
 .desc { font-size: 14.5px; color: var(--ink-2); line-height: 1.5; }
 .weights { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.peso-grande { margin-top: 12px; }   /* lista dos bolos grandes (botão "+ de 5 kg") */
+.peso-grande .lbl { font-size: 14px; margin-bottom: 6px; }
 .radio-card { position: relative; }
 .radio-card input { position: absolute; opacity: 0; pointer-events: none; }
 .radio-card label {
@@ -1318,7 +1320,7 @@ function buildCatalog(d) {
   for (const k in CATALOG) delete CATALOG[k];
   for (const k in artCache) delete artCache[k];
   CFG = { ...CFG_PADRAO, ...(d.configuracoes || {}) };
-  WEIGHT_OPTIONS = (d.bolo?.pesos || []).map(Number).filter(n => n > 0);
+  WEIGHT_OPTIONS = (d.bolo?.pesos || []).map(Number).filter(n => n > 0).sort((a, b) => a - b);   // do menor para o maior: o primeiro é o "a partir de"
   if (!WEIGHT_OPTIONS.length) WEIGHT_OPTIONS = [1.5];
   MASSAS = (d.bolo?.massas || []).map(m => ({ v: m.slug, label: m.nome, desc: m.descricao || '', cor: m.cor || '#EBC78F',
     short: m.nome.replace(/^massa\s+/i, '').replace(/^./, c => c.toUpperCase()) }));
@@ -1806,11 +1808,18 @@ function openCake(it, opener) {
   const cakeGroups = (CATALOG[it.cat] || []).map(g => ({ title: g.title || catDe(it.cat)?.nome || 'Sabores', items: g.items.filter(x => x.kind === 'cake' && x.id !== it.id) })).filter(g => g.items.length);
   const others = cakeGroups.map(g => `<optgroup label="${esc(g.title)}">${g.items.map(x => `<option value="${x.id}">${esc(x.label)} — ${fmt(x.price)}/kg</option>`).join('')}</optgroup>`).join('');
   const tol = Number(CFG.tolerancia_peso_bolo_g || 0);
+  // até 5 kg em botões; os bolos grandes (mais de três pesos acima de 5 kg) ficam juntos no botão "+ de 5 kg", que abre a lista
+  const grandes = WEIGHT_OPTIONS.filter(w => w > 5), juntar = grandes.length > 3 && grandes.length < WEIGHT_OPTIONS.length;
+  const botoes = juntar ? WEIGHT_OPTIONS.filter(w => w <= 5) : WEIGHT_OPTIONS;
   openSheet(`${sheetHead(it.name, `${fmt(it.price)} o kg`, thumbHTML(it))}
     <div class="sheet-body">
       <fieldset class="field" style="margin-top:4px"><legend>Peso</legend>
-        <div class="weights">${WEIGHT_OPTIONS.map((w, i) => `<div class="radio-card"><input type="radio" name="w" id="w${i}" value="${w}" ${w === w0 ? 'checked' : ''}>
-          <label for="w${i}"><span class="w-kg">${kg(w)}</span><span class="w-price" data-wp="${w}">${fmt(it.price * w)}</span></label></div>`).join('')}</div>
+        <div class="weights">${botoes.map((w, i) => `<div class="radio-card"><input type="radio" name="w" id="w${i}" value="${w}" ${w === w0 ? 'checked' : ''}>
+          <label for="w${i}"><span class="w-kg">${kg(w)}</span><span class="w-price" data-wp="${w}">${fmt(it.price * w)}</span></label></div>`).join('')}
+          ${juntar ? `<div class="radio-card"><input type="radio" name="w" id="wMaisR" value="mais">
+          <label for="wMaisR"><span class="w-kg">+ de 5 kg</span><span class="w-price">até ${kg(grandes[grandes.length - 1])}</span></label></div>` : ''}</div>
+        ${juntar ? `<div class="peso-grande" id="wMaisBox" hidden><label class="lbl" for="wMais">Peso do bolo</label>
+          <select class="select" id="wMais">${grandes.map(w => `<option value="${w}" data-wo="${w}">${kg(w)} — ${fmt(it.price * w)}</option>`).join('')}</select></div>` : ''}
         ${tol ? `<p class="hint">O peso final pode passar até ${tol} g.</p>` : ''}
       </fieldset>
       ${MASSAS.length ? `<fieldset class="field"><legend>Massa</legend>
@@ -1840,9 +1849,18 @@ function openCake(it, opener) {
     </div>
     <div class="sheet-foot">${qtyStepper('qv')}<button type="button" class="btn btn-primary btn-split" data-act="cake-add"><span>Adicionar</span><span id="cakeTotal">${fmt(it.price * w0)}</span></button></div>`, opener);
 }
+/** Peso do bolo: um dos botões, ou "+ de 5 kg", que abre a lista dos bolos grandes (o peso vem dela). */
+function escolherPeso(radio) {
+  const mais = radio.value === 'mais', box = $('#wMaisBox');
+  if (box) box.hidden = !mais;
+  sheetState.weight = Number(mais ? $('#wMais').value : radio.value);
+  refreshCake();
+  if (mais) $('#wMais').focus();
+}
 function refreshCake() {
   const s = sheetState, base = cakeBase();
   $$('[data-wp]').forEach(el => el.textContent = fmt(base * parseFloat(el.dataset.wp)));
+  $$('[data-wo]').forEach(o => { const w = Number(o.dataset.wo); o.textContent = `${kg(w)} — ${fmt(base * w)}`; });   // lista dos bolos grandes
   $('#cakeTotal').textContent = fmt(cakeUnit() * s.qty);
   const hint = $('#secHint');
   if (hint) {
@@ -2177,10 +2195,25 @@ function erroCelular(v) {
   if (!d) return 'Informe seu WhatsApp com DDD, por exemplo (19) 99999-9999.';
   if (d.length < 10) return 'Faltam números: informe o DDD e o celular, por exemplo (19) 99999-9999.';
   if (!DDDS.has(d.slice(0, 2))) return `O DDD ${d.slice(0, 2)} não existe. Confira o número.`;
+  if (d.length === 10 && /[2-5]/.test(d[2])) return 'Esse número é de telefone fixo. Informe um celular com WhatsApp.';
   if (d.length === 10 || d[2] !== '9') return 'O celular tem 9 números depois do DDD, começando com 9. Ex.: (19) 99999-9999.';
   const m = d.slice(2);   // os 9 números depois do DDD: recusa só os inventados de sempre (um celular de verdade nunca pode ficar de fora)
   if (/^9(\d)\1{7}$/.test(m) || m === '912345678' || m === '987654321') return 'Esse número não parece um celular de verdade. Confira o seu WhatsApp.';
   return '';
+}
+/** Celular digitado do jeito antigo, sem o 9 (8 números começando com 6, 7, 8 ou 9): ganha o 9 na frente, como a Anatel
+    fez em todo o Brasil até 2016. Telefone fixo (começa com 2 a 5) fica como está. */
+function comNoveDigito(v) {
+  const d = digitosTel(v);
+  return d.length === 10 && /[6-9]/.test(d[2]) ? formatarTel(d.slice(0, 2) + '9' + d.slice(2)) : v;
+}
+const DICA_FONE = 'É por ele que avisamos cada etapa do pedido.';
+/** Põe o 9 que faltava e avisa embaixo do campo, para a pessoa conferir. */
+function corrigirNoveDigito(ph) {
+  const novo = comNoveDigito(ph.value), dica = $('#hPhone');
+  if (novo === ph.value) return;
+  ph.value = novo;
+  if (dica) { dica.textContent = 'Colocamos o 9 que faltava na frente do celular. Confira se está certo.'; dica.classList.add('ok'); }
 }
 /** Mostra (msg) ou esconde ('') o erro embaixo do campo. Volta true quando está certo. */
 function marcarCampo(el, erro, msg) {
@@ -2194,13 +2227,14 @@ function marcarCampo(el, erro, msg) {
 document.addEventListener('focusout', e => {
   const t = e.target;
   if (t.id === 'cName' && t.value.trim()) { t.value = limparNome(t.value); marcarCampo(t, $('#eName'), erroNome(t.value)); }
-  if (t.id === 'cPhone' && t.value.trim()) marcarCampo(t, $('#ePhone'), erroCelular(t.value));
+  if (t.id === 'cPhone' && t.value.trim()) { corrigirNoveDigito(t); marcarCampo(t, $('#ePhone'), erroCelular(t.value)); }
 });
 function validateCheckout() {
   const name = $('#cName'), d = $('#cDate'), t = $('#cTime'), minD = sheetState.minDate || todayISO();
   let ok = true, first = null;
   if (!marcarCampo(name, $('#eName'), erroNome(name.value))) { ok = false; first = first || name; }
   const ph = $('#cPhone');
+  corrigirNoveDigito(ph);
   if (!marcarCampo(ph, $('#ePhone'), erroCelular(ph.value))) { ok = false; first = first || ph; }
   const agora = new Date(), jaPassou = d.value === todayISO() && t.value && minutosDe(t.value) <= agora.getHours() * 60 + agora.getMinutes();
   const dOk = !!d.value && d.value >= minD, tOk = !!t.value && !jaPassou;
@@ -2448,7 +2482,8 @@ $('#clearCart').addEventListener('click', e => openClearConfirm(e.currentTarget)
 document.addEventListener('change', e => {
   const t = e.target, s = sheetState;
   if (s.type === 'cake') {
-    if (t.name === 'w') { s.weight = parseFloat(t.value); refreshCake(); }
+    if (t.name === 'w') escolherPeso(t);
+    if (t.id === 'wMais') { s.weight = Number(t.value); refreshCake(); }
     if (t.name === 'm') s.massa = t.value;
     if (t.name === 'f') s.formato = t.value;
     if (t.name === 'fin') { s.fin = t.value; refreshCake(); }
@@ -2466,6 +2501,7 @@ document.addEventListener('input', e => {
   // com o erro aparecendo, ele some assim que o campo fica certo
   if (t.id === 'cName' && t.getAttribute('aria-invalid') === 'true' && !erroNome(t.value)) marcarCampo(t, $('#eName'), '');
   if (t.id === 'cPhone' && t.getAttribute('aria-invalid') === 'true' && !erroCelular(t.value)) marcarCampo(t, $('#ePhone'), '');
+  if (t.id === 'cPhone' && $('#hPhone')?.classList.contains('ok')) { $('#hPhone').textContent = DICA_FONE; $('#hPhone').classList.remove('ok'); }   // mexeu de novo: volta a dica de sempre
   if ((t.id === 'cDate' || t.id === 'cTime') && $('#cDate').value && $('#cTime').value) $('#ePick').classList.remove('show');
 });
 
