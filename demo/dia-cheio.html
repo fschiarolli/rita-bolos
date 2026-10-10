@@ -78,9 +78,7 @@ try {
   await criar(dia(-1), '16:00', 'pronto', 'Cliente de Ontem');
   barra(1);
   msg('Pronto! Abrindo o quadro…');
-  // ?tema=canela (ou outro) passa adiante para o quadro
-  const tema = new URLSearchParams(location.search).get('tema');
-  setTimeout(() => location.replace('../backoffice/quadro.html?demo&hora=10:05' + (tema ? '&tema=' + encodeURIComponent(tema) : '')), 600);
+  setTimeout(() => location.replace('../backoffice/quadro.html?demo&hora=10:05'), 600);
 } catch (e) {
   console.error(e);
   document.querySelector('h1').textContent = 'Não deu para montar a demonstração';
