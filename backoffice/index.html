@@ -1181,6 +1181,20 @@ span.gt-l-v:hover { background: none; }
 .valor-numerico, .ped .total, .valores .lin, .it-l, .pgto, .preco-in .in, .money .in, .np-item .sub, .hj-pg .falta, .hj-pagto, .hj-it .l, .hj-resumo,
 .status-bar, .tbl, .kv dd, .pill, .tag, .nav-badge, .hj-falta-g { font-variant-numeric: tabular-nums; }
 
+/* ---------- Peso final do bolo (sql/peso-final.sql) ---------- */
+.pf { margin-top: 10px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line); }
+.pf > label { display: block; font-weight: 600; font-size: 12.5px; color: var(--ink-2); margin-bottom: 6px; }
+.pf > label span { font-weight: 400; color: var(--ink-3); }
+.pf-in { display: flex; align-items: center; gap: 8px; }
+.pf-in .in { width: 130px; min-height: 38px; font-family: var(--font-num); }
+.pf-un { color: var(--ink-3); font-weight: 600; font-size: 13px; }
+.pf .pf-st { display: flex; align-items: flex-start; gap: 6px; margin-top: 8px; font-size: 12.5px; line-height: 1.4; color: var(--ink-3); }
+.pf .pf-st .ic { width: 15px; height: 15px; flex: none; margin-top: 1px; }
+.pf .pf-st.ok { color: var(--teal); font-weight: 600; }
+.pf .pf-st.exc { color: var(--rose-600); font-weight: 600; }
+.hj-it .pf { margin-top: 8px; background: var(--surface-2); }
+.exc-tab td small { display: block; }
+
 /* ---------- Entregas (sql/entregas.sql) ---------- */
 .tag.ent { background: var(--ent-50); color: var(--ent); }
 .ped .ent-tag, .hj-nome .ent-tag { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-ui); font-size: 11.5px; font-weight: 600; color: var(--ent); }

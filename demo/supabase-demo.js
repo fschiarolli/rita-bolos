@@ -14,6 +14,10 @@ const USUARIO_DEMO = { id: '00000000-0000-4000-8000-000000000001', email: 'rita@
 const TABELAS_COM_ATUALIZADO = ['configuracoes', 'categorias', 'grupos', 'produtos', 'bolo_massas', 'bolo_formatos', 'banners', 'avisos', 'pedidos', 'pedido_observacoes', 'topos_pedidos', 'pedido_entregas'];
 /* Quem produz os personalizados na demonstração: entre com topos@demo.com.br para ver o backoffice como ela vê */
 const PRODUTORA_DEMO = { user_id: '00000000-0000-4000-8000-000000000002', nome: 'Bia Andrade', email: 'topos@demo.com.br', ativo: true, avatar: null };
+/** Entregas (sql/entregas.sql): a loja, de onde saem as entregas, e o pedido de exemplo, a uns 4 km dela. */
+const LOJA_ENTREGA = { entrega_origem: 'Rua Jesus Tomás de Aquino, 44, Jardim Santo André, Hortolândia - SP', entrega_origem_lat: -22.8812692, entrega_origem_lng: -47.2055763 };
+const ENTREGA_EXEMPLO = { taxa: 10, cep: '13184160', endereco: 'Avenida Olívio Franceschini, 1500', complemento: 'Casa 3, portão branco', bairro: 'Parque Ortolândia',
+  cidade: 'Hortolândia - SP', distancia_km: 3.8, duracao_min: 6 };
 const TABELAS_TOPOS = ['topos_pedidos', 'topos_historico'];
 const TABELAS_ESTOQUE = ['estoque_itens', 'estoque_consumos', 'estoque_movimentos'];
 const r3 = n => Math.round(Number(n) * 1000) / 1000;
@@ -91,7 +95,7 @@ export function criarSupabaseDemo(opcoes = {}) {
     if (!b.notificacoes) { b.notificacoes = []; b.topos_pedidos.filter(t => t.status === 'pronto').forEach(t => avisoTopoPronto(b.notificacoes, t)); }
     if (!b.topos_precos) semearGastosTopos(b);
     // Entregas (igual a sql/entregas.sql): "Saiu para entrega" e "Entregue" logo depois de "Pronto", o endereço de cada
-    // pedido e a regra da taxa. Na demonstração, a loja fica num endereço de exemplo em Campinas, para o cálculo funcionar.
+    // pedido e a regra da taxa. A loja é a de verdade; a regra é um exemplo, para o cálculo funcionar.
     if (b.status_pedido && !b.status_pedido.some(s => s.codigo === 'em_rota')) {
       const pronto = b.status_pedido.find(s => s.codigo === 'pronto')?.ordem ?? Math.max(0, ...b.status_pedido.filter(s => !s.finalizado).map(s => s.ordem));
       b.status_pedido.forEach(s => { if (s.ordem > pronto && s.codigo !== 'entregue') s.ordem += 2; });
@@ -100,9 +104,18 @@ export function criarSupabaseDemo(opcoes = {}) {
         b.status_pedido.push({ codigo: 'entregue', nome: 'Entregue', descricao: 'Entregue no endereço do cliente.', cor: '#3B4A6B', ordem: pronto + 2, finalizado: true, ativo: true });
     }
     b.pedido_entregas = b.pedido_entregas || [];
+    b.excessos_peso = b.excessos_peso || [];   // peso final do bolo (igual a sql/peso-final.sql)
     (b.pedidos || []).forEach(p => { if (p.taxa_entrega == null) p.taxa_entrega = 0; });
-    if (cf && !('entrega_origem' in cf)) Object.assign(cf, { entrega_origem: 'Rua Barão de Jaguara, 1000, Centro, Campinas - SP', entrega_origem_lat: -22.9056951,
-      entrega_origem_lng: -47.0583412, entrega_taxa_minima: 8, entrega_km_incluidos: 3, entrega_valor_km: 1.5, entrega_raio_km: 15 });
+    if (cf && !('entrega_origem' in cf)) Object.assign(cf, LOJA_ENTREGA, { entrega_taxa_minima: 8, entrega_km_incluidos: 3, entrega_valor_km: 1.5, entrega_raio_km: 15 });
+    // demonstração aberta antes, com a loja num endereço de exemplo em Campinas: a loja e o pedido de exemplo passam para Hortolândia
+    if (cf?.entrega_origem === 'Rua Barão de Jaguara, 1000, Centro, Campinas - SP') {
+      Object.assign(cf, LOJA_ENTREGA);
+      const ex = b.pedido_entregas.find(e => e.endereco === 'Avenida Doutor Romeu Tórtima, 450'), p = ex && (b.pedidos || []).find(x => x.id === ex.pedido_id);
+      if (p && !['entregue', 'cancelado'].includes(p.status)) {
+        Object.assign(ex, ENTREGA_EXEMPLO);
+        p.taxa_entrega = ex.taxa; p.total = r2(p.subtotal - Math.min(Number(p.desconto || 0), p.subtotal) + ex.taxa);
+      }
+    }
     // notificações no celular (igual a sql/notificacoes-celular.sql; na demonstração nada sai pela internet)
     b.push_config = b.push_config || { vapid_publica: null, vapid_privada: null };
     b.push_aparelhos = b.push_aparelhos || [];
@@ -368,6 +381,11 @@ export function criarSupabaseDemo(opcoes = {}) {
       if (q.op !== 'select' && !adminLoja()) return q.op === 'delete' ? finalizar([], q, 0) : erro('new row violates row-level security policy', '42501');
       if (q.op === 'insert' || q.op === 'update') return erro('new row violates row-level security policy', '42501');
     }
+    if (tabela === 'excessos_peso') {   // a equipe vê; apagar, só a Administração; lançar, só pelo peso final do bolo
+      if (q.op === 'select' && !equipe()) return finalizar([], q, 0);
+      if (q.op === 'delete' && !adminLoja()) return finalizar([], q, 0);
+      if (q.op !== 'select' && q.op !== 'delete') return erro('new row violates row-level security policy for table "excessos_peso"', '42501');
+    }
     if (tabela === 'pedido_entregas' && !equipe())   // endereço e telefone de quem recebe: só a equipe da loja
       return q.op === 'select' ? finalizar([], q, 0) : erro('new row violates row-level security policy for table "pedido_entregas"', '42501');
     if (q.op === 'upsert') {   // grava por cima quando a chave já existe (ex.: a entrega do pedido)
@@ -422,6 +440,8 @@ export function criarSupabaseDemo(opcoes = {}) {
       for (const r of alvo) {
         const antigo = clone(r);
         for (const col of UNICOS[tabela] || []) if (q.dados[col] !== undefined && fonte.some(x => x !== r && x[col] == q.dados[col])) return erro('duplicate key value violates unique constraint', '23505');
+        if (tabela === 'pedido_itens' && q.dados.peso_final_kg != null && !(Number(q.dados.peso_final_kg) > 0))
+          return erro('new row for relation "pedido_itens" violates check constraint "pedido_itens_peso_final_kg_check"', '23514');
         Object.assign(r, clone(q.dados));
         if (tabela === 'topos_pedidos') custoTopo(r, antigo);
         if (tabela === 'pedido_entregas') { const e = conferirEntrega(r); if (e) { Object.assign(r, antigo); return e; } }
@@ -473,17 +493,24 @@ export function criarSupabaseDemo(opcoes = {}) {
       recalcularPedido(novo);
       // estoque: baixa ao entrar em Confirmado em diante, devolve ao sair (cancelado, de volta a Recebido)
       if (antigo && consomeEstoque(novo.status) !== consomeEstoque(antigo.status)) sincronizarEstoquePedido(novo.id, consomeEstoque(novo.status));
+      // excesso de peso: o lançamento acompanha o dia e o cliente do pedido
+      if (antigo && (novo.data_retirada !== antigo.data_retirada || novo.cliente_nome !== antigo.cliente_nome))
+        (db.excessos_peso || []).filter(e => e.pedido_id === novo.id).forEach(e => Object.assign(e, { data: novo.data_retirada || e.data, cliente_nome: novo.cliente_nome, pedido_codigo: novo.codigo }));
       emitir(antigo ? 'UPDATE' : 'INSERT', novo, antigo);
     }
     if (tabela === 'pedidos' && !novo && antigo) {
       sincronizarEstoquePedido(antigo.id, false, antigo.codigo);   // pedido excluído: devolve o que tinha saído
       (db.estoque_movimentos || []).filter(m => m.pedido_id === antigo.id).forEach(m => { m.pedido_id = null; });
+      (db.excessos_peso || []).filter(e => e.pedido_id === antigo.id).forEach(e => { e.pedido_id = null; });   // o histórico fica
       for (const t of ['pedido_itens', 'pedido_historico', 'pedido_observacoes', 'pedido_pagamentos', 'pedido_entregas']) db[t] = (db[t] || []).filter(r => r.pedido_id !== antigo.id);
       emitir('DELETE', null, antigo);
     }
+    if (tabela === 'pedido_itens' && novo) excessoPeso(novo, antigo);   // gatilho de sql/peso-final.sql
     if (['pedido_itens', 'pedido_pagamentos'].includes(tabela)) {
       const p = db.pedidos.find(x => x.id === (novo || antigo).pedido_id);
-      if (p && tabela === 'pedido_itens') sincronizarEstoquePedido(p.id, consomeEstoque(p.status));   // itens mudaram num pedido confirmado: acerta a diferença
+      // itens mudaram num pedido confirmado: acerta a diferença (só o que o estoque usa: o peso final do bolo não conta)
+      if (p && tabela === 'pedido_itens' && (!novo || !antigo || ['pedido_id', 'produto_id', 'quantidade', 'peso_kg'].some(k => (novo[k] ?? null) !== (antigo[k] ?? null))))
+        sincronizarEstoquePedido(p.id, consomeEstoque(p.status));
       if (p) { recalcularPedido(p); emitir('UPDATE', p); }
     }
     if (tabela === 'pedido_entregas') {   // gatilho de sql/entregas.sql: a taxa vai para o pedido (e o total muda)
@@ -519,6 +546,35 @@ export function criarSupabaseDemo(opcoes = {}) {
       if (voltam.length) emitir('UPDATE', voltam[0], null, 'topos_pedidos');
     }
   }
+  /* ---- Peso final do bolo: o que o gatilho de sql/peso-final.sql faz ---- */
+  const CAMPOS_PESO = ['peso_final_kg', 'peso_kg', 'quantidade', 'preco_kg', 'preco_unitario', 'nome'];
+  /** O peso final passou do peso pedido + tolerância (por bolo): lança, refaz ou tira o excesso como prejuízo. */
+  function excessoPeso(item, antigo) {
+    if (antigo && CAMPOS_PESO.every(k => (item[k] ?? null) === (antigo[k] ?? null))) return;
+    db.excessos_peso = db.excessos_peso || [];
+    const tirar = () => { db.excessos_peso = db.excessos_peso.filter(e => e.pedido_item_id !== String(item.id)); };
+    if (item.peso_final_kg == null || !(Number(item.peso_kg) > 0)) return tirar();
+    const tol = Number(cfg().tolerancia_peso_bolo_g) || 0, qtd = Math.max(1, Number(item.quantidade) || 1);
+    const excesso = r3(Number(item.peso_final_kg) - qtd * (Number(item.peso_kg) + tol / 1000));
+    if (!(excesso > 0)) return tirar();
+    const preco = Number(item.preco_kg) || Number(item.preco_unitario) / Number(item.peso_kg) || 0;
+    const p = db.pedidos.find(x => x.id === item.pedido_id) || {};
+    const dados = { pedido_item_id: String(item.id), pedido_id: item.pedido_id, pedido_codigo: p.codigo || null, cliente_nome: p.cliente_nome || null, item_nome: item.nome,
+      quantidade: qtd, peso_pedido_kg: Number(item.peso_kg), tolerancia_g: tol, peso_final_kg: Number(item.peso_final_kg), excesso_kg: excesso,
+      preco_kg: r2(preco), valor: r2(excesso * preco), data: p.data_retirada || hojeSP(), registrado_por: usuarioId(), atualizado_em: agora() };
+    const e = db.excessos_peso.find(x => x.pedido_item_id === dados.pedido_item_id);
+    if (e) Object.assign(e, dados); else db.excessos_peso.push({ id: novoId(), criado_em: agora(), ...dados });
+  }
+  /** Bolos já pesados na demonstração: um que passou do peso (vira prejuízo) e um dentro da tolerância. Uma vez só. */
+  function semearPesos() {
+    if (db._pesosSemeados) return;
+    db._pesosSemeados = true;
+    const bolo = nome => db.pedido_itens.find(i => Number(i.peso_kg) > 0 && db.pedidos.find(p => p.id === i.pedido_id)?.cliente_nome === nome);
+    const pesar = (i, kg) => { if (!i) return; const antes = clone(i); i.peso_final_kg = kg; excessoPeso(i, antes); };
+    pesar(bolo('Maria Souza'), 2.95);      // pediu 2,5 kg: até 2,8 kg; passou 150 g
+    pesar(bolo('Fernanda Rocha'), 2.2);    // pediu 2 kg: dentro da tolerância
+  }
+
   /* ---- Entregas: as regras da tabela pedido_entregas (sql/entregas.sql) ---- */
   /** Limpa os campos como o gatilho do banco e confere o que o banco recusa. Devolve o erro, ou null. */
   function conferirEntrega(e) {
@@ -546,10 +602,9 @@ export function criarSupabaseDemo(opcoes = {}) {
     } catch (e) { return; }   // cardápio da demonstração diferente: fica sem o exemplo
     const p = db.pedidos.find(x => x.id === id);
     p.origem = 'whatsapp';
-    db.pedido_entregas.push({ pedido_id: id, taxa: 20, cep: '13084791', endereco: 'Avenida Doutor Romeu Tórtima, 450', complemento: 'Casa 3, portão branco',
-      bairro: 'Barão Geraldo', cidade: 'Campinas - SP', recebedor_nome: 'Fernanda Rocha', recebedor_telefone: '(19) 99654-3210', distancia_km: 10.4, duracao_min: 13,
+    db.pedido_entregas.push({ pedido_id: id, ...ENTREGA_EXEMPLO, recebedor_nome: 'Fernanda Rocha', recebedor_telefone: '(19) 99654-3210',
       criado_em: p.criado_em, atualizado_em: p.criado_em });
-    p.taxa_entrega = 20; recalcularPedido(p);
+    p.taxa_entrega = ENTREGA_EXEMPLO.taxa; recalcularPedido(p);
     db.pedido_pagamentos.push({ id: novoId(), pedido_id: id, tipo: 'sinal', forma: 'pix', valor: p.valor_sinal, pago_em: p.criado_em, observacao: null, registrado_por: USUARIO_DEMO.id, criado_em: p.criado_em });
     let anterior = 'recebido';
     for (const s of ['confirmado', 'em_producao', 'pronto']) {
@@ -970,9 +1025,10 @@ export function criarSupabaseDemo(opcoes = {}) {
 
   db = carregar();
   semearEntregas();
+  semearPesos();
   salvar();
   return { from, rpc, auth, storage, channel, removeChannel: c => canais.delete(c),
-    _demo: { reiniciar() { localStorage.removeItem(CHAVE); db = carregar(); semearEntregas(); salvar(); } } };
+    _demo: { reiniciar() { localStorage.removeItem(CHAVE); db = carregar(); semearEntregas(); semearPesos(); salvar(); } } };
 }
 
 const DEF_PRODUTO = { tipo: 'simples', unidade_preco: 'unidade', pede_observacao: false, observacao_obrigatoria: false, destaque: false, antecedencia_minima_dias: 0, ordem: 0, ativo: true };

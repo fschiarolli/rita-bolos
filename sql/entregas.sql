@@ -11,7 +11,8 @@
 --    Se você já tinha criado um status parecido em Ajustes > Status, desligue o antigo ("Em uso").
 -- 4. Regra da taxa (Ajustes > Loja > Entrega): endereço de onde sai a entrega, taxa mínima, quantos km ela
 --    cobre, valor de cada km a mais e até onde entrega. O backoffice calcula a distância de carro pelo
---    OpenStreetMap e sugere a taxa; a equipe pode digitar outro valor.
+--    OpenStreetMap e sugere a taxa; a equipe pode digitar outro valor. O endereço da loja já entra preenchido
+--    (Rua Jesus Tomás de Aquino, 44, Hortolândia); a regra da taxa fica para preencher em Ajustes.
 -- 5. Recibo do cliente (o link que vai no WhatsApp): mostra a entrega e a taxa (função entrega_publica).
 
 do $$
@@ -172,6 +173,14 @@ alter table configuracoes drop constraint if exists configuracoes_entrega_ck;
 alter table configuracoes add constraint configuracoes_entrega_ck check (
   entrega_taxa_minima >= 0 and entrega_km_incluidos >= 0 and entrega_valor_km >= 0
   and (entrega_raio_km is null or entrega_raio_km > 0));
+
+-- Endereço da loja, de onde saem as entregas (só se ainda estiver em branco; muda em Ajustes > Loja > Entrega).
+-- O mapa conhece a rua (uns 870 m), mas não o número 44: o ponto fica no meio dela. Para um ponto exato,
+-- cole em Ajustes as coordenadas do Google Maps (toque e segure no lugar da loja).
+update configuracoes
+   set entrega_origem = 'Rua Jesus Tomás de Aquino, 44, Jardim Santo André, Hortolândia - SP',
+       entrega_origem_lat = -22.8812692, entrega_origem_lng = -47.2055763
+ where coalesce(btrim(entrega_origem), '') = '';
 
 -- Conferir:
 -- select codigo, nome, ordem, finalizado, ativo from status_pedido order by ordem;

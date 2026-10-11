@@ -346,6 +346,21 @@ const RAIO_BUSCA = 0.6;   // graus em volta da loja (uns 60 km): uma rua com o m
 const pertoDe = (a, b) => Math.abs(a.lat - b.lat) <= RAIO_BUSCA && Math.abs(a.lng - b.lng) <= RAIO_BUSCA;
 /** Precisão do que o mapa achou (place_rank do OpenStreetMap): o número da casa, só a rua ou só o bairro. */
 const nivelDoMapa = rank => (rank >= 30 ? 'numero' : rank >= 26 ? 'rua' : rank >= 18 ? 'bairro' : null);
+/** O endereço numa linha só ("Rua X, 44, Jardim Y, Cidade - SP", como o da loja) em { endereco, bairro, cidade }. */
+function separarEndereco(linha) {
+  const partes = linha.split(',').map(x => x.trim()).filter(Boolean);
+  if (partes.length < 2) return { endereco: linha };
+  const temNumero = partes.length > 2 && /^(n[º°o.]?\s*)?\d+\s*[a-z]?$/i.test(partes[1]);
+  const resto = partes.slice(temNumero ? 2 : 1);
+  return { endereco: temNumero ? `${partes[0]}, ${partes[1].replace(/^n[º°o.]?\s*/i, '')}` : partes[0], bairro: resto.slice(0, -1).join(', '), cidade: resto.at(-1) || '' };
+}
+const TIPO_RUA = /^(rua|r|avenida|av|travessa|tv|alameda|al|estrada|estr|rodovia|rod|praça|praca|pça|largo|viela|via)\.?$/i;
+/** Sem o número da casa: "Rua das Flores, 123" e "Rua das Flores 123" viram "Rua das Flores"; "Rua 7" continua "Rua 7". */
+function tirarNumero(rua) {
+  const m = rua.match(/^(.+?)(?:\s*,\s*|\s+)(?:n[º°o.]?\s*)?\d+\s*[a-z]?$/i);
+  const resto = m ? m[1].trim() : rua;
+  return m && !TIPO_RUA.test(resto) ? resto : rua;
+}
 /**
  * Ponto no mapa de um endereço: { lat, lng, nivel, nome } ou null (não achou).
  * nivel: 'exato' (coordenadas coladas), 'numero', 'rua', 'cep' ou 'bairro' (os dois últimos, aproximados).
@@ -356,7 +371,7 @@ export async function localizarEndereco(e, { perto } = {}) {
   const linha = typeof e === 'string' ? e.trim() : '';
   const coord = linha.match(/^(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$/);
   if (coord) return { lat: Number(coord[1]), lng: Number(coord[2]), nivel: 'exato', nome: linha };
-  const end = typeof e === 'string' ? { endereco: e } : (e || {});
+  const end = typeof e === 'string' ? separarEndereco(linha) : (e || {});
   const limpo = x => String(x ?? '').trim();
   const rua = limpo(end.endereco), bairro = limpo(end.bairro), cidade = limpo(end.cidade), cep = limpo(end.cep).replace(/\D/g, '');
   // a cidade digitada (sem o "- SP") tem de bater com a do resultado: "Avenida Paulista, São Paulo" não pode virar a de Americana
@@ -366,11 +381,10 @@ export async function localizarEndereco(e, { perto } = {}) {
     const cidades = ['city', 'town', 'village', 'municipality', 'city_district'].map(k => norm(achado.address?.[k])).filter(Boolean);
     return cidadeDigitada.length < 3 || !cidades.length || cidades.some(c => c === cidadeDigitada || c.includes(cidadeDigitada) || cidadeDigitada.includes(c));
   };
-  // sem o número da casa (só quando ele vem depois de vírgula ou "nº": "Rua 7" continua "Rua 7")
-  const semNumero = rua.replace(/\s*(,\s*|\s+n[º°o.]?\s*)\d+\s*[a-z]?\s*$/i, '').trim();
-  const juntar = (...l) => l.filter(Boolean).join(', ');
-  const tentativas = [juntar(rua, bairro, cidade), cep.length === 8 && 'cep',
-    semNumero !== rua && semNumero.split(/\s+/).length >= 2 && juntar(semNumero, cidade || bairro), bairro && cidade && juntar(bairro, cidade)];
+  const juntar = (...l) => l.filter(Boolean).join(', '), onde = cidade || bairro;
+  // do mais completo para o mais simples: o mapa pode não conhecer o bairro (ex.: "Jardim Santo André") nem o número da casa
+  const tentativas = [linha, juntar(rua, bairro, cidade), cep.length === 8 && 'cep', juntar(rua, onde), juntar(tirarNumero(rua), onde),
+    bairro && cidade && juntar(bairro, cidade)];
   for (const t of [...new Set(tentativas.filter(Boolean))]) {
     if (t === 'cep') {
       const ponto = await pontoDoCep(cep);
@@ -441,6 +455,24 @@ export async function calcularTaxaEntrega(e, cfg) {
 }
 
 /* ================================================================
+   Peso final do bolo (sql/peso-final.sql)
+================================================================ */
+/**
+ * Excesso de peso de um bolo: cada bolo pode passar até a tolerância (pediu 1 kg, tolerância de 300 g: até 1,3 kg).
+ * Num item com mais de um bolo, o peso final é o de todos juntos. Igual ao gatilho do banco.
+ * Devolve { limiteKg, excessoKg, valor } (excessoKg 0: dentro da tolerância), ou null sem peso final.
+ */
+export function excessoDePeso(item, toleranciaG) {
+  const final = Number(item?.peso_final_kg), peso = Number(item?.peso_kg);
+  if (!(final > 0) || !(peso > 0)) return null;
+  const qtd = Math.max(1, Number(item.quantidade) || 1);
+  const limiteKg = Math.round(qtd * (peso + (Number(toleranciaG) || 0) / 1000) * 1000) / 1000;
+  const excessoKg = Math.max(0, Math.round((final - limiteKg) * 1000) / 1000);
+  const precoKg = Number(item.preco_kg) || Number(item.preco_unitario) / peso || 0;
+  return { limiteKg, excessoKg, valor: Math.round(excessoKg * precoKg * 100) / 100 };
+}
+
+/* ================================================================
    API
 ================================================================ */
 
@@ -500,10 +532,26 @@ export function criarApi(supabase, opcoes = {}) {
     }
     return mapa;
   }
-  /** O pedido com a entrega junto: pedido.entrega (endereço, quem recebe e taxa), ou null quando é retirada. */
-  async function comEntrega(pedido) {
+  /* Peso final dos bolos (sql/peso-final.sql): fica nos itens, mas o recibo_pedido não traz. Sem o script, segue sem. */
+  let semPesoFinal = false;
+  async function pesosFinais(pedidoId) {
+    if (semPesoFinal) return null;
+    const { data, error } = await supabase.from('pedido_itens').select('id, peso_final_kg').eq('pedido_id', pedidoId);
+    if (error) {
+      if (faltaNoBanco(error) || error.code === '42703' || /peso_final_kg/.test(error.message || '')) { semPesoFinal = true; return null; }
+      throw new ErroApi(error, 'peso final');
+    }
+    return new Map(data.map(i => [String(i.id), i.peso_final_kg ?? null]));
+  }
+  /**
+   * O pedido completo: a entrega (pedido.entrega: endereço, quem recebe e taxa, ou null quando é retirada) e o peso
+   * final de cada bolo (item.peso_final_kg; sem o campo quando o banco ainda não tem o peso final).
+   */
+  async function completar(pedido) {
     if (!pedido?.id) return pedido;
-    return { ...pedido, entrega: (await entregasDe([pedido.id])).get(pedido.id) || null };
+    const [entregas, pesos] = await Promise.all([entregasDe([pedido.id]), pesosFinais(pedido.id)]);
+    const itens = pesos ? (pedido.itens || []).map(i => ({ ...i, peso_final_kg: pesos.get(String(i.id)) ?? null })) : pedido.itens;
+    return { ...pedido, entrega: entregas.get(pedido.id) || null, itens };
   }
   async function juntarEntregas(lista) {
     const mapa = await entregasDe(lista.map(p => p.id));
@@ -667,17 +715,25 @@ export function criarApi(supabase, opcoes = {}) {
           return n;
         },
         /** Pedido completo: itens, pagamentos, observações, histórico e a entrega (também usado no recibo). */
-        obter: async (id) => comEntrega(await rpc('recibo_pedido', { p_pedido_id: id })),
+        obter: async (id) => completar(await rpc('recibo_pedido', { p_pedido_id: id })),
         /** Lançar pedido pela equipe (WhatsApp, balcão...). Mesmo formato do site. */
         criar: (pedido) => rpc('criar_pedido', { p_pedido: { origem: 'backoffice', chave_idempotencia: novaChave(), ...pedido } }),
         alterarStatus: async (id, status, comentario) =>
-          comEntrega(await rpc('alterar_status_pedido', { p_pedido_id: id, p_status: status, p_comentario: comentario ?? null })),
+          completar(await rpc('alterar_status_pedido', { p_pedido_id: id, p_status: status, p_comentario: comentario ?? null })),
         /** Corrige dados do pedido (cliente, origem, retirada, desconto). Itens: admin.pedidos.itens. Status: use alterarStatus. */
         async atualizar(id, campos) {
           const permitidos = ['cliente_nome', 'cliente_telefone', 'origem', 'data_retirada', 'hora_retirada', 'observacao_cliente', 'desconto'];
           const dados = Object.fromEntries(Object.entries(campos).filter(([k]) => permitidos.includes(k)));
           conferir(await supabase.from('pedidos').update(dados).eq('id', id), 'pedido');
-          return comEntrega(await rpc('recibo_pedido', { p_pedido_id: id }));
+          return completar(await rpc('recibo_pedido', { p_pedido_id: id }));
+        },
+        /**
+         * Peso final de um bolo (kg, na balança; null apaga). O que passar do peso pedido + tolerância vira prejuízo
+         * sozinho, em Prejuízos > Excesso de peso (sql/peso-final.sql). Devolve o pedido atualizado.
+         */
+        async pesoFinal(pedidoId, itemId, kg) {
+          conferir(await supabase.from('pedido_itens').update({ peso_final_kg: kg }).eq('id', itemId), 'peso final');
+          return completar(await rpc('recibo_pedido', { p_pedido_id: pedidoId }));
         },
         adicionarObservacao: (id, texto, fixada = false) =>
           rpc('adicionar_observacao_pedido', { p_pedido_id: id, p_texto: texto, p_fixada: fixada }),
@@ -692,7 +748,7 @@ export function criarApi(supabase, opcoes = {}) {
           return true;
         },
         registrarPagamento: async (id, { valor, forma = 'pix', tipo = 'sinal', observacao = null, pagoEm = null }) =>
-          comEntrega(await rpc('registrar_pagamento', {
+          completar(await rpc('registrar_pagamento', {
             p_pedido_id: id, p_valor: valor, p_forma: forma, p_tipo: tipo, p_observacao: observacao, p_pago_em: pagoEm
           })),
         async removerPagamento(pagamentoId) {
@@ -743,12 +799,12 @@ export function criarApi(supabase, opcoes = {}) {
           const linha = { pedido_id: pedidoId };
           for (const k of campos) if (dados[k] !== undefined) linha[k] = dados[k];
           conferir(await supabase.from('pedido_entregas').upsert(linha, { onConflict: 'pedido_id' }), 'entrega');
-          return comEntrega(await rpc('recibo_pedido', { p_pedido_id: pedidoId }));
+          return completar(await rpc('recibo_pedido', { p_pedido_id: pedidoId }));
         },
         /** Tira a entrega: o pedido volta a ser de retirada e a taxa sai do total. Devolve o pedido atualizado. */
         async remover(pedidoId) {
           conferir(await supabase.from('pedido_entregas').delete().eq('pedido_id', pedidoId), 'entrega');
-          return comEntrega(await rpc('recibo_pedido', { p_pedido_id: pedidoId }));
+          return completar(await rpc('recibo_pedido', { p_pedido_id: pedidoId }));
         }
       },
 
@@ -788,6 +844,19 @@ export function criarApi(supabase, opcoes = {}) {
         /** Vários de uma vez (um por item do pedido). */
         async criarVarios(linhas) {
           return conferir(await supabase.from('prejuizos').insert(linhas).select(), 'prejuízos');
+        }
+      },
+      /* Excesso de peso dos bolos (sql/peso-final.sql): lançado sozinho quando o peso final passa do pedido + tolerância */
+      excessosPeso: {
+        /** Lançamentos entre duas datas (dia da retirada), do mais recente para o mais antigo. */
+        async doPeriodo(de, ate) {
+          return conferir(await supabase.from('excessos_peso').select('*').gte('data', de).lte('data', ate)
+            .order('data', { ascending: false }).order('criado_em', { ascending: false }), 'excesso de peso');
+        },
+        /** Apaga um lançamento (só a Administração). Se a pesagem estava errada, prefira corrigir o peso final no pedido. */
+        async remover(id) {
+          conferir(await supabase.from('excessos_peso').delete().eq('id', id), 'excesso de peso');
+          return true;
         }
       },
       /*
@@ -993,7 +1062,7 @@ export function criarApi(supabase, opcoes = {}) {
     },
 
     util: { formatarPreco, formatarPeso, formatarData, novaChave, linkWhatsApp, abrirWhatsApp, alvoWhatsApp, linkCompartilhavel, linkRecibo, montarMensagemWhatsApp, montarMensagemStatus, prepararAba, separarReferencia, juntarReferencia, ehTopper, PIX, pixDe, textoPix,
-      formatarCep, textoEndereco, linkWaze, linkMapa, quemRecebe, buscarCep, localizarEndereco, distanciaDeCarro, taxaPelaDistancia, calcularTaxaEntrega, origemEntrega, temRegraEntrega }
+      formatarCep, textoEndereco, linkWaze, linkMapa, quemRecebe, buscarCep, localizarEndereco, distanciaDeCarro, taxaPelaDistancia, calcularTaxaEntrega, origemEntrega, temRegraEntrega, excessoDePeso }
   };
 }
 

@@ -224,7 +224,8 @@ begin
 end;
 $$;
 drop trigger if exists estoque_pedido_itens on pedido_itens;
-create trigger estoque_pedido_itens after insert or update or delete on pedido_itens
+-- só o que o estoque usa (produto, quantidade, peso): mudar a observação ou o peso final do bolo não mexe no estoque
+create trigger estoque_pedido_itens after insert or delete or update of pedido_id, produto_id, quantidade, peso_kg on pedido_itens
   for each row execute function estoque_pedido_itens();
 
 -- ---------------------------------------------------------------- avisos (sino do backoffice)

@@ -7,7 +7,7 @@
  */
 import { criarApi, conectar, formatarPreco as R, formatarPeso, formatarData, linkRecibo, linkWhatsApp, abrirWhatsApp, linkCompartilhavel, montarMensagemStatus, prepararAba,
   separarReferencia, juntarReferencia, ehTopper, pixDe, textoPix, mapaKits, achatarCardapio, conteudoKit,
-  formatarCep, textoEndereco, linkWaze, linkMapa, quemRecebe, buscarCep, calcularTaxaEntrega, localizarEndereco, origemEntrega, temRegraEntrega, taxaPelaDistancia } from '../js/rita-api.js';
+  formatarCep, textoEndereco, linkWaze, linkMapa, quemRecebe, buscarCep, calcularTaxaEntrega, localizarEndereco, origemEntrega, temRegraEntrega, taxaPelaDistancia, excessoDePeso } from '../js/rita-api.js';
 import { AVATARES, avatarSVG, temAvatar } from './avatares.js';
 
 const DEMO = new URLSearchParams(location.search).has('demo');
@@ -1232,8 +1232,9 @@ async function telaRelatorio(el, sub) {
     const [esta, anterior] = await Promise.all([carregarSemana(ini), carregarSemana(isoMais(ini, -7))]);
     if (telaAtual !== 'relatorio') return;
     const s = resumoSemana(esta, ini), a = resumoSemana(anterior, isoMais(ini, -7));
-    const [top, prejS, prejA] = await Promise.all([topProdutos(esta).catch(() => []),
-      api.admin.prejuizos.doPeriodo(ini, fim).catch(() => null), api.admin.prejuizos.doPeriodo(isoMais(ini, -7), isoMais(ini, -1)).catch(() => null)]);
+    const [top, prejS, prejA, excS, excA] = await Promise.all([topProdutos(esta).catch(() => []),
+      api.admin.prejuizos.doPeriodo(ini, fim).catch(() => null), api.admin.prejuizos.doPeriodo(isoMais(ini, -7), isoMais(ini, -1)).catch(() => null),
+      api.admin.excessosPeso.doPeriodo(ini, fim).catch(() => null), api.admin.excessosPeso.doPeriodo(isoMais(ini, -7), isoMais(ini, -1)).catch(() => null)]);
     if (telaAtual !== 'relatorio') return;
     const melhor = s.dias.reduce((m, d) => (d.valor > m.valor ? d : m), s.dias[0]);
     const tile = (cor, icone, rot, valor, delta) => `<div class="kpi" style="${corVars(cor)}"><span class="kpi-ic">${ic(icone)}</span>
@@ -1260,10 +1261,11 @@ async function telaRelatorio(el, sub) {
       </div>
       <div class="card kpi-strip">
         ${tile('#2B7465', 'pedidos', 'Pedidos', s.pedidos, variacao(s.pedidos, a.pedidos))}
-        ${tile('#7DC4B0', 'ok', 'Concluídos (retirados)', s.concluidos, variacao(s.concluidos, a.concluidos))}
+        ${tile('#7DC4B0', 'ok', 'Retirados ou entregues', s.concluidos, variacao(s.concluidos, a.concluidos))}
         ${tile('#C9A15A', 'moeda', 'Ticket médio', R(s.ticket), variacao(s.ticket, a.ticket, { dinheiro: true }))}
         ${tile('#B9476A', 'x', 'Cancelados', s.cancelados, variacao(s.cancelados, a.cancelados, { menorMelhor: true }))}
         ${prejS ? `<a class="kpi" href="#prejuizos/${ini.slice(0, 7)}" style="${corVars('#A8405F')}"><span class="kpi-ic">${ic('alerta')}</span><span class="kpi-t"><span>Prejuízos</span><strong>${R(totalPrej(prejS))}</strong>${variacao(totalPrej(prejS), totalPrej(prejA || []), { dinheiro: true, menorMelhor: true, zero: 'nenhum prejuízo' })}</span></a>` : ''}
+        ${excS?.length ? `<a class="kpi" href="#prejuizos/peso/${ini.slice(0, 7)}" style="${corVars('#C9A15A')}"><span class="kpi-ic">${ic('bolo')}</span><span class="kpi-t"><span>Excesso de peso</span><strong>${R(totalExc(excS))}</strong>${variacao(totalExc(excS), totalExc(excA || []), { dinheiro: true, menorMelhor: true, zero: 'nenhum excesso' })}</span></a>` : ''}
       </div>
       <section class="card" style="margin-bottom:18px">
         <div class="card-h"><div><p class="eyebrow">Vendas por dia</p><h2>${melhor.valor ? `Melhor dia: ${DIAS_SEMANA_LONGOS[s.dias.indexOf(melhor)]}, ${ddmm(melhor.iso)}` : 'Sem vendas nesta semana'}</h2></div>
@@ -1307,15 +1309,20 @@ function limitesMes(ym) {
 }
 const mesMais = (ym, n) => { const [a, m] = ym.split('-').map(Number); const d = new Date(Date.UTC(a, m - 1 + n, 1)); return d.toISOString().slice(0, 7); };
 
-async function telaPrejuizos(el, sub) {
+async function telaPrejuizos(el) {
+  // #prejuizos/2026-10 (lançamentos) · #prejuizos/peso/2026-10 (excesso de peso)
+  const [, p1, p2] = rotaAtual.split('/'), peso = p1 === 'peso', sub = peso ? p2 : p1;
   const atual = hojeISO().slice(0, 7);
   const ym = /^\d{4}-\d{2}$/.test(sub || '') && sub <= atual ? sub : atual;
-  const { de, ate, rot } = limitesMes(ym);
-  const nav = `<div class="sem-nav" role="group" aria-label="Escolher mês">
-      <a class="btn icon ghost" href="#prejuizos/${mesMais(ym, -1)}" aria-label="Mês anterior">${ic('voltar')}</a>
+  const { de, ate, rot } = limitesMes(ym), base = peso ? '#prejuizos/peso/' : '#prejuizos/';
+  const vista = (ativa, href, icone, rotulo) => `<a class="btn sm ${ativa ? 'primary' : 'ghost'}" href="${href}" ${ativa ? 'aria-current="page"' : ''}>${ic(icone)}${rotulo}</a>`;
+  const nav = `<div class="vista-sel" role="group" aria-label="Ver">${vista(!peso, `#prejuizos/${ym}`, 'alerta', 'Lançamentos')}${vista(peso, `#prejuizos/peso/${ym}`, 'bolo', 'Excesso de peso')}</div>
+    <div class="sem-nav" role="group" aria-label="Escolher mês">
+      <a class="btn icon ghost" href="${base}${mesMais(ym, -1)}" aria-label="Mês anterior">${ic('voltar')}</a>
       <span class="sem-rot">${rot.charAt(0).toUpperCase() + rot.slice(1)}${ym === atual ? ' <small>este mês</small>' : ''}</span>
-      <a class="btn icon ghost" ${ym >= atual ? 'aria-disabled="true" tabindex="-1"' : ''} href="#prejuizos/${mesMais(ym, 1)}" aria-label="Próximo mês">${ic('seta')}</a>
-      <button type="button" class="btn primary" data-prej-novo>${ic('mais')}Lançar prejuízo</button></div>`;
+      <a class="btn icon ghost" ${ym >= atual ? 'aria-disabled="true" tabindex="-1"' : ''} href="${base}${mesMais(ym, 1)}" aria-label="Próximo mês">${ic('seta')}</a>
+      ${peso ? '' : `<button type="button" class="btn primary" data-prej-novo>${ic('mais')}Lançar prejuízo</button>`}</div>`;
+  if (peso) return telaExcessoPeso(el, nav, ym, rot);
   const cab = cabecalho('Prejuízos', nav, 'Itens que precisaram ser refeitos ou foram perdidos, ligados ao pedido.');
   el.innerHTML = cab + '<div class="skel" style="height:96px;margin-bottom:18px"></div><div class="skel" style="height:260px"></div>';
   try {
@@ -1371,7 +1378,61 @@ document.addEventListener('click', async e => {
     await ocupado(tirar, async () => { await api.admin.prejuizos.remover(tirar.dataset.prejTirar); toast('Lançamento apagado.'); recarregarPrejuizos(); });
   }
 });
-function recarregarPrejuizos() { if (telaAtual === 'prejuizos') telaPrejuizos($('#conteudo'), rotaAtual.split('/')[1]); }
+function recarregarPrejuizos() { if (telaAtual === 'prejuizos') telaPrejuizos($('#conteudo')); }
+
+/* ---- Excesso de peso: o que os bolos passaram do peso pedido + tolerância (lançado pelo peso final, sql/peso-final.sql) ---- */
+const totalExc = l => Math.round(l.reduce((s, x) => s + Number(x.valor), 0) * 100) / 100;
+const limitePeso = x => `${x.quantidade > 1 ? `${x.quantidade} × ` : ''}${formatarPeso(Number(x.peso_pedido_kg))} + ${x.tolerancia_g} g`;
+async function telaExcessoPeso(el, nav, ym, rot) {
+  const tol = Number((await configLoja())?.tolerancia_peso_bolo_g ?? 0);
+  const cab = cabecalho('Prejuízos', nav, `Bolos que passaram do peso pedido mais a tolerância de ${tol} g por bolo (Ajustes > Loja). Entram sozinhos quando alguém digita o peso final no pedido.`);
+  el.innerHTML = cab + '<div class="skel" style="height:96px;margin-bottom:18px"></div><div class="skel" style="height:260px"></div>';
+  const { de, ate } = limitesMes(ym), anterior = limitesMes(mesMais(ym, -1));
+  try {
+    const [lista, antes] = await Promise.all([api.admin.excessosPeso.doPeriodo(de, ate), api.admin.excessosPeso.doPeriodo(anterior.de, anterior.ate)]);
+    if (telaAtual !== 'prejuizos' || !rotaAtual.startsWith('prejuizos/peso')) return;
+    const total = totalExc(lista), kg = Math.round(lista.reduce((s, x) => s + Number(x.excesso_kg), 0) * 1000) / 1000;
+    const media = lista.length ? kg / lista.length : 0;
+    const porItem = Object.values(lista.reduce((o, x) => { const k = x.item_nome; o[k] = o[k] || { rot: k, v: 0, kg: 0 }; o[k].v += Number(x.valor); o[k].kg += Number(x.excesso_kg); return o; }, {}))
+      .sort((a, b) => b.v - a.v).slice(0, 6).map(x => ({ ...x, sub: `${pesoCurto(x.kg)} a mais` }));
+    const tile = (cor, icone, r, valor, delta) => `<div class="kpi" style="${corVars(cor)}"><span class="kpi-ic">${ic(icone)}</span><span class="kpi-t"><span>${r}</span><strong>${valor}</strong>${delta || ''}</span></div>`;
+    const rs = v => R(v).replace(/\u00a0/g, ' ');
+    el.innerHTML = cab + (lista.length || antes.length ? `
+      <div class="card kpi-strip">
+        ${tile('#B9476A', 'alerta', 'Excesso no mês', R(total), variacao(total, totalExc(antes), { dinheiro: true, menorMelhor: true, periodo: 'mês anterior', zero: 'nenhum excesso' }))}
+        ${tile('#C9A15A', 'bolo', 'Bolos acima do limite', lista.length, variacao(lista.length, antes.length, { menorMelhor: true, periodo: 'mês anterior' }))}
+        ${tile('#6E4B3A', 'estoque', 'Peso a mais', lista.length ? pesoCurto(kg) : '0 g')}
+        ${tile('#2B7465', 'moeda', 'Média por bolo', lista.length ? pesoCurto(media) : '—')}
+      </div>
+      ${lista.length > 1 ? `<section class="card" style="margin-bottom:18px"><div class="card-h"><div><p class="eyebrow">Por produto</p><h2>Bolos que mais passam do peso</h2></div></div>${barrasH(porItem, rs)}</section>` : ''}
+      <section class="card tabela" aria-label="Excessos de peso do mês">
+        <div class="card-h" style="padding:18px 22px 0"><div><p class="eyebrow">Lançamentos</p><h2>${lista.length ? `${lista.length} ${lista.length === 1 ? 'bolo passou' : 'bolos passaram'} do peso em ${rot}` : `Nenhum bolo passou do peso em ${rot}`}</h2></div></div>
+        ${lista.length ? `<div class="sem-tab-wrap"><table class="sem-tab prej-tab exc-tab">
+          <thead><tr><th scope="col">Data</th><th scope="col">Pedido</th><th scope="col">Bolo</th><th scope="col">Pedido + tolerância</th><th scope="col">Peso final</th><th scope="col">Passou</th><th scope="col">Prejuízo</th><th scope="col"><span class="sr">Ações</span></th></tr></thead>
+          <tbody>${lista.map(x => `<tr>
+            <td class="num">${esc(ddmm(x.data))}</td>
+            <td>${x.pedido_id ? `<a href="#" data-ped="${esc(x.pedido_id)}">${esc(x.pedido_codigo || 'pedido')}</a>` : esc(x.pedido_codigo || '—')}<small>${esc(x.cliente_nome || '')}</small></td>
+            <td>${esc(x.item_nome)}</td>
+            <td class="num">${esc(limitePeso(x))}<small>até ${esc(pesoCurto(Number(x.quantidade) * (Number(x.peso_pedido_kg) + x.tolerancia_g / 1000)))}</small></td>
+            <td class="num">${esc(pesoCurto(x.peso_final_kg))}</td>
+            <td class="num"><span class="tag pend">${esc(pesoCurto(x.excesso_kg))}</span></td>
+            <td class="num"><b>${R(x.valor)}</b><small>${R(x.preco_kg)} o kg</small></td>
+            <td class="num">${isAdmin() ? `<button type="button" class="btn icon sm ghost" data-exc-tirar="${esc(x.id)}" aria-label="Apagar o excesso de ${esc(x.item_nome)}">${ic('lixo')}</button>` : ''}</td></tr>`).join('')}</tbody>
+          <tfoot><tr><th scope="row" colspan="5">Total do mês</th><td class="num">${esc(pesoCurto(kg))}</td><td class="num">${R(total)}</td><td></td></tr></tfoot>
+        </table></div>` : `<div class="vazio"><p>Nada lançado neste mês.</p></div>`}
+      </section>` : `<div class="card vazio" style="padding:48px 20px">${ic('bolo')}<h2>Nenhum bolo passou do peso</h2>
+        <p>No pedido, cada bolo tem o campo “Peso final”. Se o peso na balança passar do peso pedido mais a tolerância de ${tol} g por bolo, o excesso aparece aqui como prejuízo, com o valor pelo preço do kg.</p></div>`);
+  } catch (e) {
+    erroToast(e);
+    el.innerHTML = cab + `<div class="vazio"><h2>Não foi possível carregar</h2><p>${esc(/excessos_peso|42P01|does not exist|could not find|não existe|banco/i.test(e.message) ? 'O excesso de peso ainda não existe no banco. Rode o arquivo sql/peso-final.sql no Supabase.' : e.message)}</p></div>`;
+  }
+}
+document.addEventListener('click', async e => {
+  const tirar = e.target.closest('[data-exc-tirar]');
+  if (!tirar || telaAtual !== 'prejuizos') return;
+  if (!await confirmar('Apagar este lançamento?', 'O valor sai do total de excesso de peso. Se a pesagem estava errada, o melhor é corrigir o peso final no pedido: o lançamento é refeito sozinho.', { botao: 'Apagar', perigo: true })) return;
+  await ocupado(tirar, async () => { await api.admin.excessosPeso.remover(tirar.dataset.excTirar); toast('Lançamento apagado.'); recarregarPrejuizos(); });
+});
 
 /** Lançar prejuízo: escolhe o pedido, marca quantos de cada item deram problema. pedido = já aberto (vindo da gaveta). */
 async function modalPrejuizo(pedido = null) {
@@ -1619,7 +1680,7 @@ function detalheHoje(id) {
     const det = [i.peso_kg && formatarPeso(i.peso_kg), i.massa, i.formato, i.segundo_recheio && '2º recheio: ' + i.segundo_recheio, i.faixa_preco].filter(Boolean);
     return `<div class="hj-it"><div class="l"><b>${i.quantidade}× ${esc(i.nome)}</b><span>${R(i.subtotal)}</span></div>
       ${det.length ? `<small>${det.map(esc).join(' · ')}</small>` : ''}${(() => { const o = separarReferencia(i.observacao);
-        return `${o.texto ? `<small class="obs">Obs.: ${esc(o.texto)}</small>` : ''}${o.imagem ? `<a class="hj-ref" href="${esc(o.imagem)}" target="_blank" rel="noopener"><img src="${esc(o.imagem)}" alt="" loading="lazy">Imagem de referência</a>` : ''}`; })()}</div>`;
+        return `${o.texto ? `<small class="obs">Obs.: ${esc(o.texto)}</small>` : ''}${o.imagem ? `<a class="hj-ref" href="${esc(o.imagem)}" target="_blank" rel="noopener"><img src="${esc(o.imagem)}" alt="" loading="lazy">Imagem de referência</a>` : ''}`; })()}${campoPesoFinal(i)}</div>`;
   }).join('');
   const fixadas = (p.observacoes || []).filter(o => o.fixada);
   const anterior = p.finalizado ? (p.historico || []).slice().reverse().find(h => h.status_novo === p.status)?.status_anterior : null;
@@ -1646,7 +1707,7 @@ async function carregarDetalheHoje(id) {
   if (carregarDetalheHoje.emCurso.has(id)) return;
   carregarDetalheHoje.emCurso.add(id);
   try {
-    const p = await api.admin.pedidos.obter(id);
+    const [p] = await Promise.all([api.admin.pedidos.obter(id), configLoja()]);
     hojeDetalhes.set(id, p);
     const box = document.getElementById('hjd-' + id);
     if (box && hojeAberto === id) box.innerHTML = detalheHoje(id);
@@ -1994,7 +2055,7 @@ async function abrirGaveta(id) {
     setTimeout(() => g.querySelector('[data-gav="fechar"]')?.focus(), 60);
   }
   try {
-    const p = await api.admin.pedidos.obter(id);
+    const [p] = await Promise.all([api.admin.pedidos.obter(id), configLoja()]);   // a tolerância de peso vem das configurações
     if (gavetaAbertaId !== id) return;
     renderGaveta(p);
   } catch (e) {
@@ -2884,6 +2945,7 @@ function renderGaveta(p) {
       ${i.faixa_preco ? `<div class="it-d"><b>Faixa de preço:</b> ${esc(i.faixa_preco)}</div>` : ''}
       <div class="it-d">${R(i.preco_unitario)} cada${i.preco_kg ? ` (${R(i.preco_kg)} o kg)` : ''}</div>
       ${itemReferencia(i)}
+      ${campoPesoFinal(i)}
     </div>`).join('');
   const quitado = Number(p.total) > 0 && Number(p.valor_pago) >= Number(p.total);
   g.innerHTML = `
@@ -3201,6 +3263,72 @@ function modalPagamento(p) {
     });
   }));
 }
+
+/* =========================================================
+   PESO FINAL DO BOLO (sql/peso-final.sql)
+   O peso na balança. O que passar do peso pedido + a tolerância de Ajustes > Loja
+   (por bolo) vira prejuízo sozinho, em Prejuízos > Excesso de peso.
+========================================================= */
+const toleranciaPeso = () => Number(cacheLoja?.tolerancia_peso_bolo_g ?? 0);
+/** "700 g" abaixo de 1 kg; "1,25 kg" a partir dele. */
+const pesoCurto = kg => (Number(kg) < 1 ? `${Math.round(Number(kg) * 1000)} g` : formatarPeso(Math.round(Number(kg) * 1000) / 1000));
+/** Peso digitado: "1,25" ou "1.25" (kg) ou "1250" (g). null: em branco; NaN: inválido. */
+function lerPeso(s) {
+  const t = String(s ?? '').trim().toLowerCase().replace(/\s*(kg|g)$/, '');
+  if (!t) return null;
+  const n = Number(t.replace(',', '.'));
+  if (!Number.isFinite(n) || n <= 0) return NaN;
+  return Math.round((n >= 50 ? n / 1000 : n) * 1000) / 1000;   // 50 ou mais: gramas (não existe bolo de 50 kg)
+}
+/** Campo "Peso final" de um bolo, com o resultado: dentro da tolerância ou o excesso lançado como prejuízo. */
+function campoPesoFinal(i) {
+  if (!(Number(i.peso_kg) > 0) || !('peso_final_kg' in i)) return '';   // não é bolo, ou o banco ainda não tem o peso final
+  const tol = toleranciaPeso(), qtd = Math.max(1, Number(i.quantidade) || 1), r = excessoDePeso(i, tol);
+  const limite = Math.round(qtd * (Number(i.peso_kg) + tol / 1000) * 1000) / 1000;
+  const status = !r ? `Sem prejuízo até ${esc(pesoCurto(limite))}${qtd > 1 ? ' (todos juntos)' : ''}: o peso pedido mais ${tol} g de tolerância por bolo.`
+    : r.excessoKg > 0 ? `${ic('alerta')}Passou ${esc(pesoCurto(r.excessoKg))} do limite de ${esc(pesoCurto(limite))}: prejuízo de ${R(r.valor)} lançado.`
+      : `${ic('ok')}Dentro da tolerância (até ${esc(pesoCurto(limite))}).`;
+  const id = esc(i.id);
+  return `<div class="pf" data-pf="${id}">
+    <label for="pf-${id}">Peso final${qtd > 1 ? ` <span>(os ${qtd} bolos juntos)</span>` : ''}</label>
+    <div class="pf-in"><input class="in" id="pf-${id}" inputmode="decimal" autocomplete="off" placeholder="ex.: 1,250"
+      value="${i.peso_final_kg != null ? esc(String(Number(i.peso_final_kg)).replace('.', ',')) : ''}"><span class="pf-un">kg</span>
+      <button type="button" class="btn sm teal" data-pf-salvar="${id}">Salvar</button></div>
+    <small class="pf-st ${!r ? '' : r.excessoKg > 0 ? 'exc' : 'ok'}">${status}</small>
+  </div>`;
+}
+/** Grava o peso final (na gaveta ou no Hoje) e avisa se passou do limite. */
+async function salvarPesoFinal(btn) {
+  const box = btn.closest('.pf'), input = box?.querySelector('input'), itemId = box?.dataset.pf; if (!input) return;
+  const kg = lerPeso(input.value);
+  if (Number.isNaN(kg)) { input.setAttribute('aria-invalid', 'true'); input.focus(); toast('Peso inválido. Use kg (ex.: 1,250) ou gramas (ex.: 1250).', { tipo: 'erro' }); return; }
+  input.removeAttribute('aria-invalid');
+  const naGaveta = !!btn.closest('#gaveta');
+  const p = naGaveta ? pedidoAtual : [...hojeDetalhes.values()].find(x => x?.itens?.some(i => String(i.id) === itemId));
+  const item = p?.itens.find(i => String(i.id) === itemId); if (!item) return;
+  const avisar = r => {
+    const ex = excessoDePeso(r.itens.find(i => String(i.id) === itemId) || {}, toleranciaPeso());
+    toast(kg == null ? 'Peso final apagado.' : ex?.excessoKg > 0
+      ? `Peso final ${pesoCurto(kg)}: passou ${pesoCurto(ex.excessoKg)} do limite. Prejuízo de ${R(ex.valor)} lançado em Prejuízos > Excesso de peso.`
+      : `Peso final ${pesoCurto(kg)}: dentro da tolerância.`, { tempo: 6500 });
+  };
+  if (naGaveta) {
+    await acaoGaveta(btn, async () => { const r = await api.admin.pedidos.pesoFinal(p.id, item.id, kg); avisar(r); return r; });
+    return;
+  }
+  await ocupado(btn, async () => {
+    const r = await api.admin.pedidos.pesoFinal(p.id, item.id, kg);
+    hojeDetalhes.set(p.id, r); avisar(r);
+    const det = document.getElementById('hjd-' + p.id);
+    if (det && hojeAberto === p.id) det.innerHTML = detalheHoje(p.id);
+  });
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-pf-salvar]'); if (b) salvarPesoFinal(b); });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || !e.target.matches?.('.pf input')) return;
+  e.preventDefault();
+  salvarPesoFinal(e.target.closest('.pf').querySelector('[data-pf-salvar]'));
+});
 
 /* =========================================================
    ENTREGAS (sql/entregas.sql)
@@ -4147,7 +4275,7 @@ async function ajLoja(box) {
       ${fotoCampo('lLogo', 'Logotipo', c.logo_path)}
 
       <p class="secao-t linha">Pedidos e sinal</p>
-      <div class="grid3">${inNum('lSinal', 'Sinal (%)', c.percentual_sinal, { attrs: 'min="0" max="100" step="1"' })}${inNum('lAnt', 'Antecedência mínima (dias)', c.antecedencia_minima_dias, { attrs: 'min="0"' })}${inNum('lTol', 'Tolerância de peso do bolo (g)', c.tolerancia_peso_bolo_g, { attrs: 'min="0" step="50"' })}</div>
+      <div class="grid3">${inNum('lSinal', 'Sinal (%)', c.percentual_sinal, { attrs: 'min="0" max="100" step="1"' })}${inNum('lAnt', 'Antecedência mínima (dias)', c.antecedencia_minima_dias, { attrs: 'min="0"' })}${inNum('lTol', 'Tolerância de peso do bolo (g)', c.tolerancia_peso_bolo_g, { attrs: 'min="0" step="50"', dica: 'O site avisa o cliente. No peso final, o que passar disso vira prejuízo.' })}</div>
 
       <p class="secao-t linha">Pix do sinal</p>
       ${temAjustes ? '' : '<div class="aviso-box">Rode no Supabase o arquivo <code>sql/ajustes-loja.sql</code> para mudar o Pix e os horários de retirada por aqui. Até lá, valem os de sempre (mostrados abaixo).</div>'}
