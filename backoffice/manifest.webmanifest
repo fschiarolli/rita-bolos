@@ -1,0 +1,30 @@
+{
+  "id": "./",
+  "name": "Rita Bolos · Backoffice",
+  "short_name": "Backoffice",
+  "description": "Pedidos, retiradas do dia, topos, estoque e cardápio da Rita Bolos.",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F8F2EA",
+  "theme_color": "#4A2A1C",
+  "launch_handler": { "client_mode": "focus-existing" },
+  "icons": [
+    { "src": "icones/app-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icones/app-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icones/app-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Hoje", "short_name": "Hoje", "description": "Retiradas do dia, para o balcão", "url": "./#hoje",
+      "icons": [{ "src": "icones/atalho-hoje.png", "sizes": "96x96", "type": "image/png" }] },
+    { "name": "Pedidos", "short_name": "Pedidos", "description": "Lista de pedidos com filtros", "url": "./#pedidos",
+      "icons": [{ "src": "icones/atalho-pedidos.png", "sizes": "96x96", "type": "image/png" }] },
+    { "name": "Topos e personalizados", "short_name": "Topos", "description": "Quadro dos topos", "url": "./#topos",
+      "icons": [{ "src": "icones/atalho-topos.png", "sizes": "96x96", "type": "image/png" }] },
+    { "name": "Quadro da equipe (TV)", "short_name": "Quadro", "description": "Pedidos do dia para a TV da cozinha", "url": "./quadro.html",
+      "icons": [{ "src": "icones/atalho-quadro.png", "sizes": "96x96", "type": "image/png" }] }
+  ]
+}

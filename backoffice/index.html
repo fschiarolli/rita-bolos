@@ -10,7 +10,14 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#4A2A1C">
 <title>Backoffice — Rita Bolos</title>
-<link rel="icon" href="../icons/icon-192.png">
+<!-- app instalável no celular e no computador (manifest.webmanifest + sw.js, registrado no app.js) -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icones/app-192.png">
+<link rel="apple-touch-icon" href="icones/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Backoffice">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -736,6 +743,18 @@ a.chip { text-decoration: none; }
 .av-ponto { width: 8px; height: 8px; border-radius: 50%; background: var(--rose-600); flex: none; }
 .av-vazio { margin: 0; padding: 12px 10px 14px; color: var(--ink-3); font-size: 13.5px; }
 
+/* ---------- App instalado: aviso de sem internet e o passo a passo para instalar ---------- */
+.sem-rede { position: fixed; z-index: 70; left: 50%; top: calc(env(safe-area-inset-top, 0px) + var(--topbar) + 10px); transform: translateX(-50%); display: flex; align-items: center; gap: 8px; width: max-content; max-width: calc(100vw - 24px); padding: 9px 16px; border-radius: 999px; background: var(--error); color: #fff; font-size: 13.5px; font-weight: 600; box-shadow: var(--shadow); }
+.sem-rede .ic { width: 16px; height: 16px; flex: none; }
+.app-passos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.app-passos section { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
+.app-passos section.este { border-color: rgba(var(--teal-rgb), .55); background: rgba(var(--teal-rgb), .07); }
+.app-passos h3 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 6px; font-size: 14.5px; font-weight: 700; }
+.app-passos h3 small { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--teal); }
+.app-passos ol { margin: 0; padding-left: 18px; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); }
+.app-passos b { color: var(--ink); }
+@media (max-width: 560px) { .app-passos { grid-template-columns: 1fr; } }
+
 /* ---------- Topos e personalizados ---------- */
 .vista-sel { display: inline-flex; gap: 4px; padding: 3px; border-radius: 12px; background: var(--surface-2); }
 .vista-sel .btn.ghost { border-color: transparent; background: transparent; box-shadow: none; }
@@ -1190,6 +1209,7 @@ span.gt-l-v:hover { background: none; }
     <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></symbol>
     <symbol id="i-sol" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
     <symbol id="i-lua" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+    <symbol id="i-baixar" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></symbol>
     <symbol id="i-auto" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></symbol>
     <symbol id="i-casa" viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></symbol>
     <symbol id="i-tv" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>

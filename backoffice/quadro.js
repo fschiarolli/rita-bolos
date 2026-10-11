@@ -779,3 +779,6 @@ if (DEMO) {
 }
 
 iniciar();
+
+/* App instalado na TV (quadro.webmanifest): o service worker é o mesmo do backoffice */
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { /* segue como página comum */ });

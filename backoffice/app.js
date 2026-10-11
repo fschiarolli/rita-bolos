@@ -476,6 +476,7 @@ function telaShell() {
         <div class="topo-acts">
           ${prod ? '' : `<button type="button" class="topo-bt nb-ind" data-act="niimbot" hidden>${ic('imprimir')}<span class="nb-ponto" aria-hidden="true"></span></button>`}
           ${prod ? '' : `<button type="button" class="topo-bt" data-act="avisos" aria-haspopup="dialog" aria-expanded="false" aria-label="Avisos" title="Avisos" hidden>${ic('sino')}<span class="topo-badge" data-badge-avisos hidden></span></button>`}
+          <button type="button" class="topo-bt" data-act="instalar" aria-label="Instalar o app neste aparelho" title="Instalar o app" hidden>${ic('baixar')}</button>
           <button type="button" class="topo-bt" data-act="tema" aria-haspopup="menu" aria-expanded="false">${ic(temaDe(temaAtual()).icone)}</button>
           ${prod ? '' : `<a class="topo-bt" data-tv href="${esc(urlQuadro())}" target="_blank" rel="noopener" aria-label="Abrir o quadro da equipe (TV)" title="Quadro da equipe (TV)">${ic('tv')}</a>`}
           <button type="button" class="topo-av" data-act="conta" aria-label="Minha conta" title="${esc(perfil.nome)}">${avatarHTML(perfil, 'data-eu')}</button>
@@ -491,6 +492,7 @@ function telaShell() {
   <aside class="gaveta" id="gaveta" role="dialog" aria-modal="true" aria-labelledby="gavTitulo" inert></aside>`;
   $('#veu').addEventListener('click', () => fecharGaveta());
   atualizarBotaoTema();
+  atualizarBotaoInstalar();
   $('#topoBusca')?.addEventListener('submit', e => {
     e.preventDefault();
     const termo = $('#topoBuscaIn').value.trim(); if (!termo) return;
@@ -581,6 +583,64 @@ document.addEventListener('keydown', e => {
   e.preventDefault(); b.focus();
 });
 
+/* =========================================================
+   APP INSTALADO (manifest.webmanifest + sw.js): o backoffice vira um app no celular e no computador.
+   Chrome e Edge (Android, Windows, Mac) oferecem "Instalar"; no iPhone e no iPad é pelo Compartilhar do Safari.
+   Sem internet, um aviso fica no alto da tela até a conexão voltar.
+========================================================= */
+let pedidoInstalar = null;   // o convite do navegador para instalar (só existe no Chrome e no Edge)
+const ehApp = () => matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
+const ehIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const podeInstalar = () => !ehApp() && (!!pedidoInstalar || ehIOS());
+function atualizarBotaoInstalar() { $$('[data-act="instalar"]').forEach(b => { b.hidden = !podeInstalar(); }); }
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { /* segue como site comum */ });
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); pedidoInstalar = e; atualizarBotaoInstalar(); });
+window.addEventListener('appinstalled', () => {
+  pedidoInstalar = null; atualizarBotaoInstalar();
+  toast('Pronto: o backoffice ficou instalado como app neste aparelho.');
+});
+async function instalarApp() {
+  const convite = pedidoInstalar;
+  if (!convite) { modalComoInstalar(); return; }   // iPhone, Firefox e Safari do Mac: o passo a passo
+  pedidoInstalar = null;   // o convite só vale uma vez; se a pessoa recusar, o navegador manda outro mais tarde
+  try { convite.prompt(); await convite.userChoice; }
+  catch (e) { modalComoInstalar(); }
+  atualizarBotaoInstalar();
+}
+/** Como instalar em cada aparelho, começando pelo que a pessoa está usando. */
+function modalComoInstalar() {
+  let deste = 'pc';
+  if (ehIOS()) deste = 'ios';
+  else if (/android/i.test(navigator.userAgent)) deste = 'android';
+  const jeitos = [
+    { id: 'ios', t: 'iPhone e iPad', p: ['Abra o backoffice no <b>Safari</b>.', 'Toque em <b>Compartilhar</b> (o quadrado com a seta para cima).', 'Escolha <b>Adicionar à Tela de Início</b> e toque em <b>Adicionar</b>.'] },
+    { id: 'android', t: 'Android', p: ['Abra o backoffice no <b>Chrome</b>.', 'Toque no menu <b>⋮</b> e em <b>Instalar app</b> (ou "Adicionar à tela inicial").'] },
+    { id: 'pc', t: 'Computador (Windows ou Mac)', p: ['Abra o backoffice no <b>Chrome</b> ou no <b>Edge</b>.', 'Clique no ícone de instalar, no fim da barra de endereço, ou no menu e em <b>Instalar Rita Bolos · Backoffice</b>.', 'O app abre numa janela própria e fica no menu Iniciar e na barra de tarefas (no Mac, no Launchpad e no Dock).'] },
+    { id: 'tv', t: 'TV da cozinha', p: ['No computador ligado na TV, abra o <b>Quadro da equipe</b> e instale do mesmo jeito.', 'Ele vira o app <b>Quadro</b>, que já abre em tela cheia.'] }
+  ].sort((a, b) => (b.id === deste) - (a.id === deste));
+  abrirModal({
+    titulo: 'Instalar como app', largo: true,
+    corpo: `<p class="dica" style="margin:0 0 14px">O backoffice vira um app com ícone próprio, numa janela sem a barra do navegador e com atalhos para Hoje, Pedidos e Topos. Cada pessoa instala no próprio aparelho e entra com o seu login. Quando o sistema é atualizado, o app se atualiza sozinho.</p>
+      <div class="app-passos">${jeitos.map(j => `<section class="${j.id === deste ? 'este' : ''}"><h3>${j.t}${j.id === deste ? '<small>este aparelho</small>' : ''}</h3>
+        <ol>${j.p.map(x => `<li>${x}</li>`).join('')}</ol></section>`).join('')}</div>
+      <p class="dica" style="margin:12px 0 0">No iPhone, a etiquetadora Niimbot não funciona: o iPhone não libera o Bluetooth para esse tipo de app. No Android e no computador, funciona.</p>`,
+    rodape: '<button type="button" class="btn primary" data-fechar>Entendi</button>'
+  });
+}
+/* Sem internet: aviso fixo no alto até a conexão voltar (aí a tela atualiza sozinha) */
+function avisoRede() {
+  let aviso = $('#semRede');
+  if (navigator.onLine) { aviso?.remove(); return; }
+  if (aviso) return;
+  aviso = document.createElement('div');
+  aviso.id = 'semRede'; aviso.className = 'sem-rede'; aviso.setAttribute('role', 'status');
+  aviso.innerHTML = `${ic('alerta')}<span>Sem internet. O que mudar agora não fica salvo até a conexão voltar.</span>`;
+  document.body.appendChild(aviso);
+}
+window.addEventListener('offline', avisoRede);
+window.addEventListener('online', () => { avisoRede(); if (perfil) { toast('A internet voltou.'); recarregarTela(); } });
+avisoRede();
+
 function modalConta() {
   const m = abrirModal({
     titulo: 'Minha conta',
@@ -589,6 +649,11 @@ function modalConta() {
       <div style="display:grid;gap:10px">
         <div><p class="secao-t" style="margin:0 0 8px" id="lblTema">Tema</p>
           <div class="tema-grade" role="radiogroup" aria-labelledby="lblTema">${TEMAS.map(t => `<button type="button" class="tema-op" role="radio" aria-checked="${t.id === temaEscolhido()}" data-tema="${t.id}" title="${esc(t.desc)}">${amostraTema(t)}${esc(t.nome)}</button>`).join('')}</div></div>
+        <div class="imp-auto"><p class="secao-t" style="margin:4px 0 8px">App neste aparelho</p>
+          <div class="imp-linha">${podeInstalar() ? `<button type="button" class="btn sm teal" data-instalar>${ic('baixar')}Instalar o app</button>` : ''}
+            <button type="button" class="btn sm ghost" data-como-instalar>${ehApp() ? 'Como instalar em outro aparelho' : 'Como instalar'}</button></div>
+          <p class="dica">${ehApp() ? 'Você está usando o app instalado. Ele se atualiza sozinho quando o sistema é atualizado.'
+            : 'Ícone na tela inicial, janela própria e atalhos para Hoje, Pedidos e Topos. Funciona no celular e no computador.'}</p></div>
         ${ehProdutor() ? '' : `<div class="imp-auto"><p class="secao-t" style="margin:4px 0 8px">Impressora deste aparelho</p>
           ${inChk('impAuto', 'Imprimir sozinho cada pedido confirmado', impressaoAuto().ligada)}
           <div class="imp-linha"><label class="sr" for="impFormato">O que imprimir</label>
@@ -617,6 +682,8 @@ function modalConta() {
       </div>`
   });
   m.$('[data-trocar-avatar]').addEventListener('click', () => { m.fechar(); modalAvatar(); });
+  m.$('[data-instalar]')?.addEventListener('click', () => { m.fechar(); instalarApp(); });
+  m.$('[data-como-instalar]').addEventListener('click', () => { m.fechar(); modalComoInstalar(); });
   const salvarImp = () => {
     salvarImpressaoAuto({ ligada: chkDe(m, 'impAuto'), formato: valDe(m, 'impFormato') || 'etiqueta' });
     if (chkDe(m, 'impAuto')) toast('Impressão automática ligada neste aparelho: cada pedido confirmado sai na impressora.');
@@ -742,6 +809,7 @@ document.addEventListener('click', e => {
     case 'conta': modalConta(); break;
     case 'novo-pedido': modalNovoPedido(); break;
     case 'tema': abrirMenuTema(a); break;
+    case 'instalar': instalarApp(); break;
     case 'avisos': abrirAvisos(a); break;
     case 'niimbot':
       if (niimbotConectada()) toast(`Niimbot conectada (${niim.nome}).`, { acao: { rotulo: 'Desconectar', fn: () => niim?.client?.disconnect().then(atualizarIndicadorNiimbot) } });
