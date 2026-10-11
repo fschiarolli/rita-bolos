@@ -294,7 +294,7 @@ document.addEventListener('click', e => {
     if (calAberto?.input === input) fecharCalendario(); else abrirCalendario(input, b);
     return;
   }
-  if (calAberto && !calAberto.el.contains(e.target) && document.contains(e.target)) fecharCalendario();
+  if (calAberto && !calAberto.el.contains(e.target) && !calAberto.ancora.contains(e.target) && document.contains(e.target)) fecharCalendario();
 });
 
 /* Foto: reduz para no máximo 1400 px (fotos de celular ficam bem menores) */
@@ -2289,8 +2289,14 @@ function telaPedidos(el) {
   $('#fDias').addEventListener('click', e => {
     const b = e.target.closest('[data-fdia]'); if (!b) return;
     if (b.dataset.fdia === 'outro') {
-      if (filtro.periodo !== 'dia') { filtro.periodo = 'dia'; filtro.dia = filtro.dia || hojeISO(); atualizarFiltrosData(); carregarPedidos(); }
-      abrirCalendario($('#fDia'), $('#fDias [data-fdia="outro"]'));
+      if (calAberto?.ancora === b) { fecharCalendario(); return; }
+      // com um dia no filtro, o calendário é o do campo do dia; sem ele, a lista só muda quando a pessoa escolher
+      let input = $('#fDia');
+      if (!input) {
+        input = Object.assign(document.createElement('input'), { type: 'hidden' });
+        input.addEventListener('change', () => { if (!input.value) return; filtro.periodo = 'dia'; filtro.dia = input.value; atualizarFiltrosData(); carregarPedidos(); });
+      }
+      abrirCalendario(input, b);
       return;
     }
     const mesmo = filtro.periodo === 'dia' && filtro.dia === b.dataset.fdia;
