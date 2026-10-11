@@ -12,6 +12,7 @@
 <meta name="theme-color" content="#1E130E" media="(prefers-color-scheme: dark)">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="modulepreload" href="./js/calendario.js">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
@@ -220,14 +221,22 @@ textarea.input { height: auto; min-height: 76px; padding: 12px 15px; resize: ver
 
 .sub { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 800; color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; margin: 14px 0 8px; }
 .sub .ic { width: 16px; height: 16px; }
-.dias { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 8px; margin: 0 -2px; scroll-snap-type: x proximity; scrollbar-width: thin; }
-.dia { flex: none; width: 66px; padding: 9px 0 8px; border-radius: 16px; background: var(--bg); box-shadow: inset 0 0 0 1.5px var(--line); display: flex; flex-direction: column; align-items: center; gap: 1px; scroll-snap-align: start; transition: background .15s, box-shadow .15s, color .15s; }
-.dia .d-sem { font-size: 12px; font-weight: 800; color: var(--ink-3); }
-.dia .d-num { font-family: var(--font-display); font-size: 25px; line-height: 1.05; }
-.dia .d-mes { font-size: 12px; font-weight: 700; color: var(--ink-3); }
-.dia .ic { width: 22px; height: 22px; margin: 4px 0 2px; color: var(--ink-3); }
-.dia[aria-checked="true"] { background: var(--teal); color: var(--on-teal); box-shadow: none; }
-.dia[aria-checked="true"] span { color: inherit; } .dia[aria-checked="true"] .ic { color: inherit; }
+/* Calendário do dia (js/calendario.js): o mês inteiro, com setas para os meses seguintes */
+.cal-ret { max-width: 420px; padding: 12px 12px 10px; border-radius: 18px; background: var(--bg); box-shadow: inset 0 0 0 1.5px var(--line); }
+.cal-ret.invalido { box-shadow: inset 0 0 0 1.5px var(--error); }
+.cal-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.cal-mes { font-family: var(--font-display); font-size: 21px; }
+.cal-nav { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 14px; box-shadow: inset 0 0 0 1.5px var(--line); transition: background .15s; }
+.cal-nav svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.cal-nav:hover:not(:disabled) { background: var(--mint-50); }
+.cal-nav:disabled { opacity: .28; cursor: default; }
+.cal-sem, .cal-grade { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.cal-sem span { padding: 6px 0 4px; text-align: center; font-size: 12px; font-weight: 800; color: var(--ink-3); }
+.cal-dia { aspect-ratio: 1; min-height: 42px; border-radius: 14px; font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; transition: background .15s, color .15s; }
+.cal-dia:hover:not(:disabled) { background: var(--mint-50); }
+.cal-dia.cal-hoje { box-shadow: inset 0 0 0 1.5px var(--teal); }
+.cal-dia.cal-sel { background: var(--teal); color: var(--on-teal); box-shadow: none; }
+.cal-dia:disabled { color: var(--ink-3); opacity: .38; cursor: not-allowed; text-decoration: line-through; }
 .horas-grupo + .horas-grupo { margin-top: 10px; }
 .h-rot { display: block; font-size: 12.5px; font-weight: 800; color: var(--ink-3); margin-bottom: 6px; }
 .horas { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 8px; }
@@ -235,7 +244,7 @@ textarea.input { height: auto; min-height: 76px; padding: 12px 15px; resize: ver
 .hora.outra { grid-column: span 2; font-size: 14px; }
 .hora[aria-checked="true"] { background: var(--teal); color: var(--on-teal); box-shadow: none; }
 .hora:disabled { opacity: .35; text-decoration: line-through; cursor: not-allowed; }
-.invalido .dia, .invalido .hora:not(:disabled) { box-shadow: inset 0 0 0 1.5px var(--error); }
+.invalido .hora:not(:disabled) { box-shadow: inset 0 0 0 1.5px var(--error); }
 .outra-caixa { margin-top: 10px; }
 .ret-resumo { display: flex; gap: 9px; align-items: center; margin-top: 14px; padding: 11px 14px; border-radius: 14px; background: var(--mint-50); font-size: 15px; }
 .ret-resumo .ic { color: var(--teal); width: 20px; height: 20px; }
@@ -444,7 +453,7 @@ const CACHE_KEY = 'ritabolos.cardapio.v1' + (DEMO ? '.demo' : '');
 const CAT_SLUGS = ['bolo-no-pote-atacado', 'bolo-no-pote', 'pote'];
 /* Horários de retirada: vêm de Ajustes > Loja, como no site (index.html, retirada()).
    RETIRADA_PADRAO vale enquanto o banco não tem esses campos. */
-const RETIRADA_PADRAO = { dias: 14, inicio: '08:00', fim: '18:00', passoMin: 30 };
+const RETIRADA_PADRAO = { inicio: '08:00', fim: '18:00', passoMin: 30 };
 const TARDE_DESDE = '12:00';
 
 const CFG_PADRAO = { nome_loja: 'Rita Bolos', whatsapp_numero: '551938451550', whatsapp_exibicao: '(19) 3845-1550',
@@ -757,9 +766,7 @@ new IntersectionObserver(([e]) => { pedidoNaTela = e.isIntersecting; barraVisive
 addEventListener('scroll', () => $('#topo').classList.toggle('rolou', scrollY > 8), { passive: true });
 
 /* ---------- retirada (mesma regra do site: nada vem marcado) ---------- */
-const SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const SEMANA_LONGA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
-const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const p2 = n => String(n).padStart(2, '0');
 const isoDe = d => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
 const hojeISO = (mais = 0) => { const d = new Date(); d.setDate(d.getDate() + mais); return isoDe(d); };
@@ -772,7 +779,7 @@ function retirada() {
   const hm = v => /^\d\d:\d\d/.test(v || '') ? v.slice(0, 5) : null;
   const num = (v, min, max, padrao) => { const n = Math.round(Number(v)); return v != null && n >= min && n <= max ? n : padrao; };
   const inicio = hm(CFG.retirada_inicio), fim = hm(CFG.retirada_fim), ok = inicio && fim && minutosDe(fim) > minutosDe(inicio);
-  return { dias: num(CFG.retirada_dias, 1, 60, RETIRADA_PADRAO.dias), inicio: ok ? inicio : RETIRADA_PADRAO.inicio, fim: ok ? fim : RETIRADA_PADRAO.fim,
+  return { inicio: ok ? inicio : RETIRADA_PADRAO.inicio, fim: ok ? fim : RETIRADA_PADRAO.fim,
     passoMin: num(CFG.retirada_intervalo_min, 5, 240, RETIRADA_PADRAO.passoMin) };
 }
 
@@ -782,13 +789,7 @@ function montarRetirada() {
   if (montagem === retMontada && $('#retirada').childElementCount) return;   // redesenha se mudar a antecedência ou os horários
   minData = min; retMontada = montagem;
   if (ret.dia && ret.dia < min) ret.dia = '';
-  $('#retDica').textContent = 'Escolha o dia e o horário em que você vem buscar.' + (ant ? ` Este pedido precisa de ${ant} ${ant === 1 ? 'dia' : 'dias'} de antecedência.` : '');
-  const hoje = hojeISO(), amanha = hojeISO(1), dias = [];
-  for (let i = 0, d = dataLocal(min); i < rt.dias; i++, d.setDate(d.getDate() + 1)) {
-    const iso = isoDe(d), rot = iso === hoje ? 'Hoje' : iso === amanha ? 'Amanhã' : SEMANA[d.getDay()];
-    dias.push(`<button type="button" class="dia" role="radio" aria-checked="false" data-dia="${iso}" aria-label="${rot === 'Hoje' || rot === 'Amanhã' ? rot + ', ' : ''}${SEMANA_LONGA[d.getDay()]}, ${d.getDate()} de ${MESES[d.getMonth()]}">
-      <span class="d-sem">${rot}</span><span class="d-num">${d.getDate()}</span><span class="d-mes">${MESES[d.getMonth()]}</span></button>`);
-  }
+  $('#retDica').textContent = 'Toque no dia, no calendário, e depois no horário em que você vem buscar. Use as setas para ver os próximos meses.' + (ant ? ` Este pedido precisa de ${ant} ${ant === 1 ? 'dia' : 'dias'} de antecedência.` : '');
   const slots = [];
   for (let m = minutosDe(rt.inicio); m <= minutosDe(rt.fim); m += rt.passoMin) slots.push(hmDe(m));
   const tarde = minutosDe(TARDE_DESDE);
@@ -799,9 +800,7 @@ function montarRetirada() {
   const grupo = (rot, hs, ultimo) => `<div class="horas-grupo"><span class="h-rot">${rot}</span><div class="horas">${hs.map(botao).join('')}${ultimo ? outro : ''}</div></div>`;
   $('#retirada').innerHTML = `
     <div class="sub" id="lblDia">${icon('cal')} Dia</div>
-    <div class="dias" role="radiogroup" aria-labelledby="lblDia" aria-describedby="eRet">${dias.join('')}
-      <button type="button" class="dia" data-dia-outra aria-expanded="false" aria-controls="caixaData"><span class="d-sem">Outra</span>${icon('cal')}<span class="d-mes">data</span></button></div>
-    <div class="outra-caixa" id="caixaData" hidden><label class="lbl" for="cDataOutra" style="font-size:14px">Outra data</label><input class="input" type="date" id="cDataOutra" min="${min}"></div>
+    <div class="cal-ret" id="calRet" aria-labelledby="lblDia" aria-describedby="eRet"></div>
     <div class="sub" id="lblHora">${icon('clock')} Horário</div>
     <div class="horas-wrap" role="radiogroup" aria-labelledby="lblHora" aria-describedby="eRet">
       ${manha.length ? grupo('Manhã', manha, !aTarde.length) : ''}
@@ -810,17 +809,30 @@ function montarRetirada() {
     <div class="outra-caixa" id="caixaHora" hidden><label class="lbl" for="cHoraOutra" style="font-size:14px">Outro horário</label><input class="input" type="time" id="cHoraOutra"></div>
     <div class="ret-resumo" id="retResumo" aria-live="polite" hidden></div>`;
   // reaplica o que já estava escolhido
-  if (ret.dia) escolherDia(ret.dia, $(`[data-dia="${ret.dia}"]`) ? null : 'outra');
+  montarCalendarioRetirada(min);
   if (ret.hora) escolherHora(ret.hora, $(`[data-hora="${ret.hora}"]`) ? null : 'outra');
   atualizarHorarios();
 }
-function escolherDia(iso, origem) {
+function escolherDia(iso) {
   ret.dia = iso || '';
-  $$('[data-dia]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.dia === iso && origem !== 'outra')));
-  $('[data-dia-outra]').setAttribute('aria-checked', String(origem === 'outra' && !!iso));
-  if (origem === 'outra') { $('#caixaData').hidden = false; $('#cDataOutra').value = iso; }
-  else { $('#caixaData').hidden = true; $('#cDataOutra').value = ''; $('[data-dia-outra]').setAttribute('aria-expanded', 'false'); }
+  if (calRetirada && calRetirada.valor !== (iso || null)) calRetirada.definir(iso);
   atualizarHorarios(); resumoRetirada();
+}
+/* O calendário da retirada (js/calendario.js). Se o arquivo não carregar, fica o campo de data do próprio aparelho. */
+let calRetirada = null;
+async function montarCalendarioRetirada(min) {
+  const caixa = $('#calRet'); if (!caixa) return;
+  calRetirada = null;
+  const max = hojeISO(365);
+  try {
+    const { montarCalendario } = await import('./js/calendario.js');
+    if (!document.contains(caixa)) return;
+    calRetirada = montarCalendario(caixa, { min, max, hoje: hojeISO(), valor: ret.dia || null, rotulo: 'Dia da retirada', aoEscolher: iso => escolherDia(iso) });
+  } catch (err) {
+    if (!document.contains(caixa)) return;
+    caixa.innerHTML = `<input class="input" type="date" id="cDataNativo" min="${min}" max="${max}" aria-label="Dia da retirada" value="${ret.dia}">`;
+    $('#cDataNativo').addEventListener('change', e => escolherDia(e.target.value >= min ? e.target.value : ''));
+  }
 }
 function escolherHora(hm, origem) {
   ret.hora = hm || '';
@@ -849,7 +861,7 @@ function resumoRetirada() {
     box.hidden = false;
     $('#eRet').classList.remove('mostra');
   } else box.hidden = true;
-  if (ret.dia) $('.dias')?.classList.remove('invalido');
+  if (ret.dia) $('#calRet')?.classList.remove('invalido');
   if (ret.hora) $$('.horas').forEach(h => h.classList.remove('invalido'));
 }
 
@@ -857,10 +869,7 @@ function resumoRetirada() {
 document.addEventListener('click', e => {
   const mais = e.target.closest('[data-mais]'); if (mais) { mudar(mais.dataset.mais, 1); return; }
   const menos = e.target.closest('[data-menos]'); if (menos) { mudar(menos.dataset.menos, -1); return; }
-  const dia = e.target.closest('[data-dia]'); if (dia) { escolherDia(dia.dataset.dia); return; }
   const hora = e.target.closest('[data-hora]'); if (hora && !hora.disabled) { escolherHora(hora.dataset.hora); return; }
-  const outraD = e.target.closest('[data-dia-outra]');
-  if (outraD) { $('#caixaData').hidden = false; outraD.setAttribute('aria-expanded', 'true'); const i = $('#cDataOutra'); i.focus(); try { i.showPicker?.(); } catch (err) { /* nem todo navegador abre por código */ } return; }
   const outraH = e.target.closest('[data-hora-outra]');
   if (outraH) { $('#caixaHora').hidden = false; outraH.setAttribute('aria-expanded', 'true'); const i = $('#cHoraOutra'); i.focus(); try { i.showPicker?.(); } catch (err) { /* idem */ } return; }
   if (e.target.closest('[data-act="direto"]')) { enviarDireto(); return; }
@@ -869,11 +878,6 @@ document.addEventListener('click', e => {
   if (e.target.closest('[data-act="novo"]')) { location.hash = ''; location.reload(); }
 });
 document.addEventListener('change', e => {
-  if (e.target.id === 'cDataOutra') {
-    const v = e.target.value;
-    if (v && v < minData) { e.target.value = ''; escolherDia('', 'outra'); $('#eRet').textContent = `Para este pedido, a retirada precisa ser a partir de ${minData.split('-').reverse().join('/')}.`; $('#eRet').classList.add('mostra'); return; }
-    if (v && $(`[data-dia="${v}"]`)) escolherDia(v); else escolherDia(v, 'outra');
-  }
   if (e.target.id === 'cHoraOutra') {
     const v = e.target.value, b = v && $(`[data-hora="${v}"]`);
     if (b && !b.disabled) escolherHora(v); else escolherHora(v, 'outra');
@@ -897,10 +901,10 @@ function validar() {
   $('#eRet').textContent = ret.dia && ret.dia < minData ? `Para este pedido, a retirada precisa ser a partir de ${minData.split('-').reverse().join('/')}.`
     : passou ? 'Esse horário de hoje já passou. Escolha outro.'
     : !ret.dia && !ret.hora ? 'Escolha o dia e o horário da retirada.' : !ret.dia ? 'Escolha o dia da retirada.' : 'Escolha o horário da retirada.';
-  $('.dias').classList.toggle('invalido', !dOk);
+  $('#calRet')?.classList.toggle('invalido', !dOk);
   $$('.horas').forEach(h => h.classList.toggle('invalido', !hOk));
   $('#eRet').classList.toggle('mostra', !(dOk && hOk));
-  if (!(dOk && hOk)) { ok = false; primeiro = primeiro || (!dOk ? $('[data-dia]') : $('[data-hora]:not(:disabled)') || $('[data-hora-outra]')); }
+  if (!(dOk && hOk)) { ok = false; primeiro = primeiro || (!dOk ? ($('#calRet .cal-dia[tabindex="0"]') || $('#cDataNativo') || $('#calRet')) : $('[data-hora]:not(:disabled)') || $('[data-hora-outra]')); }
   if (primeiro) { primeiro.focus({ preventScroll: true }); primeiro.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
   return ok;
 }

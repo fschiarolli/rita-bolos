@@ -14,6 +14,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="modulepreload" href="./js/calendario.js">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
@@ -624,15 +625,23 @@ a { color: var(--teal); }
 .req { margin-left: 6px; font-size: 11.5px; font-weight: 800; color: var(--rose-600); background: var(--rose-50); padding: 2px 8px; border-radius: 999px; vertical-align: 2px; }
 .pick-sub { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 900; color: var(--ink); margin: 14px 0 8px; }
 .pick-sub .ic { width: 17px; height: 17px; color: var(--teal); }
-.pick-dias { display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x proximity; padding: 2px 2px 8px; margin: 0 -2px; scrollbar-width: thin; }
-.dia { flex: none; scroll-snap-align: start; width: 66px; min-height: 78px; display: grid; justify-items: center; align-content: center; gap: 1px; padding: 8px 4px; border-radius: 16px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; transition: border-color .15s, background .15s; }
-.dia .d-sem { font-size: 12px; font-weight: 800; color: var(--ink-2); }
-.dia .d-num { font-size: 22px; font-weight: 900; line-height: 1.15; }
-.dia .d-mes { font-size: 12px; font-weight: 700; color: var(--ink-3); }
-.dia:hover { border-color: var(--teal); }
-.dia[aria-checked="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
-.dia[aria-checked="true"] .d-sem, .dia[aria-checked="true"] .d-mes { color: inherit; opacity: .85; }
-.dia.outra .ic { width: 22px; height: 22px; margin: 3px 0 1px; }
+/* Calendário do dia (js/calendario.js): o mês inteiro, com setas para os meses seguintes */
+.pick-cal { max-width: 420px; padding: 12px 12px 10px; border: 1.5px solid var(--line); border-radius: 18px; background: var(--surface); }
+.pick-cal.invalido { border-color: color-mix(in srgb, var(--error) 60%, var(--line)); }
+.cal-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.cal-mes { font-family: var(--font-display); font-size: 21px; color: var(--ink); }
+.cal-nav { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 14px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; transition: border-color .15s, background .15s; }
+.cal-nav svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.cal-nav:hover:not(:disabled) { border-color: var(--teal); background: var(--mint-50); }
+.cal-nav:disabled { opacity: .28; cursor: default; }
+.cal-sem, .cal-grade { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.cal-sem span { padding: 6px 0 4px; text-align: center; font-size: 12px; font-weight: 900; color: var(--ink-3); }
+.cal-dia { aspect-ratio: 1; min-height: 42px; border: 0; border-radius: 14px; background: none; color: var(--ink); font: inherit; font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; cursor: pointer; transition: background .15s, color .15s; }
+.cal-dia:hover:not(:disabled) { background: var(--mint-50); }
+.cal-dia.cal-hoje { box-shadow: inset 0 0 0 1.5px var(--teal); }
+.cal-dia.cal-sel { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.cal-dia:disabled { color: var(--ink-3); opacity: .38; cursor: not-allowed; text-decoration: line-through; }
+.pick-cal .input[type="date"] { max-width: 260px; }
 .horas-grupo + .horas-grupo { margin-top: 12px; }
 .h-rot { display: block; font-size: 11.5px; font-weight: 800; color: var(--ink-3); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 6px; }
 .horas { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 8px; }
@@ -642,7 +651,7 @@ a { color: var(--teal); }
 .hora:disabled { opacity: .35; cursor: not-allowed; text-decoration: line-through; }
 .hora.outra { grid-column: span 2; font-size: 14px; }
 .pick-outra { margin-top: 10px; }
-.pick-dias.invalido .dia:not(.outra), .horas.invalido .hora:not(:disabled) { border-color: color-mix(in srgb, var(--error) 55%, var(--line)); }
+.horas.invalido .hora:not(:disabled) { border-color: color-mix(in srgb, var(--error) 55%, var(--line)); }
 .pick-resumo { margin-top: 14px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px; background: var(--mint-50); color: var(--ink); font-weight: 700; font-size: 15px; }
 .pick-resumo .ic { color: var(--teal); flex: none; }
 /* Quantidade com mínimo (docinhos): escolha rápida */
@@ -1990,30 +1999,21 @@ function antecedenciaSacola() { return Math.max(Number(CFG.antecedencia_minima_d
 /* ---- Retirada: dia e horário escolhidos pelo cliente (nada vem preenchido) ----
    Os horários dos botões vêm de Ajustes > Loja (campos retirada_* das configurações);
    "Outro horário" aceita qualquer um. RETIRADA_PADRAO vale enquanto o banco não tem esses campos. */
-const RETIRADA_PADRAO = { dias: 14, inicio: '08:00', fim: '18:00', passoMin: 30 };
+const RETIRADA_PADRAO = { inicio: '08:00', fim: '18:00', passoMin: 30 };
 const TARDE_DESDE = '12:00';
 function retirada() {
   const hm = v => /^\d\d:\d\d/.test(v || '') ? v.slice(0, 5) : null;
   const num = (v, min, max, padrao) => { const n = Math.round(Number(v)); return v != null && n >= min && n <= max ? n : padrao; };
   const inicio = hm(CFG.retirada_inicio), fim = hm(CFG.retirada_fim), ok = inicio && fim && minutosDe(fim) > minutosDe(inicio);
-  return { dias: num(CFG.retirada_dias, 1, 60, RETIRADA_PADRAO.dias), inicio: ok ? inicio : RETIRADA_PADRAO.inicio, fim: ok ? fim : RETIRADA_PADRAO.fim,
+  return { inicio: ok ? inicio : RETIRADA_PADRAO.inicio, fim: ok ? fim : RETIRADA_PADRAO.fim,
     passoMin: num(CFG.retirada_intervalo_min, 5, 240, RETIRADA_PADRAO.passoMin) };
 }
-const SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const SEMANA_LONGA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
-const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const minutosDe = hm => { const [h, m] = String(hm).split(':').map(Number); return h * 60 + m; };
 const hmDe = min => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
 const dataLocal = iso => { const [a, m, d] = iso.split('-').map(Number); return new Date(a, m - 1, d); };
 function campoRetirada(minD, ant) {
-  const hoje = todayISO(), amanha = todayISO(1), rt = retirada();
-  const dias = [];
-  for (let i = 0, d = dataLocal(minD); i < rt.dias; i++, d.setDate(d.getDate() + 1)) {
-    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const rot = iso === hoje ? 'Hoje' : iso === amanha ? 'Amanhã' : SEMANA[d.getDay()];
-    dias.push(`<button type="button" class="dia" role="radio" aria-checked="false" data-dia="${iso}" aria-label="${rot === 'Hoje' || rot === 'Amanhã' ? rot + ', ' : ''}${SEMANA_LONGA[d.getDay()]}, ${d.getDate()} de ${MESES[d.getMonth()]}">
-      <span class="d-sem">${rot}</span><span class="d-num">${d.getDate()}</span><span class="d-mes">${MESES[d.getMonth()]}</span></button>`);
-  }
+  const rt = retirada();
   const slots = [];
   for (let m = minutosDe(rt.inicio); m <= minutosDe(rt.fim); m += rt.passoMin) slots.push(hmDe(m));
   const tarde = minutosDe(TARDE_DESDE);
@@ -2024,13 +2024,10 @@ function campoRetirada(minD, ant) {
   const grupo = (rot, hs, ultimo) => `<div class="horas-grupo"><span class="h-rot">${rot}</span><div class="horas">${hs.map(botao).join('')}${ultimo ? outro : ''}</div></div>`;
   return `<fieldset class="field" id="fsPick">
       <legend>Quando você vai retirar?<span class="req">obrigatório</span></legend>
-      <p class="hint" style="margin-top:0">Escolha o dia e o horário em que você vem buscar.${ant ? ` Este pedido precisa de ${ant} ${ant === 1 ? 'dia' : 'dias'} de antecedência.` : ''}</p>
+      <p class="hint" style="margin-top:0">Toque no dia, no calendário, e depois no horário em que você vem buscar. Use as setas para ver os próximos meses.${ant ? ` Este pedido precisa de ${ant} ${ant === 1 ? 'dia' : 'dias'} de antecedência.` : ''}</p>
       <p class="err" id="ePick" role="alert">Escolha o dia e o horário da retirada.</p>
       <div class="pick-sub" id="lblDia">${icon('cal')} Dia</div>
-      <div class="pick-dias" role="radiogroup" aria-labelledby="lblDia" aria-describedby="ePick">${dias.join('')}
-        <button type="button" class="dia outra" data-dia-outra aria-expanded="false" aria-controls="pickDataOutra"><span class="d-sem">Outra</span>${icon('cal')}<span class="d-mes">data</span></button></div>
-      <div class="pick-outra" id="pickDataOutra" hidden><label class="lbl" for="cDateOutra" style="font-size:13.5px;margin-bottom:6px">Outra data</label>
-        <input class="input" type="date" id="cDateOutra" min="${minD}"></div>
+      <div class="pick-cal" id="pickCal" aria-labelledby="lblDia" aria-describedby="ePick"></div>
       <div class="pick-sub" id="lblHora">${icon('clock')} Horário</div>
       <div class="horas-wrap" role="radiogroup" aria-labelledby="lblHora" aria-describedby="ePick">
         ${manha.length ? grupo('Manhã', manha, !aTarde.length) : ''}
@@ -2042,13 +2039,27 @@ function campoRetirada(minD, ant) {
       <div class="pick-resumo" id="pickResumo" aria-live="polite" hidden></div>
     </fieldset>`;
 }
-/** Marca o botão escolhido do grupo e guarda o valor nos campos que o envio lê. */
-function escolherDia(iso, origem) {
+/** Guarda o dia no campo que o envio lê e marca no calendário. */
+function escolherDia(iso) {
   $('#cDate').value = iso || '';
-  $$('#fsPick [data-dia]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.dia === iso && origem !== 'outra')));
-  $('#fsPick [data-dia-outra]').setAttribute('aria-checked', String(origem === 'outra' && !!iso));
-  if (origem !== 'outra') { $('#pickDataOutra').hidden = true; $('#cDateOutra').value = ''; $('#fsPick [data-dia-outra]').setAttribute('aria-expanded', 'false'); }
+  if (calRetirada && calRetirada.valor !== (iso || null)) calRetirada.definir(iso);
   atualizarHorarios(); atualizarResumoRetirada();
+}
+/* O calendário da retirada (js/calendario.js). Se o arquivo não carregar, fica o campo de data do próprio aparelho. */
+let calRetirada = null;
+async function montarCalendarioRetirada() {
+  const caixa = $('#pickCal'); if (!caixa) return;
+  calRetirada = null;
+  const min = sheetState?.minDate || todayISO(), max = todayISO(365);
+  try {
+    const { montarCalendario } = await import('./js/calendario.js');
+    if (!document.contains(caixa)) return;
+    calRetirada = montarCalendario(caixa, { min, max, hoje: todayISO(), valor: $('#cDate').value || null, rotulo: 'Dia da retirada', aoEscolher: iso => escolherDia(iso) });
+  } catch (err) {
+    if (!document.contains(caixa)) return;
+    caixa.innerHTML = `<input class="input" type="date" id="cDateNativo" min="${min}" max="${max}" aria-label="Dia da retirada" value="${$('#cDate').value}">`;
+    $('#cDateNativo').addEventListener('change', e => escolherDia(e.target.value >= min ? e.target.value : ''));
+  }
 }
 function escolherHora(hm, origem) {
   $('#cTime').value = hm || '';
@@ -2076,23 +2087,15 @@ function atualizarResumoRetirada() {
     box.innerHTML = `${icon('check')}<span>Retirada: <strong>${dia}, ${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')} às ${t}</strong></span>`;
     box.hidden = false;
     $('#ePick').classList.remove('show');
-    $('.pick-dias')?.classList.remove('invalido'); $$('.horas').forEach(h => h.classList.remove('invalido'));
+    $('.pick-cal')?.classList.remove('invalido'); $$('.horas').forEach(h => h.classList.remove('invalido'));
   } else box.hidden = true;
-  if (d) $('.pick-dias')?.classList.remove('invalido');
+  if (d) $('.pick-cal')?.classList.remove('invalido');
   if (t) $$('.horas').forEach(h => h.classList.remove('invalido'));
 }
 document.addEventListener('click', e => {
   if (sheetState?.type !== 'checkout') return;
-  const dia = e.target.closest('#fsPick [data-dia]');
-  if (dia) { escolherDia(dia.dataset.dia); return; }
   const hora = e.target.closest('#fsPick [data-hora]');
   if (hora && !hora.disabled) { escolherHora(hora.dataset.hora); return; }
-  const outraD = e.target.closest('#fsPick [data-dia-outra]');
-  if (outraD) {
-    const caixa = $('#pickDataOutra'); caixa.hidden = false; outraD.setAttribute('aria-expanded', 'true');
-    const inp = $('#cDateOutra'); inp.focus(); try { inp.showPicker?.(); } catch (err) { /* nem todo navegador abre o calendário por código */ }
-    return;
-  }
   const outraH = e.target.closest('#fsPick [data-hora-outra]');
   if (outraH) {
     const caixa = $('#pickHoraOutra'); caixa.hidden = false; outraH.setAttribute('aria-expanded', 'true');
@@ -2100,12 +2103,6 @@ document.addEventListener('click', e => {
   }
 });
 document.addEventListener('change', e => {
-  if (e.target.id === 'cDateOutra') {
-    const v = e.target.value, minD = sheetState.minDate || todayISO();
-    if (v && v < minD) { e.target.value = ''; escolherDia('', 'outra'); $('#ePick').textContent = `Para este pedido, a retirada precisa ser a partir de ${minD.split('-').reverse().join('/')}.`; $('#ePick').classList.add('show'); return; }
-    // se a data também está nos botões, marca o botão; senão fica como "outra data"
-    if ($(`#fsPick [data-dia="${v}"]`)) escolherDia(v); else escolherDia(v, 'outra');
-  }
   if (e.target.id === 'cTimeOutra') {
     const v = e.target.value;
     if (v && $(`#fsPick [data-hora="${v}"]`) && !$(`#fsPick [data-hora="${v}"]`).disabled) escolherHora(v); else escolherHora(v, 'outra');
@@ -2147,6 +2144,7 @@ function openCheckout(opener) {
       </div>
     </div>
     <div class="sheet-foot"><button type="button" class="btn btn-wa btn-block" data-act="send" ${obrig.length || semRef.length ? 'disabled' : ''}>${icon('send')}<span>Confirmar pedido</span></button></div>`, opener);
+  montarCalendarioRetirada();
 }
 /* ---- Telefone com máscara: (DD) 9999-9999 ou (DD) 99999-9999 (a mesma do backoffice) ---- */
 /** Só os dígitos do telefone, sem o 55 do Brasil (no máximo DDD + 9 dígitos). */
@@ -2243,13 +2241,13 @@ function validateCheckout() {
     : jaPassou ? 'Esse horário de hoje já passou. Escolha outro.'
     : !d.value && !t.value ? 'Escolha o dia e o horário da retirada.'
     : !d.value ? 'Escolha o dia da retirada.' : 'Escolha o horário da retirada.';
-  $('.pick-dias')?.classList.toggle('invalido', !dOk);
+  $('.pick-cal')?.classList.toggle('invalido', !dOk);
   $$('.horas').forEach(h => h.classList.toggle('invalido', !tOk));
   $('#ePick').classList.toggle('show', !(dOk && tOk));
   if (!(dOk && tOk)) {
     ok = false;
     // leva até o grupo que falta: o botão marcado, ou o primeiro disponível
-    const alvo = !dOk ? ($('#fsPick [data-dia][aria-checked="true"]') || $('#fsPick [data-dia]'))
+    const alvo = !dOk ? ($('#pickCal .cal-dia[tabindex="0"]') || $('#cDateNativo') || $('#pickCal'))
       : (!$('#pickHoraOutra').hidden ? $('#cTimeOutra') : $('#fsPick [data-hora]:not(:disabled)') || $('#fsPick [data-hora-outra]'));
     first = first || alvo;
     if (!first || first === alvo) $('#fsPick').scrollIntoView({ block: 'center', behavior: 'smooth' });

@@ -598,6 +598,7 @@ a.chip { text-decoration: none; }
 .f-cont[hidden] { display: none; }
 .f-datas { gap: 8px; }
 .f-datas .in { width: auto; min-height: 40px; }
+.f-datas .dt-btn { min-width: 170px; }
 .f-prox .ic { transform: rotate(180deg); }
 .f-dia-nome { font-weight: 600; color: var(--ink-2); }
 .f-de { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
@@ -1181,6 +1182,44 @@ span.gt-l-v:hover { background: none; }
 .valor-numerico, .ped .total, .valores .lin, .it-l, .pgto, .preco-in .in, .money .in, .np-item .sub, .hj-pg .falta, .hj-pagto, .hj-it .l, .hj-resumo,
 .status-bar, .tbl, .kv dd, .pill, .tag, .nav-badge, .hj-falta-g { font-variant-numeric: tabular-nums; }
 
+/* ---------- Campo de data com calendário (js/calendario.js) ---------- */
+.dt { display: block; position: relative; }
+.dt-btn { display: flex; align-items: center; gap: 9px; text-align: left; cursor: pointer; color: var(--ink); }
+.dt-btn .ic { color: var(--teal); flex: none; }
+.dt-btn .dt-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dt-btn.vazio .dt-txt { color: var(--ink-3); }
+.dt-btn .dt-seta { width: 15px; height: 15px; color: var(--ink-3); transform: rotate(90deg); transition: transform .15s; }
+.dt-btn[aria-expanded="true"] { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(var(--teal-rgb), .16); }
+.dt-btn[aria-expanded="true"] .dt-seta { transform: rotate(-90deg); }
+.dt-btn[aria-invalid="true"] { border-color: var(--error); }
+.f-de .dt { display: inline-block; }
+.dt-pop { position: fixed; z-index: 95; width: 304px; padding: 12px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line-2); box-shadow: var(--shadow-lg); animation: temaEntra .14s var(--ease); }
+.dt-atalhos { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.dt-atalhos:empty { display: none; }
+.cal-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.cal-mes { font-family: var(--font-display); font-weight: 700; font-size: 16px; letter-spacing: -.01em; }
+.cal-nav { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); color: var(--ink); cursor: pointer; }
+.cal-nav svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.cal-nav:hover:not(:disabled) { background: var(--surface-2); }
+.cal-nav:disabled { opacity: .3; cursor: default; }
+.cal-sem, .cal-grade { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.cal-sem span { padding: 6px 0 4px; text-align: center; font-size: 11px; font-weight: 600; color: var(--ink-3); }
+.cal-dia { aspect-ratio: 1; border: 0; border-radius: 10px; background: none; color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; }
+.cal-dia:hover:not(:disabled) { background: var(--surface-2); }
+.cal-dia.cal-hoje { box-shadow: inset 0 0 0 1.5px var(--teal); }
+.cal-dia.cal-sel { background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.cal-dia:disabled { color: var(--ink-3); opacity: .35; cursor: not-allowed; }
+@media (pointer: coarse) { .dt-pop { width: min(340px, calc(100vw - 16px)); } .cal-nav { width: 42px; height: 42px; } .cal-dia { font-size: 15px; } }
+
+/* ---------- Imagem para os stories (Relatório) ---------- */
+.st-prev { display: grid; grid-template-columns: minmax(0, 290px) minmax(0, 1fr); gap: 24px; align-items: start; }
+.st-img { aspect-ratio: 9 / 16; border-radius: 18px; overflow: hidden; background: var(--surface-2); box-shadow: var(--shadow); }
+.st-img img { width: 100%; height: 100%; display: block; }
+.st-img:focus { outline: none; }   /* recebe o foco ao abrir: no celular, a prévia fica à vista */
+.st-img .skel { height: 100%; border-radius: 0; }
+.st-op .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 640px) { .st-prev { grid-template-columns: 1fr; } .st-img { width: min(100%, 260px); margin: 0 auto; } }
+
 /* ---------- Peso final do bolo (sql/peso-final.sql) ---------- */
 .pf { margin-top: 10px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line); }
 .pf > label { display: block; font-weight: 600; font-size: 12.5px; color: var(--ink-2); margin-bottom: 6px; }
@@ -1300,7 +1339,7 @@ span.gt-l-v:hover { background: none; }
     const v = Date.now(), abs = p => new URL(p, location.href).href;
     const mapa = document.createElement('script');
     mapa.type = 'importmap';
-    mapa.textContent = JSON.stringify({ imports: Object.fromEntries(['./avatares.js', '../js/rita-api.js', '../js/config.js', '../demo/supabase-demo.js', '../demo/dados-demo.js']
+    mapa.textContent = JSON.stringify({ imports: Object.fromEntries(['./avatares.js', '../js/rita-api.js', '../js/calendario.js', '../js/config.js', '../demo/supabase-demo.js', '../demo/dados-demo.js']
       .map(p => [abs(p), abs(p) + '?v=' + v])) });
     document.head.appendChild(mapa);
     const app = document.createElement('script');

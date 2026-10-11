@@ -9,6 +9,7 @@ import { criarApi, conectar, formatarPreco as R, formatarPeso, formatarData, lin
   separarReferencia, juntarReferencia, ehTopper, pixDe, textoPix, mapaKits, achatarCardapio, conteudoKit,
   formatarCep, textoEndereco, linkWaze, linkMapa, quemRecebe, buscarCep, calcularTaxaEntrega, localizarEndereco, origemEntrega, temRegraEntrega, taxaPelaDistancia, excessoDePeso } from '../js/rita-api.js';
 import { AVATARES, avatarSVG, temAvatar } from './avatares.js';
+import { montarCalendario } from '../js/calendario.js';
 
 const DEMO = new URLSearchParams(location.search).has('demo');
 const FUSO = 'America/Sao_Paulo';
@@ -149,6 +150,7 @@ function abrirModal({ titulo, corpo, rodape = '', largo = false, aoAbrir }) {
     $: s => veu.querySelector(s),
     $$: s => [...veu.querySelectorAll(s)],
     fechar() {
+      fecharCalendario();
       const i = pilhaModais.indexOf(m); if (i >= 0) pilhaModais.splice(i, 1);
       veu.remove();
       if (anterior && document.contains(anterior)) anterior.focus();
@@ -203,10 +205,97 @@ const valDe = (m, id) => m.$('#' + id)?.value.trim() ?? '';
 const numDe = (m, id) => { const v = valDe(m, id); return v === '' ? null : Number(v); };
 const chkDe = (m, id) => !!m.$('#' + id)?.checked;
 function exigir(m, id, msg) {
-  const el = m.$('#' + id);
-  if (el && !el.value.trim()) { el.setAttribute('aria-invalid', 'true'); el.focus(); throw new Error(msg); }
-  el?.removeAttribute('aria-invalid');
+  const el = m.$('#' + id), alvo = el?.closest('[data-dt]')?.querySelector('.dt-btn') || el;   // campo de data: o botão que abre o calendário
+  if (el && !el.value.trim()) { alvo.setAttribute('aria-invalid', 'true'); alvo.focus(); throw new Error(msg); }
+  alvo?.removeAttribute('aria-invalid');
 }
+
+/* =========================================================
+   CAMPO DE DATA COM CALENDÁRIO (js/calendario.js)
+   O campo mostra a data ("qua, 14/10/2026"); tocar abre o calendário do mês,
+   com setas para os meses seguintes e atalhos para hoje e amanhã. O valor
+   (AAAA-MM-DD) fica num <input type="hidden"> com o id de sempre: quem lê
+   .value ou ouve "change" continua igual. min e max ficam nesse input.
+========================================================= */
+const textoData = iso => (/^\d{4}-\d{2}-\d{2}$/.test(iso || '') ? `${DIAS[new Date(iso + 'T12:00:00Z').getUTCDay()]}, ${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '');
+/**
+ * Campo de data: o botão com a data (abre o calendário) e o valor escondido.
+ * o.min, o.max: AAAA-MM-DD; o.vazio: o texto sem data; o.limpar: pode ficar sem data; o.rotulo: nome para leitores de tela.
+ */
+function inData(id, valor = '', o = {}) {
+  const vazio = o.vazio || 'Escolher a data';
+  return `<span class="dt" data-dt>
+    <input type="hidden" id="${id}" value="${esc(valor || '')}"${o.min ? ` min="${esc(o.min)}"` : ''}${o.max ? ` max="${esc(o.max)}"` : ''}${o.limpar ? ' data-limpar' : ''} data-vazio="${esc(vazio)}">
+    <button type="button" class="in dt-btn ${valor ? '' : 'vazio'}" id="${id}-btn" data-dt-abrir aria-haspopup="dialog" aria-expanded="false"${o.rotulo ? ` aria-label="${esc(o.rotulo)}"` : ''}>
+      ${ic('hoje')}<span class="dt-txt">${esc(textoData(valor) || vazio)}</span>${ic('seta', 'ic dt-seta')}</button>
+  </span>`;
+}
+/** Depois de mudar o valor pelo código: atualiza o texto do campo. */
+function atualizarData(input) {
+  const caixa = input?.closest('[data-dt]'); if (!caixa) return;
+  caixa.querySelector('.dt-txt').textContent = textoData(input.value) || input.dataset.vazio || 'Escolher a data';
+  caixa.querySelector('.dt-btn').classList.toggle('vazio', !input.value);
+}
+let calAberto = null;   // { el, input, ancora }
+function fecharCalendario(devolverFoco = false) {
+  if (!calAberto) return;
+  const { el, ancora } = calAberto;
+  calAberto = null;
+  el.remove();
+  ancora.setAttribute('aria-expanded', 'false');
+  window.removeEventListener('resize', posicionarCalendario);
+  document.removeEventListener('scroll', posicionarCalendario, true);
+  if (devolverFoco && document.contains(ancora)) ancora.focus();
+}
+/** Abre o calendário de um campo de data (input: o escondido), embaixo do campo (ou de outro botão: ancora). */
+function abrirCalendario(input, ancora = input?.closest('[data-dt]')?.querySelector('[data-dt-abrir]')) {
+  fecharCalendario();
+  if (!input || !ancora) return;
+  const min = input.getAttribute('min') || null, max = input.getAttribute('max') || null, hoje = hojeISO();
+  const pode = s => (!min || s >= min) && (!max || s <= max);
+  const el = document.createElement('div');
+  el.className = 'dt-pop';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', 'Escolha a data');
+  el.innerHTML = `<div class="dt-cal"></div>
+    <div class="dt-atalhos">${pode(hoje) ? `<button type="button" class="chip" data-dt-ir="${hoje}">Hoje</button>` : ''}${pode(hojeISO(1)) ? `<button type="button" class="chip" data-dt-ir="${hojeISO(1)}">Amanhã</button>` : ''}${input.hasAttribute('data-limpar') && input.value ? '<button type="button" class="chip" data-dt-ir="">Sem data</button>' : ''}</div>`;
+  document.body.appendChild(el);
+  const escolher = iso => {
+    input.value = iso;
+    atualizarData(input);
+    input.closest('[data-dt]')?.querySelector('.dt-btn')?.removeAttribute('aria-invalid');
+    fecharCalendario(true);
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  const cal = montarCalendario(el.querySelector('.dt-cal'), { valor: input.value || null, min, max, hoje, rotulo: 'Escolha a data', aoEscolher: escolher });
+  el.addEventListener('click', e => { const b = e.target.closest('[data-dt-ir]'); if (b) escolher(b.dataset.dtIr); });
+  el.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); fecharCalendario(true); } });
+  calAberto = { el, input, ancora };
+  ancora.setAttribute('aria-expanded', 'true');
+  posicionarCalendario();
+  window.addEventListener('resize', posicionarCalendario);
+  document.addEventListener('scroll', posicionarCalendario, true);
+  cal.focar();
+}
+/** Embaixo do campo; sem espaço embaixo, em cima. Nunca sai da tela. */
+function posicionarCalendario() {
+  if (!calAberto) return;
+  const { el, ancora } = calAberto;
+  if (!document.contains(ancora)) { fecharCalendario(); return; }
+  const r = ancora.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight;
+  const embaixo = r.bottom + 6 + h <= innerHeight || r.top - 6 - h < 8;
+  el.style.left = `${Math.max(8, Math.min(r.left, innerWidth - w - 8))}px`;
+  el.style.top = `${Math.max(8, embaixo ? r.bottom + 6 : r.top - 6 - h)}px`;
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-dt-abrir]');
+  if (b) {
+    const input = b.closest('[data-dt]')?.querySelector('input[type="hidden"]');
+    if (calAberto?.input === input) fecharCalendario(); else abrirCalendario(input, b);
+    return;
+  }
+  if (calAberto && !calAberto.el.contains(e.target) && document.contains(e.target)) fecharCalendario();
+});
 
 /* Foto: reduz para no máximo 1400 px (fotos de celular ficam bem menores) */
 async function prepararFoto(arquivo) {
@@ -913,6 +1002,7 @@ function rotear(forcar = false) {
   let [tela, sub] = rota.split('/');
   if (!NAV.some(n => n.id === tela && podeVerNav(n))) tela = telaInicial();
   if (forcar || rota !== rotaAtual) {
+    fecharCalendario();
     rotaAtual = rota; telaAtual = tela;
     $$('[data-nav]').forEach(a => { if (a.dataset.nav === tela) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
     const el = $('#conteudo');
@@ -1165,13 +1255,35 @@ async function carregarSemana(ini) {
   const r = await api.admin.pedidos.listar({ de: ini, ate: isoMais(ini, 6), porPagina: 1000, ordenarPor: 'data_retirada', crescente: true });
   return r.pedidos;
 }
-/** Itens mais vendidos (quantidade) entre os pedidos não cancelados. */
-async function topProdutos(pedidos) {
+/** Itens dos pedidos que não foram cancelados (buscados de 80 em 80 pedidos). */
+async function itensDosPedidos(pedidos) {
   const ids = pedidos.filter(p => p.status !== 'cancelado').map(p => p.id);
-  if (!ids.length) return [];
   const lotes = [];
   for (let i = 0; i < ids.length; i += 80) lotes.push(api.admin.pedidos.itens.listar({ filtros: { pedido_id: ids.slice(i, i + 80) }, ordenarPor: [['pedido_id', true]] }));
-  const itens = (await Promise.all(lotes)).flat();
+  return (await Promise.all(lotes)).flat();
+}
+/**
+ * Sabores de bolo mais pedidos: cada bolo conta para o sabor (o nome do cardápio, ex.: "Ninho + Morango") e, se tiver,
+ * também para o 2º recheio. Só bolos (vendidos por peso). Devolve [{ sabor, bolos, kg }], do mais pedido para o menos.
+ */
+function saboresDeBolo(itens, cardapio) {
+  const rotulos = new Map(achatarCardapio(cardapio).map(p => [p.id, p.rotulo || p.nome]));
+  const mapa = new Map();
+  const somar = (sabor, q, kg) => {
+    const nome = String(sabor || '').trim(); if (!nome) return;
+    const k = semAcento(nome), x = mapa.get(k) || { sabor: nome, bolos: 0, kg: 0 };
+    x.bolos += q; x.kg = Math.round((x.kg + kg) * 1000) / 1000; mapa.set(k, x);
+  };
+  for (const i of itens) {
+    if (!(Number(i.peso_kg) > 0)) continue;
+    const q = Math.max(1, Number(i.quantidade) || 1), kg = q * Number(i.peso_kg);
+    somar(rotulos.get(i.produto_id) || String(i.nome || '').replace(/^bolo\s+(de\s+)?/i, ''), q, kg);
+    if (i.segundo_recheio) somar(i.segundo_recheio, q, kg);
+  }
+  return [...mapa.values()].sort((a, b) => b.bolos - a.bolos || b.kg - a.kg || a.sabor.localeCompare(b.sabor));
+}
+/** Itens mais vendidos (valor e quantidade). */
+function topProdutos(itens) {
   const mapa = new Map();
   for (const i of itens) {
     const k = i.nome, x = mapa.get(k) || { nome: k, qtd: 0, valor: 0 };
@@ -1217,6 +1329,8 @@ function barrasH(itens, fmtValor) {
       <div class="gb-trilho"><i style="width:${Math.max(2, i.v / max * 100)}%"></i></div>${i.sub ? `<small>${esc(i.sub)}</small>` : ''}</div>`).join('')}</div>`;
 }
 
+/** Os sabores de bolo mais pedidos da semana aberta no Relatório (para a imagem dos stories). */
+let rankingSemana = null;
 async function telaRelatorio(el, sub) {
   const atual = segundaDe(hojeISO());
   const ini = /^\d{4}-\d{2}-\d{2}$/.test(sub || '') ? segundaDe(sub) : atual;
@@ -1232,10 +1346,13 @@ async function telaRelatorio(el, sub) {
     const [esta, anterior] = await Promise.all([carregarSemana(ini), carregarSemana(isoMais(ini, -7))]);
     if (telaAtual !== 'relatorio') return;
     const s = resumoSemana(esta, ini), a = resumoSemana(anterior, isoMais(ini, -7));
-    const [top, prejS, prejA, excS, excA] = await Promise.all([topProdutos(esta).catch(() => []),
+    const [itensSemana, cardapio, prejS, prejA, excS, excA] = await Promise.all([itensDosPedidos(esta).catch(() => null), carregarCardapioAtivo().catch(() => null),
       api.admin.prejuizos.doPeriodo(ini, fim).catch(() => null), api.admin.prejuizos.doPeriodo(isoMais(ini, -7), isoMais(ini, -1)).catch(() => null),
       api.admin.excessosPeso.doPeriodo(ini, fim).catch(() => null), api.admin.excessosPeso.doPeriodo(isoMais(ini, -7), isoMais(ini, -1)).catch(() => null)]);
     if (telaAtual !== 'relatorio') return;
+    const top = itensSemana ? topProdutos(itensSemana) : [];
+    const sabores = itensSemana ? saboresDeBolo(itensSemana, cardapio) : [];
+    rankingSemana = { sabores, ini, fim };
     const melhor = s.dias.reduce((m, d) => (d.valor > m.valor ? d : m), s.dias[0]);
     const tile = (cor, icone, rot, valor, delta) => `<div class="kpi" style="${corVars(cor)}"><span class="kpi-ic">${ic(icone)}</span>
         <span class="kpi-t"><span>${rot}</span><strong>${valor}</strong>${delta}</span></div>`;
@@ -1278,6 +1395,13 @@ async function telaRelatorio(el, sub) {
         <section class="card"><div class="card-h"><div><p class="eyebrow">Canais</p><h2>De onde vieram os pedidos</h2></div></div>
           ${origens.length ? barrasH(origens, v => `${v} ${v === 1 ? 'pedido' : 'pedidos'}`) : '<p class="vazio" style="padding:18px">Nenhum pedido.</p>'}</section>
       </div>
+      <section class="card" style="margin-top:18px">
+        <div class="card-h"><div><p class="eyebrow">Sabores de bolo</p><h2>Os mais pedidos da semana</h2></div>
+          ${sabores.length ? `<button type="button" class="btn primary" data-stories>${ic('foto')}Imagem para os stories</button>` : ''}</div>
+        ${sabores.length ? barrasH(sabores.slice(0, 8).map((x, n) => ({ rot: `${n + 1}º · ${x.sabor}`, v: x.bolos, sub: formatarPeso(x.kg) })), v => `${v} ${v === 1 ? 'bolo' : 'bolos'}`)
+          + '<p class="dica" style="margin:12px 0 0;color:var(--ink-3)">Pela data de retirada; cancelados não entram. Um bolo com 2º recheio conta para os dois sabores.</p>'
+          : '<p class="vazio" style="padding:18px">Nenhum bolo nesta semana.</p>'}
+      </section>
       <section class="card tabela" style="margin-top:18px" aria-label="Tabela da semana por dia">
         <div class="card-h" style="padding:18px 22px 0"><div><p class="eyebrow">Detalhe</p><h2>Dia a dia</h2></div></div>
         <div class="sem-tab-wrap"><table class="sem-tab">
@@ -1291,6 +1415,255 @@ async function telaRelatorio(el, sub) {
     el.innerHTML = cab + `<div class="vazio"><h2>Não foi possível carregar</h2><p>${esc(e.message)}</p></div>`;
   }
 }
+
+/* =========================================================
+   STORIES: os sabores de bolo mais pedidos da semana numa imagem de
+   1080 × 1920 (o tamanho dos stories), com o logo, as fontes e as cores
+   da loja e o bolo desenhado com as cores de cada sabor, como no site.
+   No celular, "Compartilhar" abre a lista de apps (Instagram > Stories).
+========================================================= */
+// cores de cada sabor: as mesmas do site (index.html, FLAVORS)
+const CORES_SABOR = [
+  ['frutas vermelhas', '#B5354F'], ['geleia de morango', '#D63E5C'], ['red velvet', '#A3243B'], ['morango', '#E8657F'],
+  ['nutella', '#5E3220'], ['trufa branca', '#F3E4C6'], ['trufa preta', '#3B2015'], ['trufado', '#55301F'], ['trufa', '#55301F'],
+  ['brigadeiro', '#4A2A1C'], ['beijinho', '#FFF6E6'], ['ninho', '#FBEFD9'], ['doce de leite', '#C98A4B'], ['leite condensado', '#F8EBC8'],
+  ['ameixa', '#6B3253'], ['abacaxi', '#F1CF55'], ['pessego', '#F4A877'], ['coco', '#FFFCF4'], ['nozes', '#8B5E3C'],
+  ['amendoim', '#C8955A'], ['pacoca', '#C8955A'], ['maracuja', '#F0B035'], ['limao', '#B7D67A'], ['creme', '#F5E2A2'],
+  ['prestigio', '#FFFCF4', '#4A2A1C'], ['floresta negra', '#7A1E2E', '#3B2015'], ['sonho de valsa', '#8A5434', '#F3E3C2'],
+  ['ouro branco', '#F3E4C6', '#C99A4E'], ['flocos', '#FBEFD9'], ['sensacao', '#4A2A1C', '#E8657F'], ['oreo', '#2E2522', '#F6F1E8'],
+  ['cafe', '#6F4630'], ['bicho de pe', '#F3A3B8']
+].sort((a, b) => b[0].length - a[0].length);
+function coresSabor(nome) {
+  let t = semAcento(nome); const achados = [];
+  for (const [k, ...cores] of CORES_SABOR) {
+    let i = t.indexOf(k);
+    while (i > -1) { achados.push({ i, cores }); t = t.slice(0, i) + '#'.repeat(k.length) + t.slice(i + k.length); i = t.indexOf(k); }
+  }
+  const cores = achados.sort((a, b) => a.i - b.i).flatMap(f => f.cores);
+  return cores.length ? cores : ['#F5E2A2'];
+}
+const tom = (hex, p) => { const n = parseInt(hex.slice(1), 16); return '#' + [n >> 16, (n >> 8) & 255, n & 255].map(x => Math.round(p < 0 ? x * (1 + p) : x + (255 - x) * p).toString(16).padStart(2, '0')).join(''); };
+/** O bolo do site (index.html, artCake) em SVG, com as cores do sabor. */
+function svgBolo(nome, prato) {
+  const cores = coresSabor(nome), a = cores[0], b = cores[1] || cores[0], cob = a, massa = '#EBC78F', n = semAcento(nome);
+  let d = `<ellipse cx="33" cy="54" rx="24" ry="4.2" fill="${prato}"/>
+    <path d="M50 25 56 20v26l-6 5z" fill="${tom(massa, -.14)}"/><path d="M50 41 56 36v4l-6 5z" fill="${tom(a, -.18)}"/><path d="M50 32 56 27v4l-6 5z" fill="${tom(b, -.18)}"/>
+    <rect x="10" y="25" width="40" height="26" rx="2" fill="${massa}"/><rect x="10" y="41" width="40" height="4" fill="${a}"/><rect x="10" y="32" width="40" height="4" fill="${b}"/>
+    <path d="M10 25 16 20h40l-6 5z" fill="${cob}"/><rect x="10" y="23" width="40" height="4.2" fill="${cob}"/>
+    <rect x="13" y="25" width="3" height="5" rx="1.5" fill="${cob}"/><rect x="23.5" y="25" width="3.2" height="7" rx="1.6" fill="${cob}"/>
+    <rect x="35" y="25" width="3" height="4.6" rx="1.5" fill="${cob}"/><rect x="44.5" y="25" width="3" height="6.2" rx="1.5" fill="${cob}"/>
+    <path d="M10 24.5 16 20h40v26l-6 5H12a2 2 0 0 1-2-2z" fill="none" stroke="rgba(58,31,20,.28)" stroke-width="1.1" stroke-linejoin="round"/>`;
+  if (/^brigadeiro|trufa preta|sensacao/.test(n)) d += [[20, 21.6, 20], [26, 22.4, -30], [31, 21.2, 60], [38, 22.3, 10], [44, 21.4, -50], [49, 21.9, 35], [34, 23.4, -10]]
+    .map(([x, y, r]) => `<rect x="${x}" y="${y}" width="2.6" height="1" rx=".5" fill="${tom(cob, -.45)}" transform="rotate(${r} ${x} ${y})"/>`).join('');
+  if (/flocos/.test(n)) d += [[15, 29], [22, 38], [30, 28], [41, 39], [46, 29], [18, 47], [36, 47]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r=".9" fill="#3B2015"/>`).join('');
+  if (/morango|frutas vermelhas/.test(n)) d += `<path d="M35 12c3.4 0 5.4 2.1 4.9 5-.6 3.2-3.2 5.6-4.9 5.6s-4.3-2.4-4.9-5.6c-.5-2.9 1.5-5 4.9-5z" fill="#E0445E"/>
+    <path d="M32 12.6c1-1.6 2-2.3 3-2.3s2 .7 3 2.3c-1 .4-2 .6-3 .6s-2-.2-3-.6z" fill="#4E9A62"/>
+    <circle cx="33.6" cy="16" r=".55" fill="#FBE3A0"/><circle cx="36.5" cy="17.4" r=".55" fill="#FBE3A0"/><circle cx="35" cy="19.4" r=".55" fill="#FBE3A0"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64">${d}</svg>`;
+}
+const carregarImagem = src => new Promise((ok, falha) => { const i = new Image(); i.onload = () => ok(i); i.onerror = falha; i.src = src; });
+let fontesStories = null;
+/** As fontes do site (DM Serif Display e Nunito), carregadas uma vez. Sem internet, a imagem sai com as do aparelho. */
+function carregarFontesStories() {
+  fontesStories = fontesStories || new Promise(ok => {
+    const l = document.createElement('link');
+    l.rel = 'stylesheet';
+    l.href = 'https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Nunito:wght@700;800;900&display=swap';
+    l.onload = l.onerror = () => ok();
+    document.head.appendChild(l);
+    setTimeout(ok, 6000);
+  }).then(() => Promise.all(['400 96px "DM Serif Display"', 'italic 400 96px "DM Serif Display"', '700 36px Nunito', '800 36px Nunito', '900 36px Nunito']
+    .map(f => document.fonts.load(f).catch(() => null))));
+  return fontesStories;
+}
+const TEMAS_STORIES = {
+  chocolate: { rot: 'Chocolate', fundo: ['#4A2A1C', '#21110A'], brilhos: [['232,144,168', .32], ['226,194,122', .22]], titulo: '#FBF1E6', destaque: '#F4AFC2',
+    olho: '#E2C27A', data: '#E9D9C8', cartao: '#FBF1E6', texto: '#3A1F14', trilho: '#EADCCB', barra: '#B9476A', posicao: '#6E4B3A',
+    rodape: '#E9D9C8', anel: '#E2C27A', prato: '#E2CDB8', confeitos: ['#E890A8', '#E2C27A', '#FBF1E6', '#7DC4B0'] },
+  creme: { rot: 'Creme', fundo: ['#FBF3EA', '#F0DCC8'], brilhos: [['232,144,168', .3], ['125,196,176', .22]], titulo: '#3A1F14', destaque: '#B9476A',
+    olho: '#2B7465', data: '#6E4B3A', cartao: '#FFFFFF', texto: '#3A1F14', trilho: '#F1E6DA', barra: '#B9476A', posicao: '#6E4B3A',
+    rodape: '#6E4B3A', anel: '#B9476A', prato: '#EADFD2', confeitos: ['#E890A8', '#C9A15A', '#7DC4B0', '#4A2A1C'] }
+};
+const MEDALHAS = [['#F6D57A', '#C8962A'], ['#EDEDED', '#A9A9A9'], ['#E8AE7C', '#A86A3A']];   // ouro, prata, bronze
+const STORY_L = 1080, STORY_A = 1920;
+function periodoTxt(ini, fim) {
+  const [, m1, d1] = ini.split('-').map(Number), [, m2, d2] = fim.split('-').map(Number);
+  return m1 === m2 ? `${d1} a ${d2} de ${MESES_LONGOS[m2 - 1]}` : `${d1} de ${MESES_LONGOS[m1 - 1]} a ${d2} de ${MESES_LONGOS[m2 - 1]}`;
+}
+function retanguloRedondo(g, x, y, w, h, r) {
+  g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+const espacamento = (g, v) => { if ('letterSpacing' in g) g.letterSpacing = v; };
+/** Texto que cabe na largura: diminui a letra; se precisar, quebra em duas linhas; em último caso, corta com "…". */
+function textoQueCabe(g, texto, fonte, tam, largura, duasLinhas) {
+  for (let t = tam; t >= tam * .74; t -= 2) { g.font = fonte(t); if (g.measureText(texto).width <= largura) return { t, linhas: [texto] }; }
+  const palavras = texto.split(' ');
+  if (duasLinhas && palavras.length > 1) {
+    for (let t = tam; t >= tam * .58; t -= 2) {
+      g.font = fonte(t);
+      let melhor = null;
+      for (let k = 1; k < palavras.length; k++) {
+        const a = palavras.slice(0, k).join(' '), b = palavras.slice(k).join(' '), m = Math.max(g.measureText(a).width, g.measureText(b).width);
+        if (m <= largura && (!melhor || m < melhor.m)) melhor = { m, linhas: [a, b] };
+      }
+      if (melhor) return { t, linhas: melhor.linhas };
+    }
+  }
+  const t = Math.round(tam * .74); g.font = fonte(t);
+  let corte = texto;
+  while (corte.length > 1 && g.measureText(corte + '…').width > largura) corte = corte.slice(0, -1);
+  return { t, linhas: [corte.trimEnd() + '…'] };
+}
+/** Desenha a imagem dos stories. top: quantos sabores; qtd: mostrar quantos bolos; tema: chocolate ou creme. */
+async function desenharStories({ sabores, ini, fim, top = 5, qtd = false, tema = 'chocolate' }) {
+  await carregarFontesStories();
+  const T = TEMAS_STORIES[tema] || TEMAS_STORIES.chocolate, loja = (await configLoja()) || {}, lista = sabores.slice(0, top);
+  const [logo, ...bolos] = await Promise.all([carregarImagem(LOGO).catch(() => null),
+    ...lista.map(x => carregarImagem('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgBolo(x.sabor, T.prato))).catch(() => null))]);
+  const SERIF = '"DM Serif Display", Georgia, "Times New Roman", serif', SANS = 'Nunito, "Segoe UI", Arial, sans-serif';
+  const c = document.createElement('canvas'); c.width = STORY_L; c.height = STORY_A;
+  const g = c.getContext('2d');
+  // fundo, brilhos e granulados (sempre nos mesmos lugares: a imagem sai igual a cada vez)
+  const fundo = g.createLinearGradient(0, 0, 0, STORY_A); fundo.addColorStop(0, T.fundo[0]); fundo.addColorStop(1, T.fundo[1]);
+  g.fillStyle = fundo; g.fillRect(0, 0, STORY_L, STORY_A);
+  for (const [x, y, r, [rgb, a]] of [[110, 250, 600, T.brilhos[0]], [1010, 1560, 700, T.brilhos[1]]]) {
+    const rg = g.createRadialGradient(x, y, 0, x, y, r); rg.addColorStop(0, `rgba(${rgb},${a})`); rg.addColorStop(1, `rgba(${rgb},0)`);
+    g.fillStyle = rg; g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  let semente = 11;
+  const sorte = () => { semente = (semente * 16807) % 2147483647; return (semente - 1) / 2147483646; };
+  for (let k = 0; k < 90; k++) {
+    const x = sorte() * STORY_L, y = sorte() * STORY_A, giro = sorte() * Math.PI, alfa = .3 + sorte() * .4, cor = T.confeitos[Math.floor(sorte() * T.confeitos.length)];
+    if ((x > 90 && x < 990 && y > 440 && y < 1690) || Math.hypot(x - 540, y - 322) < 150) continue;   // longe do logo, do título e do ranking
+    g.save(); g.translate(x, y); g.rotate(giro); g.globalAlpha = alfa; g.fillStyle = cor; retanguloRedondo(g, -15, -4.5, 30, 9, 4.5); g.fill(); g.restore();
+  }
+  // logo
+  const lx = 540, ly = 322, lr = 94;
+  g.save(); g.shadowColor = 'rgba(0,0,0,.28)'; g.shadowBlur = 34; g.shadowOffsetY = 8;
+  g.beginPath(); g.arc(lx, ly, lr + 9, 0, Math.PI * 2); g.fillStyle = T.anel; g.fill(); g.restore();
+  g.beginPath(); g.arc(lx, ly, lr, 0, Math.PI * 2); g.fillStyle = '#FFFFFF'; g.fill();
+  if (logo) { g.save(); g.beginPath(); g.arc(lx, ly, lr, 0, Math.PI * 2); g.clip(); g.drawImage(logo, lx - lr, ly - lr, lr * 2, lr * 2); g.restore(); }
+  // título
+  g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+  g.fillStyle = T.olho; g.font = `900 32px ${SANS}`; espacamento(g, '7px');
+  g.fillText(lista.length >= 3 ? `TOP ${lista.length} DA SEMANA` : 'RANKING DA SEMANA', lx, 494); espacamento(g, '0px');
+  g.fillStyle = T.titulo; g.font = `400 98px ${SERIF}`; g.fillText('Os sabores', lx, 590);
+  g.fillStyle = T.destaque; g.font = `italic 400 98px ${SERIF}`; g.fillText('mais pedidos', lx, 684);
+  g.fillStyle = T.data; g.font = `700 36px ${SANS}`; g.fillText(periodoTxt(ini, fim), lx, 748);
+  // o ranking: os três primeiros maiores; com até três sabores, todos grandes
+  const n = lista.length, grande = n <= 3, maximo = lista[0]?.bolos || 1;
+  const alturas = lista.map((_, i) => (grande ? 206 : i < 3 ? 172 : 136)), vao = grande ? 28 : 18;
+  const total = alturas.reduce((a, b) => a + b, 0) + vao * Math.max(0, n - 1);
+  let y = 800 + Math.max(0, (1676 - 800 - total) / 2);
+  lista.forEach((s, i) => {
+    const h = alturas[i], x0 = 70, w = 940, cy = y + h / 2;
+    g.save(); g.shadowColor = 'rgba(0,0,0,.22)'; g.shadowBlur = 30; g.shadowOffsetY = 10;
+    g.fillStyle = T.cartao; retanguloRedondo(g, x0, y, w, h, 36); g.fill(); g.restore();
+    // a posição: medalha nos três primeiros
+    const r = Math.round(h * .3), bx = x0 + 34 + r, med = MEDALHAS[i];
+    if (med) { const mg = g.createLinearGradient(bx - r, cy - r, bx + r, cy + r); mg.addColorStop(0, med[0]); mg.addColorStop(1, med[1]); g.fillStyle = mg; }
+    else g.fillStyle = T.posicao;
+    g.beginPath(); g.arc(bx, cy, r, 0, Math.PI * 2); g.fill();
+    g.fillStyle = med ? '#3A1F14' : '#FBF1E6'; g.font = `400 ${Math.round(r * 1.2)}px ${SERIF}`; g.textAlign = 'center';
+    g.fillText(String(i + 1), bx, cy + r * .42);
+    // o bolo, com as cores do sabor
+    const tam = Math.round(h * .8), ix = bx + r + 12;
+    if (bolos[i]) g.drawImage(bolos[i], ix, cy - tam / 2 - h * .05, tam, tam);
+    // o sabor (e, se pedir, quantos bolos)
+    const tx = ix + tam + 14, tw = x0 + w - 36 - tx;
+    const nome = textoQueCabe(g, s.sabor, t => `400 ${t}px ${SERIF}`, Math.round(h * (grande ? .27 : .3)), tw, h >= 160);
+    const tl = nome.t * 1.08, fq = Math.round(h * .155), alturaTexto = nome.linhas.length * tl + (qtd ? fq * 1.5 : 0);
+    let ty = cy - alturaTexto / 2 + nome.t * .82;
+    g.textAlign = 'left'; g.fillStyle = T.texto; g.font = `400 ${nome.t}px ${SERIF}`;
+    nome.linhas.forEach(l => { g.fillText(l, tx, ty); ty += tl; });
+    if (qtd) {
+      const rot = `${s.bolos} ${s.bolos === 1 ? 'bolo' : 'bolos'}`;
+      g.fillStyle = T.barra; g.font = `800 ${fq}px ${SANS}`;
+      const by = ty - tl + fq * 1.25 + 6;
+      g.fillText(rot, tx, by);
+      const x1 = tx + g.measureText(rot).width + 18, x2 = tx + tw;
+      if (x2 - x1 > 60) {
+        g.fillStyle = T.trilho; retanguloRedondo(g, x1, by - fq * .45, x2 - x1, 12, 6); g.fill();
+        g.fillStyle = T.barra; retanguloRedondo(g, x1, by - fq * .45, Math.max(12, (x2 - x1) * s.bolos / maximo), 12, 6); g.fill();
+      }
+    }
+    // o primeiro ganha o selo
+    if (i === 0) {
+      g.font = `900 24px ${SANS}`; espacamento(g, '3px');
+      const selo = 'O MAIS PEDIDO', pw = g.measureText(selo).width + 36, px = x0 + w - 34 - pw, py = y - 22;
+      g.fillStyle = T.barra; retanguloRedondo(g, px, py, pw, 44, 22); g.fill();
+      g.fillStyle = '#FFFFFF'; g.textAlign = 'center'; g.fillText(selo, px + pw / 2 + 1.5, py + 31); espacamento(g, '0px');
+    }
+    y += h + vao;
+  });
+  // como encomendar
+  const zap = loja.whatsapp_exibicao ? formatarTel(loja.whatsapp_exibicao) || loja.whatsapp_exibicao : '';
+  const site = String(loja.url_site || '').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const rodape = [zap && `Encomendas: ${zap}`, site].filter(Boolean).join('   ·   ');
+  if (rodape) { g.textAlign = 'center'; g.fillStyle = T.rodape; g.font = `800 32px ${SANS}`; g.fillText(rodape, lx, 1736); }
+  return c;
+}
+const CHAVE_TEMA_STORIES = 'ritabolos.stories.tema';
+/** Prévia da imagem, com as opções (quantos sabores, cores, mostrar as quantidades) e os botões de baixar e compartilhar. */
+async function modalStories() {
+  const r = rankingSemana; if (!r?.sabores?.length) return;
+  let tema = 'chocolate';
+  try { const t = localStorage.getItem(CHAVE_TEMA_STORIES); if (TEMAS_STORIES[t]) tema = t; } catch (e) { /* sem armazenamento: o padrão */ }
+  const opcoesTop = [3, 5].filter(n => n <= r.sabores.length);
+  const conf = { top: Math.min(5, r.sabores.length), qtd: false, tema };
+  let podeCompartilhar = false;
+  try { podeCompartilhar = !!navigator.canShare?.({ files: [new File(['x'], 'teste.png', { type: 'image/png' })] }); } catch (e) { podeCompartilhar = false; }
+  const chips = (grupo, lista, atual) => lista.map(([v, rot]) => `<button type="button" class="chip" data-${grupo}="${v}" aria-pressed="${String(v) === String(atual)}">${esc(rot)}</button>`).join('');
+  const m = abrirModal({
+    titulo: 'Imagem para os stories', largo: true,
+    corpo: `<div class="st-prev">
+        <div class="st-img" tabindex="-1" autofocus aria-live="polite"><div class="skel"></div></div>
+        <div class="st-op">
+          <p style="margin:0 0 14px;color:var(--ink-2)">Os sabores de bolo mais pedidos de ${esc(periodoTxt(r.ini, r.fim))}, no tamanho dos stories (1080 × 1920).</p>
+          ${opcoesTop.length > 1 ? `<p class="secao-t" style="margin-top:0">Quantos sabores</p><div class="chips" role="group" aria-label="Quantos sabores">${chips('st-top', opcoesTop.map(n => [n, `Top ${n}`]), conf.top)}</div>` : ''}
+          <p class="secao-t">Cores</p><div class="chips" role="group" aria-label="Cores">${chips('st-tema', Object.entries(TEMAS_STORIES).map(([k, t]) => [k, t.rot]), conf.tema)}</div>
+          <div style="margin-top:16px">${inChk('stQtd', 'Mostrar quantos bolos de cada sabor', false)}</div>
+          <p class="dica" style="margin:12px 0 0">${podeCompartilhar ? 'Toque em “Compartilhar” e escolha o Instagram: a imagem abre pronta para os stories.' : 'Baixe a imagem e poste pelo celular (Instagram > Stories > Galeria).'}</p>
+        </div>
+      </div>`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Fechar</button>
+      <button type="button" class="btn ${podeCompartilhar ? 'ghost' : 'primary'}" data-st-baixar disabled>${ic('baixar')}Baixar</button>
+      ${podeCompartilhar ? `<button type="button" class="btn primary" data-st-compartilhar disabled>${ic('externo')}Compartilhar</button>` : ''}`
+  });
+  let arquivo = null, url = null, vez = 0;
+  const nome = `rita-bolos-sabores-${r.ini}.png`;
+  const botoes = on => m.$$('[data-st-baixar],[data-st-compartilhar]').forEach(b => { b.disabled = !on; });
+  const gerar = async () => {
+    const minha = ++vez; botoes(false);
+    try {
+      const canvas = await desenharStories({ ...r, ...conf });
+      const blob = await new Promise(ok => canvas.toBlob(ok, 'image/png'));
+      if (minha !== vez || !document.contains(m.el)) return;
+      arquivo = new File([blob], nome, { type: 'image/png' });
+      if (url) URL.revokeObjectURL(url);
+      url = URL.createObjectURL(blob);
+      m.$('.st-img').innerHTML = `<img src="${url}" alt="Prévia da imagem: os sabores mais pedidos da semana">`;
+      botoes(true);
+    } catch (e) { if (minha === vez) erroToast(e); }
+  };
+  m.el.addEventListener('click', e => {
+    const top = e.target.closest('[data-st-top]'), t = e.target.closest('[data-st-tema]');
+    if (top) { conf.top = Number(top.dataset.stTop); m.$$('[data-st-top]').forEach(b => b.setAttribute('aria-pressed', String(b === top))); gerar(); }
+    if (t) {
+      conf.tema = t.dataset.stTema; m.$$('[data-st-tema]').forEach(b => b.setAttribute('aria-pressed', String(b === t))); gerar();
+      try { localStorage.setItem(CHAVE_TEMA_STORIES, conf.tema); } catch (err) { /* sem armazenamento */ }
+    }
+    if (e.target.closest('[data-st-baixar]') && url) { const a = document.createElement('a'); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); }
+    if (e.target.closest('[data-st-compartilhar]') && arquivo) {
+      // a imagem já está pronta: o compartilhar acontece ainda no toque (o celular exige isso)
+      navigator.share({ files: [arquivo], title: 'Os sabores mais pedidos da semana' }).catch(err => { if (err?.name !== 'AbortError') erroToast(err); });
+    }
+  });
+  m.$('#stQtd').addEventListener('change', e => { conf.qtd = e.target.checked; gerar(); });
+  gerar();
+}
+document.addEventListener('click', e => { if (e.target.closest('[data-stories]')) modalStories(); });
 
 /* =========================================================
    PREJUÍZOS: itens refeitos ou perdidos (sabor errado, item trocado, queda...)
@@ -1466,7 +1839,7 @@ async function modalPrejuizo(pedido = null) {
           <div class="prj-it-v">${inDin('prjV' + n, 'Valor por unidade', i.preco_unitario)}</div>
         </div>`).join('')}</div>
       <div class="grid2" style="margin-top:14px">${inSel('prjMotivo', 'Motivo', Object.entries(MOTIVOS), 'sabor_errado')}
-        ${campo('prjData', 'Data', `<input class="in" id="prjData" type="date" value="${hojeISO()}" max="${hojeISO()}">`)}</div>
+        ${campo('prjData-btn', 'Data', inData('prjData', hojeISO(), { max: hojeISO() }))}</div>
       ${inTa('prjDesc', 'O que aconteceu <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>', '', { attrs: 'maxlength="500" placeholder="Ex.: entregue como chocolate, cliente pediu ninho. Fizemos outro bolo." style="min-height:70px"' })}
       <div class="prj-total"><span>Prejuízo deste lançamento</span><strong id="prjTotal">${R(0)}</strong></div>
       <p class="dica" style="margin:4px 0 0;color:var(--ink-3)">O valor vem do preço do item no pedido; ajuste se o custo de refazer foi outro.</p>`;
@@ -1895,7 +2268,7 @@ function telaPedidos(el) {
     if (filtro.periodo === 'dia' && !filtro.dia) filtro.dia = hojeISO();
     if (filtro.periodo === 'entre' && !filtro.de && !filtro.ate) { filtro.de = hojeISO(); filtro.ate = hojeISO(6); }
     atualizarFiltrosData(); carregarPedidos();
-    if (filtro.periodo === 'dia' || filtro.periodo === 'entre') $('#fDatas input')?.focus();
+    if (filtro.periodo === 'dia' || filtro.periodo === 'entre') $('#fDatas .dt-btn')?.focus();
   });
   $('#fMaisBt').addEventListener('click', e => { const p = $('#fMais'); p.hidden = !p.hidden; e.currentTarget.setAttribute('aria-expanded', String(!p.hidden)); });
   [['fSemana', 'diaSemana'], ['fOrigem', 'origem'], ['fPagto', 'pagamento'], ['fOrdem', 'ordem']].forEach(([id, k]) => $('#' + id).addEventListener('change', e => {
@@ -1905,7 +2278,7 @@ function telaPedidos(el) {
   $('#fDatas').addEventListener('change', e => {
     const id = e.target.id;
     if (id === 'fDia' && e.target.value) filtro.dia = e.target.value;
-    if (id === 'fDe') filtro.de = e.target.value;
+    if (id === 'fDe') { filtro.de = e.target.value; if (filtro.ate && filtro.ate < filtro.de) filtro.ate = ''; }   // o fim antes do começo: fica em aberto
     if (id === 'fAte') filtro.ate = e.target.value;
     atualizarFiltrosData(); carregarPedidos();
   });
@@ -1915,7 +2288,11 @@ function telaPedidos(el) {
   });
   $('#fDias').addEventListener('click', e => {
     const b = e.target.closest('[data-fdia]'); if (!b) return;
-    if (b.dataset.fdia === 'outro') { filtro.periodo = 'dia'; filtro.dia = filtro.dia || hojeISO(); atualizarFiltrosData(); carregarPedidos(); $('#fDia')?.showPicker?.(); $('#fDia')?.focus(); return; }
+    if (b.dataset.fdia === 'outro') {
+      if (filtro.periodo !== 'dia') { filtro.periodo = 'dia'; filtro.dia = filtro.dia || hojeISO(); atualizarFiltrosData(); carregarPedidos(); }
+      abrirCalendario($('#fDia'), $('#fDias [data-fdia="outro"]'));
+      return;
+    }
     const mesmo = filtro.periodo === 'dia' && filtro.dia === b.dataset.fdia;
     filtro.periodo = mesmo ? 'proximas' : 'dia'; if (!mesmo) filtro.dia = b.dataset.fdia;   // tocar de novo no dia desmarca
     atualizarFiltrosData(); carregarPedidos();
@@ -1931,20 +2308,28 @@ function telaPedidos(el) {
   carregarPedidos();
   contarDias();
 }
+/** Troca o conteúdo de box sem perder o foco: quem o tinha (pelo id, data-passo ou data-fdia) continua com ele. */
+function redesenharComFoco(box, html) {
+  const a = document.activeElement, dentro = a && a !== document.body && box.contains(a);
+  const sel = !dentro ? null : a.id ? '#' + a.id : a.dataset.passo ? `[data-passo="${a.dataset.passo}"]` : a.dataset.fdia ? `[data-fdia="${a.dataset.fdia}"]` : null;
+  box.innerHTML = html;
+  if (sel) box.querySelector(sel)?.focus();
+}
 /** Campos de data (um dia ou entre datas), os botões dos próximos dias e o contador de "Mais filtros". */
 function atualizarFiltrosData() {
   const box = $('#fDatas'); if (!box) return;
   $('#fPeriodo').value = filtro.periodo;
-  if (filtro.periodo === 'dia') {
-    box.innerHTML = `<button type="button" class="btn icon ghost" data-passo="-1" aria-label="Dia anterior" title="Dia anterior">${ic('voltar')}</button>
-      <label class="sr" for="fDia">Dia da retirada</label><input class="in" type="date" id="fDia" value="${esc(filtro.dia)}">
+  const html = filtro.periodo === 'dia'
+    ? `<button type="button" class="btn icon ghost" data-passo="-1" aria-label="Dia anterior" title="Dia anterior">${ic('voltar')}</button>
+      ${inData('fDia', filtro.dia, { rotulo: 'Dia da retirada' })}
       <button type="button" class="btn icon ghost f-prox" data-passo="1" aria-label="Próximo dia" title="Próximo dia">${ic('voltar')}</button>
-      <span class="f-dia-nome">${esc(nomeDia(filtro.dia))}</span>`;
-  } else if (filtro.periodo === 'entre') {
-    box.innerHTML = `<label class="f-de">De <input class="in" type="date" id="fDe" value="${esc(filtro.de)}"></label>
-      <label class="f-de">até <input class="in" type="date" id="fAte" value="${esc(filtro.ate)}" ${filtro.de ? `min="${esc(filtro.de)}"` : ''}></label>`;
-  } else box.innerHTML = '';
-  box.hidden = !box.innerHTML;
+      <span class="f-dia-nome">${esc(nomeDia(filtro.dia))}</span>`
+    : filtro.periodo === 'entre'
+      ? `<span class="f-de">De ${inData('fDe', filtro.de, { vazio: 'escolher', rotulo: 'Retirada a partir de' })}</span>
+      <span class="f-de">até ${inData('fAte', filtro.ate, { min: filtro.de, vazio: 'escolher', rotulo: 'Retirada até' })}</span>`
+      : '';
+  redesenharComFoco(box, html);
+  box.hidden = !html;
   // "Dia da semana" não faz sentido com um dia só
   const sem = $('#fSemana'); if (sem) { sem.disabled = filtro.periodo === 'dia'; sem.title = sem.disabled ? 'Com um dia escolhido, o dia da semana não se aplica.' : ''; }
   const n = filtrosExtrasAtivos(), cont = $('#fCont'); if (cont) { cont.textContent = n; cont.hidden = !n; }
@@ -1961,12 +2346,14 @@ function desenharDias() {
   const box = $('#fDias'); if (!box) return;
   const dias = Array.from({ length: 14 }, (_, i) => hojeISO(i));
   const forDaFaixa = filtro.periodo === 'dia' && filtro.dia && !dias.includes(filtro.dia);
-  box.innerHTML = dias.map((iso, i) => {
-    const n = contagemDias[iso] || 0, on = filtro.periodo === 'dia' && filtro.dia === iso, dow = diaDaSemanaIso(iso);
-    const rot = i === 0 ? 'Hoje' : i === 1 ? 'Amanhã' : NOMES_DIA[dow].slice(0, 3);
-    return `<button type="button" class="dia-ret ${dow === 0 ? 'domingo' : ''}" data-fdia="${iso}" aria-pressed="${on}" aria-label="${esc(nomeDia(iso))}: ${n} ${n === 1 ? 'pedido' : 'pedidos'}">
+  // "Escolher dia" vem primeiro: fica sempre à vista, sem rolar a fileira
+  redesenharComFoco(box, `<button type="button" class="dia-ret outro" data-fdia="outro" aria-pressed="${forDaFaixa}" aria-haspopup="dialog">${ic('hoje')}<span class="dr-n">${forDaFaixa ? esc(nomeDia(filtro.dia)) : 'Escolher dia'}</span></button>`
+    + dias.map((iso, i) => {
+      const n = contagemDias[iso] || 0, on = filtro.periodo === 'dia' && filtro.dia === iso, dow = diaDaSemanaIso(iso);
+      const rot = i === 0 ? 'Hoje' : i === 1 ? 'Amanhã' : NOMES_DIA[dow].slice(0, 3);
+      return `<button type="button" class="dia-ret ${dow === 0 ? 'domingo' : ''}" data-fdia="${iso}" aria-pressed="${on}" aria-label="${esc(nomeDia(iso))}: ${n} ${n === 1 ? 'pedido' : 'pedidos'}">
       <span class="dr-sem">${rot}</span><b>${iso.slice(8, 10)}/${iso.slice(5, 7)}</b><span class="dr-n">${n ? `${n} ${n === 1 ? 'pedido' : 'pedidos'}` : '—'}</span></button>`;
-  }).join('') + `<button type="button" class="dia-ret outro" data-fdia="outro" aria-pressed="${forDaFaixa}">${ic('hoje')}<span class="dr-n">${forDaFaixa ? esc(nomeDia(filtro.dia)) : 'Outro dia'}</span></button>`;
+    }).join(''));
 }
 /** Datas (AAAA-MM-DD) entre ini e fim que caem no dia da semana pedido. */
 function datasNoDiaDaSemana(ini, fim, dow) {
@@ -3560,7 +3947,7 @@ async function modalEditarPedido(p) {
     largo: true,
     corpo: `<div class="grid2">${inTxt('edNome', 'Cliente', p.cliente_nome, { attrs: 'maxlength="120"' })}${inTxt('edTel', 'Telefone (DDD + número)', formatarTel(p.cliente_telefone) || p.cliente_telefone || '', { attrs: ATTR_TEL })}</div>
       <div class="grid3">${inSel('edOrig', 'Pedido feito por', Object.entries(ORIGENS), p.origem || 'backoffice')}
-        ${campo('edData', 'Data da retirada', `<input class="in" id="edData" type="date" value="${esc(p.data_retirada)}">`)}
+        ${campo('edData-btn', ehEntrega(p) ? 'Data da entrega' : 'Data da retirada', inData('edData', p.data_retirada))}
         ${campo('edHora', 'Horário', `<input class="in" id="edHora" type="time" value="${esc(hora(p.hora_retirada))}">`)}</div>
       ${inTa('edObs', 'Observação do cliente', p.observacao_cliente || '', { attrs: 'maxlength="1000" style="min-height:60px"' })}
       <p class="secao-t">Itens</p>
@@ -3759,7 +4146,7 @@ async function modalNovoPedido() {
       </div>
       <div class="grid2">${inTxt('npNome', 'Cliente', '', { attrs: 'maxlength="120" autocomplete="off"' })}${inTxt('npTel', 'Telefone (DDD + número)', '', { attrs: ATTR_TEL })}</div>
       <div class="grid3">${inSel('npOrig', 'Pedido feito por', [['whatsapp', 'WhatsApp'], ['balcao', 'Balcão'], ['backoffice', 'Outro']], 'whatsapp')}
-        ${campo('npData', 'Data da retirada', `<input class="in" id="npData" type="date" value="${hojeISO(Number(c.configuracoes?.dias_retirada_sugerida ?? 2))}">`)}
+        ${campo('npData-btn', 'Data da retirada', inData('npData', hojeISO(Number(c.configuracoes?.dias_retirada_sugerida ?? 2))))}
         ${campo('npHora', 'Horário', `<input class="in" id="npHora" type="time" value="${esc(hora(c.configuracoes?.hora_retirada_sugerida || '10:00'))}">`)}</div>
       ${temEntregas ? `<div class="np-concl np-ent">${inChk('npEnt', '<span><strong>Tem entrega</strong><small>Depois de criar o pedido, você informa o endereço, quem recebe e a taxa.</small></span>')}</div>` : ''}
       ${inTxt('npObs', 'Observação geral <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>', '', { attrs: 'maxlength="1000"' })}
@@ -3797,7 +4184,7 @@ async function modalNovoPedido() {
   m.el.addEventListener('change', atualizar);
   m.el.addEventListener('input', e => { if (e.target.dataset.np === 'qtd') atualizar(); });
   // Pedido já concluído: pede a forma de pagamento e a data vira "quando foi retirado" (não pode ser no futuro)
-  const rotuloData = () => { m.$('label[for="npData"]').textContent = chkDe(m, 'npConcl') ? 'Data em que foi retirado' : chkDe(m, 'npEnt') ? 'Data da entrega' : 'Data da retirada'; };
+  const rotuloData = () => { m.$('label[for="npData-btn"]').textContent = chkDe(m, 'npConcl') ? 'Data em que foi retirado' : chkDe(m, 'npEnt') ? 'Data da entrega' : 'Data da retirada'; };
   // com entrega: a data é a da entrega; um pedido lançado já concluído entra como retirado (sem entrega)
   m.$('#npEnt')?.addEventListener('change', e => { m.$('.np-ent').classList.toggle('on', e.target.checked); rotuloData(); });
   m.$('#npConcl').addEventListener('change', e => {
@@ -3808,7 +4195,7 @@ async function modalNovoPedido() {
     if (ent) { if (on) ent.checked = false; ent.disabled = on; m.$('.np-ent').classList.toggle('on', ent.checked); }
     rotuloData();
     m.$('#npData').max = on ? hojeISO() : '';
-    if (on && valDe(m, 'npData') > hojeISO()) m.$('#npData').value = hojeISO();
+    if (on && valDe(m, 'npData') > hojeISO()) { m.$('#npData').value = hojeISO(); atualizarData(m.$('#npData')); }
     m.$('[data-ok]').textContent = on ? 'Lançar pedido concluído' : 'Criar pedido';
   });
   m.el.addEventListener('click', e => {
@@ -4109,7 +4496,7 @@ function modalCategoria(c) {
       ${inTa('cIntro', 'Aviso no topo da categoria', c.introducao || '', { attrs: 'maxlength="400" style="min-height:64px"' })}
       ${inTxt('cAviso', 'Nota no rodapé', c.aviso || '', { attrs: 'maxlength="200" placeholder="Ex.: Imagens meramente ilustrativas."' })}
       <div class="grid3">${inNum('cAnt', 'Antecedência (dias)', c.antecedencia_minima_dias ?? 0, { attrs: 'min="0"' })}
-        ${campo('cVal', 'Preços válidos até', `<input class="in" id="cVal" type="date" value="${esc(c.precos_validos_ate || '')}">`)}${inNum('cOrdem', 'Ordem', c.ordem ?? 0)}</div>
+        ${campo('cVal-btn', 'Preços válidos até', inData('cVal', c.precos_validos_ate || '', { limpar: true, vazio: 'Sem data' }))}${inNum('cOrdem', 'Ordem', c.ordem ?? 0)}</div>
       <div id="cPagina" ${c.layout === 'pagina' ? '' : 'hidden'}>
         ${inTa('cDesc', 'Descrição', c.descricao || '', { attrs: 'maxlength="800" style="min-height:64px"' })}
         <div class="grid2">${inTxt('cLink', 'Link da página', c.link_externo || '', { attrs: 'placeholder="sacolinhas.html"', dica: 'Os produtos são vendidos só na página própria, nunca no cardápio. Com link, aparece uma faixa no início do site; sem link, a categoria fica fora do site (ex.: atacado, vendido só na página do bolo no pote).' })}${inTxt('cParc', 'Parceria', c.parceiro || '', { attrs: 'maxlength="60"' })}</div>
@@ -4208,16 +4595,15 @@ function chavePix(tipo, chave) {
 /** Pix e horários de retirada do formulário, já conferidos (sql/ajustes-loja.sql). */
 function ajustesPixRetirada(f) {
   const falha = (id, msg) => { const el = f.$('#' + id); el?.setAttribute('aria-invalid', 'true'); el?.focus(); throw new Error(msg); };
-  ['lPixChave', 'lRetIni', 'lRetFim', 'lRetDias'].forEach(id => f.$('#' + id)?.removeAttribute('aria-invalid'));
+  ['lPixChave', 'lRetIni', 'lRetFim'].forEach(id => f.$('#' + id)?.removeAttribute('aria-invalid'));
   const tipo = valDe(f, 'lPixTipo'), chave = valDe(f, 'lPixChave');
   let pixChave = null;
   if (chave) { try { pixChave = chavePix(tipo, chave); } catch (e) { falha('lPixChave', e.message); } }
-  const ini = valDe(f, 'lRetIni'), fim = valDe(f, 'lRetFim'), dias = numDe(f, 'lRetDias');
+  const ini = valDe(f, 'lRetIni'), fim = valDe(f, 'lRetFim');
   if (!ini) falha('lRetIni', 'Informe o primeiro horário de retirada.');
   if (!fim || fim <= ini) falha('lRetFim', 'O último horário de retirada precisa ser depois do primeiro.');
-  if (!(dias >= 1 && dias <= 60)) falha('lRetDias', 'Os dias para escolher no site precisam ficar entre 1 e 60.');
   return { pix_chave: pixChave, pix_tipo: tipo || null, pix_nome: valDe(f, 'lPixNome') || null,
-    retirada_inicio: ini, retirada_fim: fim, retirada_intervalo_min: Number(valDe(f, 'lRetPasso')) || 30, retirada_dias: Math.round(dias) };
+    retirada_inicio: ini, retirada_fim: fim, retirada_intervalo_min: Number(valDe(f, 'lRetPasso')) || 30 };
 }
 /**
  * Entrega do formulário de Ajustes > Loja, já conferida (sql/entregas.sql): { dados, achado }.
@@ -4255,7 +4641,7 @@ async function ajLoja(box) {
   // Pix e horários de retirada: campos do sql/ajustes-loja.sql (antes ficavam escritos no código)
   const temAjustes = 'pix_chave' in c && 'retirada_inicio' in c, so = temAjustes ? '' : 'disabled';
   const pix = temAjustes ? { chave: c.pix_chave || '', tipo: c.pix_tipo || 'CPF', nome: c.pix_nome || '' } : pixDe({});
-  const ret = { ini: hm5(c.retirada_inicio) || '08:00', fim: hm5(c.retirada_fim) || '18:00', passo: Number(c.retirada_intervalo_min) || 30, dias: Number(c.retirada_dias) || 14 };
+  const ret = { ini: hm5(c.retirada_inicio) || '08:00', fim: hm5(c.retirada_fim) || '18:00', passo: Number(c.retirada_intervalo_min) || 30 };
   const passos = PASSOS_RETIRADA.some(([v]) => v === ret.passo) ? PASSOS_RETIRADA : [...PASSOS_RETIRADA, [ret.passo, `${ret.passo} minutos`]].sort((a, b) => a[0] - b[0]);
   const tipos = [...new Set([...TIPOS_PIX, pix.tipo].filter(Boolean))].map(t => [t, t]);
   // Entrega: endereço de onde sai e a regra da taxa (campos do sql/entregas.sql)
@@ -4284,7 +4670,7 @@ async function ajLoja(box) {
 
       <p class="secao-t linha">Retirada</p>
       <div class="grid2">${campo('lRetIni', 'Primeiro horário no site', `<input class="in" id="lRetIni" type="time" value="${ret.ini}" ${so}>`)}${campo('lRetFim', 'Último horário no site', `<input class="in" id="lRetFim" type="time" value="${ret.fim}" ${so}>`)}</div>
-      <div class="grid2">${inSel('lRetPasso', 'Intervalo entre os horários', passos, ret.passo, { attrs: so })}${inNum('lRetDias', 'Dias para escolher no site', ret.dias, { attrs: `min="1" max="60" ${so}` })}</div>
+      <div class="grid2">${inSel('lRetPasso', 'Intervalo entre os horários', passos, ret.passo, { attrs: so })}</div>
       <p class="ajuste-dica" id="lRetPrev" aria-live="polite"></p>
       <div class="grid2">${inNum('lDias', 'Retirada sugerida (dias depois do pedido)', c.dias_retirada_sugerida, { attrs: 'min="0"', dica: 'Só para pedidos lançados aqui pela equipe. No site, o cliente escolhe o dia.' })}${campo('lHora', 'Horário sugerido', `<input class="in" id="lHora" type="time" value="${esc(hora(c.hora_retirada_sugerida))}">`, 'Idem: no site, o cliente escolhe o horário.')}</div>
 
@@ -4306,11 +4692,11 @@ async function ajLoja(box) {
   ligarFotos(fake, 'marca');
   // prévia dos horários que o cliente vai ver
   const previaRetirada = () => {
-    const ini = valDe(fake, 'lRetIni'), fim = valDe(fake, 'lRetFim'), dias = numDe(fake, 'lRetDias'), el = box.querySelector('#lRetPrev');
+    const ini = valDe(fake, 'lRetIni'), fim = valDe(fake, 'lRetFim'), el = box.querySelector('#lRetPrev');
     if (!ini || !fim || fim <= ini) { el.textContent = 'O último horário precisa ser depois do primeiro.'; return; }
     const hs = horariosRetirada(ini, fim, Number(valDe(fake, 'lRetPasso')));
     el.textContent = `No site aparecem ${hs.length} ${hs.length === 1 ? 'horário' : 'horários'} (${hs.length > 6 ? `${hs.slice(0, 3).join(', ')} … ${hs.at(-1)}` : hs.join(', ')})`
-      + `${dias >= 1 ? `, nos próximos ${dias} ${dias === 1 ? 'dia' : 'dias'}` : ''}. O cliente ainda pode digitar outro horário.`;
+      + '. O dia o cliente escolhe num calendário (até um ano à frente, respeitando a antecedência) e ele ainda pode digitar outro horário.';
   };
   previaRetirada();
   // prévia da taxa de entrega: exemplos de distância com a regra do formulário
@@ -5002,7 +5388,7 @@ function modalTopoForm(t = null, base = {}, depois) {
       <div class="grid2">${inTxt('tfTema', 'Tema', d.tema || '', { attrs: 'maxlength="80" placeholder="Ex.: Safari, Frozen, futebol"' })}${inTxt('tfTexto', 'Texto', d.texto || '', { attrs: 'maxlength="120" placeholder="Ex.: Theo, 1 ano"', dica: 'Nome, idade ou frase que vai escrito.' })}</div>
       ${inTa('tfDet', 'Detalhes', d.detalhes || '', { attrs: 'maxlength="1500" style="min-height:70px" placeholder="Cores, tamanho, acabamento…"' })}
       <div class="field"><span class="lbl">Imagens de referência</span><div class="tf-refs" id="tfRefs"></div></div>
-      <div class="grid2">${campo('tfData', 'Data de entrega', `<input class="in" id="tfData" type="date" value="${esc(d.data_entrega || '')}">`, d.pedido_id ? 'Topo de bolo: até a retirada do bolo.' : '')}${campo('tfHora', 'Horário', `<input class="in" id="tfHora" type="time" value="${esc(hora(d.hora_entrega))}">`)}</div>
+      <div class="grid2">${campo('tfData-btn', 'Data de entrega', inData('tfData', d.data_entrega || ''), d.pedido_id ? 'Topo de bolo: até a retirada do bolo.' : '')}${campo('tfHora', 'Horário', `<input class="in" id="tfHora" type="time" value="${esc(hora(d.hora_entrega))}">`)}</div>
       <div class="grid2">${inTxt('tfCli', 'Cliente', d.cliente_nome || '', { attrs: 'maxlength="120"' })}${inTxt('tfTel', 'Telefone (DDD + número)', formatarTel(d.cliente_telefone) || '', { attrs: ATTR_TEL })}</div>
       ${d.pedido_id ? '' : inTxt('tfPed', 'Pedido da loja (opcional)', d.pedido_codigo || '', { attrs: 'maxlength="20" placeholder="Ex.: RB-01042"', dica: 'Código do pedido do bolo, quando o topo é para um bolo da loja.' })}
       <div class="grid2">${inDin('tfValor', 'Valor cobrado do cliente', d.valor, { dica: 'Opcional.' })}<div class="field tf-pago">${inChk('tfPago', 'O cliente já pagou', d.pago)}</div></div>
@@ -5439,7 +5825,7 @@ function modalPagarTopos() {
       ${semValor ? `<p class="dica" style="margin:8px 0 0">${semValor === 1 ? '1 topo sem valor não aparece' : `${semValor} topos sem valor não aparecem`} aqui: defina o valor na lista para pagar junto.</p>` : ''}
       <div class="grid2" style="margin-top:16px">${inDin('gpValor', 'Valor pago', somaCusto(itens))}${inSel('gpForma', 'Como pagou', FORMAS_TOPO, 'pix')}</div>
       <p class="dica gp-dif" id="gpDif" hidden></p>
-      <div class="grid2">${campo('gpData', 'Data do pagamento', `<input class="in" id="gpData" type="date" value="${hojeISO()}" max="${hojeISO()}">`)}${inTxt('gpObs', 'Observação <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>', '', { attrs: 'maxlength="200" placeholder="Ex.: inclui o material"' })}</div>`,
+      <div class="grid2">${campo('gpData-btn', 'Data do pagamento', inData('gpData', hojeISO(), { max: hojeISO() }))}${inTxt('gpObs', 'Observação <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>', '', { attrs: 'maxlength="200" placeholder="Ex.: inclui o material"' })}</div>`,
     rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>${ic('ok')}Registrar pagamento</button>`
   });
   const marcados = () => itens.filter(t => m.$(`[data-gp="${t.id}"]`).checked);
