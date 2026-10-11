@@ -181,7 +181,7 @@ function coresStatus(lista) {
    o primeiro (aguardando sinal) e o pronto.
 ========================================================= */
 function etapas() {
-  const cols = STATUS.filter(s => s.ativo !== false && !s.finalizado).sort((a, b) => a.ordem - b.ordem);
+  const cols = STATUS.filter(s => s.ativo !== false && !s.finalizado && s.codigo !== 'em_rota').sort((a, b) => a.ordem - b.ordem);   // saiu para entrega: já saiu da loja
   for (const p of dados?.abertos || []) {   // pedido com status desativado ganha coluna própria
     if (!cols.some(s => s.codigo === p.status)) cols.push({ codigo: p.status, nome: p.status_nome || p.status, cor: p.status_cor || '#8A8A8A', ordem: p.status_ordem ?? 999, descricao: '' });
   }
@@ -243,11 +243,12 @@ async function carregar() {
     const hoje = agora().iso;
     const [status, abertos, doDia, categorias] = await Promise.all([
       api.admin.status.listar(),
-      api.admin.pedidos.listar({ apenasAbertos: true, porPagina: 500 }),
-      api.admin.pedidos.listar({ de: hoje, ate: hoje, porPagina: 300 }),
+      api.admin.pedidos.listar({ apenasAbertos: true, porPagina: 500, comEntrega: true }),
+      api.admin.pedidos.listar({ de: hoje, ate: hoje, porPagina: 300, comEntrega: true }),
       api.admin.categorias.listar().catch(() => [])
     ]);
     const ate = somarDias(hoje, DIAS_A_FRENTE - 1);
+    abertos.pedidos = abertos.pedidos.filter(p => p.status !== 'em_rota');   // já saiu para entrega: some do quadro, como um retirado
     const ids = abertos.pedidos.filter(p => p.data_retirada <= ate).map(p => p.id);
     const [itens, notas] = await Promise.all([carregarItens(ids), carregarNotas(ids), carregarKits()]);
     STATUS = status;
@@ -451,23 +452,24 @@ function cartao(p, ctx) {
   const { ag } = ctx, falta = minRetirada(p) - ag.min, pronto = ctx.estaPronto(p), dia = rotuloDia(p.data_retirada, ag.iso);
   let classe = '', urgencia = '';
   if (falta < 0) {
-    if (pronto) { classe = 'esperando'; urgencia = ficha('aviso', 'relogio', p.hora_retirada ? `Esperando há ${duracao(falta)}` : `Era para ${dia.toLowerCase()}`); }
+    if (pronto) { classe = 'esperando'; urgencia = ficha('aviso', 'relogio', p.hora_retirada ? `${p.entrega ? 'Era para sair há' : 'Esperando há'} ${duracao(falta)}` : `Era para ${dia.toLowerCase()}`); }
     else { classe = 'atrasado'; urgencia = ficha('critico', 'alerta', p.hora_retirada ? `Atrasado ${duracao(falta)}` : `Era para ${dia.toLowerCase()}`); }
   } else if (!pronto && p.hora_retirada && falta <= EM_BREVE_MIN) {
-    classe = 'em-breve'; urgencia = ficha('aviso', 'relogio', `Retira em ${duracao(falta)}`);
+    classe = 'em-breve'; urgencia = ficha('aviso', 'relogio', `${p.entrega ? 'Sai em' : 'Retira em'} ${duracao(falta)}`);
   }
   const d = destaques.get(p.id);
   const novo = d?.tipo === 'novo' ? ficha('marca', 'brilho', 'Novo') : '';
+  const entrega = p.entrega ? ficha('ent', 'entrega', p.entrega.bairro ? `Entrega · ${p.entrega.bairro}` : 'Entrega') : '';
   // o atraso negativo continua a animação de onde parou quando o quadro é redesenhado
   const anim = d ? ` style="animation-delay:-${Date.now() - d.em}ms"` : '';
   const notas = dados.notas.get(p.id) || [];
   const pagto = pagamento(p, ctx);
-  return `<article class="cartao ${classe} ${d ? d.tipo : ''}"${anim} aria-label="${esc(`${p.codigo}, ${p.cliente_nome}, retirada ${dia.toLowerCase()}${hora(p) ? ' às ' + hora(p) : ''}`)}">
+  return `<article class="cartao ${classe} ${d ? d.tipo : ''}"${anim} aria-label="${esc(`${p.codigo}, ${p.cliente_nome}, ${p.entrega ? 'entrega' : 'retirada'} ${dia.toLowerCase()}${hora(p) ? ' às ' + hora(p) : ''}`)}">
     <div class="c-cab">
       <div class="c-quando">${hora(p) ? `<span class="c-hora">${hora(p)}</span>` : '<span class="c-hora sem">Sem hora</span>'}${SO_HOJE && p.data_retirada === ag.iso ? '' : `<span class="c-dia">${esc(dia)}</span>`}</div>
       <div class="c-quem"><span class="c-nome" title="${esc(p.cliente_nome)}">${esc(nomeCurto(p.cliente_nome))}</span><span class="c-cod">${esc(p.codigo)}</span></div>
     </div>
-    ${urgencia || novo ? `<div class="c-fichas">${novo}${urgencia}</div>` : ''}
+    ${urgencia || novo || entrega ? `<div class="c-fichas">${novo}${urgencia}${entrega}</div>` : ''}
     <ul class="c-itens">${itensDoCartao(p)}</ul>
     ${notas.map(n => `<div class="c-nota">${ic('pin')}<span>${esc(n)}</span></div>`).join('')}
     ${p.observacao_cliente ? `<div class="c-obs">${ic('conversa')}<span>${esc(p.observacao_cliente)}</span></div>` : ''}
@@ -493,7 +495,7 @@ function itensDoCartao(p) {
 function pagamento(p, ctx) {
   const n = v => R(v).replace(/ /g, ' ');
   if (p.status === ctx.E.inicial?.codigo && !p.sinal_pago) return ficha('', 'moeda', `Aguardando sinal de ${n(Math.max(0, p.valor_sinal - p.valor_pago))}`);
-  if (ctx.estaPronto(p)) return Number(p.saldo) > 0 ? ficha('', 'moeda', `Receber ${n(p.saldo)} na retirada`) : ficha('bom', 'ok', 'Tudo pago');
+  if (ctx.estaPronto(p)) return Number(p.saldo) > 0 ? ficha('', 'moeda', `Receber ${n(p.saldo)} na ${p.entrega ? 'entrega' : 'retirada'}`) : ficha('bom', 'ok', 'Tudo pago');
   return '';
 }
 

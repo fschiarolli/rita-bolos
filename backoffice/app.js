@@ -6,7 +6,8 @@
  * Modo demonstração, sem banco: abra com ?demo
  */
 import { criarApi, conectar, formatarPreco as R, formatarPeso, formatarData, linkRecibo, linkWhatsApp, abrirWhatsApp, linkCompartilhavel, montarMensagemStatus, prepararAba,
-  separarReferencia, juntarReferencia, ehTopper, pixDe, textoPix, mapaKits, achatarCardapio, conteudoKit } from '../js/rita-api.js';
+  separarReferencia, juntarReferencia, ehTopper, pixDe, textoPix, mapaKits, achatarCardapio, conteudoKit,
+  formatarCep, textoEndereco, linkWaze, linkMapa, quemRecebe, buscarCep, calcularTaxaEntrega, localizarEndereco, origemEntrega, temRegraEntrega, taxaPelaDistancia } from '../js/rita-api.js';
 import { AVATARES, avatarSVG, temAvatar } from './avatares.js';
 
 const DEMO = new URLSearchParams(location.search).has('demo');
@@ -1047,16 +1048,16 @@ function linhaPedido(p) {
     else if (p.sinal_pago && Number(p.valor_pago) > 0) pg = `<span class="tag sinal">Sinal pago</span>`;
     else pg = `<span class="tag pend">Sinal pendente</span>`;
   }
-  return `<button type="button" class="ped" data-ped="${esc(p.id)}" aria-label="Pedido ${esc(p.codigo)} de ${esc(p.cliente_nome)}, retirada ${esc(dataCurta(p.data_retirada))}">
+  return `<button type="button" class="ped" data-ped="${esc(p.id)}" aria-label="Pedido ${esc(p.codigo)} de ${esc(p.cliente_nome)}, ${ehEntrega(p) ? 'entrega' : 'retirada'} ${esc(dataCurta(p.data_retirada))}">
     <span class="quando ${quandoCls}">${esc(dataCurta(p.data_retirada))}${atraso ? ' (atrasado)' : ''}<small>${p.hora_retirada ? esc(hora(p.hora_retirada)) : 'sem horário'}</small></span>
-    <span class="meio"><span class="nome">${esc(p.cliente_nome)} <span class="cod">${esc(p.codigo)}${p.qtd_observacoes ? ` · ${p.qtd_observacoes} obs.` : ''}</span></span>
+    <span class="meio"><span class="nome">${esc(p.cliente_nome)} <span class="cod">${esc(p.codigo)}${p.qtd_observacoes ? ` · ${p.qtd_observacoes} obs.` : ''}</span>${ehEntrega(p) ? `<span class="ent-tag">${ic('entrega')}Entrega</span>` : ''}</span>
       <span class="itens">${esc(p.resumo_itens || '')}</span></span>
-    <span class="dir">${pill(p.status_nome, p.status_cor)}<span class="total">${R(p.total)}</span>${pg}</span>
+    <span class="dir">${pill(nomeStatus(p, { nome: p.status_nome, codigo: p.status }), p.status_cor)}<span class="total">${R(p.total)}</span>${pg}</span>
   </button>`;
 }
 
 /* Ícone de cada etapa na faixa de indicadores (status criados no cadastro usam o relógio) */
-const ICONE_STATUS = { recebido: 'sino', confirmado: 'ok', em_producao: 'bolo', pronto: 'pedidos' };
+const ICONE_STATUS = { recebido: 'sino', confirmado: 'ok', em_producao: 'bolo', pronto: 'pedidos', em_rota: 'entrega' };
 async function telaPainel(el, _sub, silencioso = false) {
   const nome = perfil.nome.split(' ')[0];
   const acoes = `<a class="btn ghost" href="#hoje">${ic('hoje')}Tela Hoje</a><button type="button" class="btn primary" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`;
@@ -1068,7 +1069,7 @@ async function telaPainel(el, _sub, silencioso = false) {
   try {
     const [r, hoje, novos] = await Promise.all([
       api.admin.painel(),
-      api.admin.pedidos.listar({ de: hojeISO(), ate: hojeISO(), apenasAbertos: true, porPagina: 50 }),
+      api.admin.pedidos.listar({ de: hojeISO(), ate: hojeISO(), apenasAbertos: true, porPagina: 50, comEntrega: true }),
       api.admin.pedidos.listar({ status: 'recebido', porPagina: 8, ordenarPor: 'criado_em', crescente: false })
     ]);
     if (telaAtual !== 'painel') return;
@@ -1109,7 +1110,7 @@ async function telaPainel(el, _sub, silencioso = false) {
         </section>
       </div>
       <div class="card kpi-strip">
-        ${abertos.map(s => kpi('#pedidos', 'st:' + s.status, s.cor || '#2B7465', ICONE_STATUS[s.status] || 'relogio', s.nome, s.quantidade)).join('')}
+        ${abertos.filter(s => s.status !== 'em_rota' || s.quantidade).map(s => kpi('#pedidos', 'st:' + s.status, s.cor || '#2B7465', ICONE_STATUS[s.status] || 'relogio', s.nome, s.quantidade)).join('')}
         ${kpi('#pedidos', 'sinal', '#B9476A', 'moeda', 'Aguardando sinal', r.sinais_pendentes)}
       </div>
       <div class="cols">
@@ -1506,8 +1507,27 @@ function confirmadoEmDiante(p) {
 }
 function statusRetirado() {
   return STATUS.find(s => s.codigo === 'retirado' && s.ativo)
-    || STATUS.filter(s => s.finalizado && s.ativo && s.codigo !== 'cancelado').sort((a, b) => a.ordem - b.ordem)[0] || null;
+    || STATUS.filter(s => s.finalizado && s.ativo && !['cancelado', 'entregue'].includes(s.codigo)).sort((a, b) => a.ordem - b.ordem)[0] || null;
 }
+/* ---- Entregas (sql/entregas.sql): o pedido com entrega traz p.entrega (endereço, quem recebe e taxa) ---- */
+const ehEntrega = p => !!p?.entrega;
+const statusAtivo = c => STATUS.find(s => s.codigo === c && s.ativo) || null;
+/** Como o pedido termina: "Entregue" (entrega) ou "Retirado" (retirada). */
+const statusFinal = p => (ehEntrega(p) && statusAtivo('entregue')) || statusRetirado();
+/** Nome do status para este pedido: na entrega, "Pronto para retirada" vira "Pronto para entrega". */
+const nomeStatus = (p, s = statusDe(p.status)) => {
+  const nome = s.nome || p.status_nome || s.codigo || '';
+  return ehEntrega(p) ? nome.replace(/retirada/gi, 'entrega') : nome;
+};
+/** Status que valem para o pedido: a entrega não usa "Retirado"; a retirada não usa "Saiu para entrega" nem "Entregue". */
+const statusDoPedido = p => STATUS.filter(s => s.ativo && (s.codigo === p.status || (ehEntrega(p) ? s.codigo !== 'retirado' : !['em_rota', 'entregue'].includes(s.codigo))))
+  .sort((a, b) => a.ordem - b.ordem);
+/** Já saiu para entrega (ou já terminou)? */
+const jaSaiu = p => p.status === 'em_rota' || !!statusDe(p.status).finalizado;
+/** Pode sair para entrega: tem entrega, já está pronto e ainda está na loja. */
+const podeSairEntrega = p => ehEntrega(p) && !jaSaiu(p) && !!statusAtivo('em_rota') && (statusDe(p.status).ordem ?? 0) >= (statusDe('pronto').ordem ?? 0);
+const kmTxt = km => `${Number(km).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} km`;
+const telLink = t => `<a href="tel:${esc(String(t).replace(/[^\d+]/g, ''))}">${esc(formatarTel(t) || t)}</a>`;
 /** Situação do pagamento: 100% pago, parte paga (ex.: 50%) ou nada pago, e quanto falta. */
 function situacaoPagamento(p) {
   const total = Number(p.total) || 0, pago = Number(p.valor_pago) || 0;
@@ -1520,7 +1540,7 @@ function situacaoPagamento(p) {
 async function telaHoje(el) {
   hojeDia = hojeISO();
   el.innerHTML = cabecalho('Hoje', `<button type="button" class="btn ghost" data-lote-hoje title="Imprimir os pedidos de hoje: cupom de 80 mm ou etiquetas">${ic('imprimir')}Imprimir</button><button type="button" class="btn ghost" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`,
-      `${esc(dataLonga())} — retiradas do dia no balcão.`) + `
+      `${esc(dataLonga())} — retiradas e entregas do dia.`) + `
     <div class="hj-top"><div class="busca">${ic('busca')}<label class="sr" for="hjBusca">Buscar pelo nome</label>
       <input class="in" id="hjBusca" type="search" placeholder="Buscar pelo nome do cliente" value="${esc(hojeBusca)}" autocomplete="off"></div></div>
     <div class="hj-resumo" id="hjResumo" aria-live="polite"></div>
@@ -1534,13 +1554,13 @@ async function recarregarHoje(primeira = false) {
   if (hojeISO() !== hojeDia) { hojeAberto = null; return telaHoje($('#conteudo')); }
   try {
     const [r, atr] = await Promise.all([
-      api.admin.pedidos.listar({ de: hojeDia, ate: hojeDia, porPagina: 300 }),
+      api.admin.pedidos.listar({ de: hojeDia, ate: hojeDia, porPagina: 300, comEntrega: true }),
       api.admin.pedidos.listar({ antesDe: hojeDia, apenasAbertos: true, porPagina: 1 })
     ]);
     if (telaAtual !== 'hoje') return;
-    const ret = statusRetirado();
+    const fins = [statusRetirado()?.codigo, 'entregue'];
     // só confirmados em diante (quem ainda não pagou o sinal fica em Pedidos); cancelados não aparecem
-    hojeLista = r.pedidos.filter(p => (!p.finalizado || p.status === ret?.codigo) && confirmadoEmDiante(p));
+    hojeLista = r.pedidos.filter(p => (!p.finalizado || fins.includes(p.status)) && confirmadoEmDiante(p));
     hojeAtrasados = atr.total || 0;
     for (const p of hojeLista) {
       if (hojeVersao.get(p.id) !== p.atualizado_em) { hojeDetalhes.delete(p.id); hojeVersao.set(p.id, p.atualizado_em); }
@@ -1556,7 +1576,7 @@ function cartaoHoje(p) {
   return `<article class="hj ${aberto ? 'aberto' : ''} ${p.finalizado ? 'feito' : ''}" data-hj="${esc(p.id)}">
     <button type="button" class="hj-row" aria-expanded="${aberto}" aria-controls="hjd-${esc(p.id)}">
       <span class="hj-hora ${p.hora_retirada ? '' : 'sem'}">${p.hora_retirada ? esc(hora(p.hora_retirada)) : 'sem horário'}</span>
-      <span class="hj-nome"><strong>${esc(p.cliente_nome)}</strong><small>${esc(p.codigo)} · ${esc(p.status_nome)}</small></span>
+      <span class="hj-nome"><strong>${esc(p.cliente_nome)}</strong><small>${esc(p.codigo)} · ${esc(nomeStatus(p))}${ehEntrega(p) ? ` · <span class="ent-tag">${ic('entrega')}Entrega</span>` : ''}</small></span>
       <span class="hj-pg"><span class="tag ${pg.cls}">${pg.cls === 'pago' ? ic('ok') : ''}${pg.rot}</span>
         <span class="falta ${pg.falta ? '' : 'zero'}">${pg.falta ? 'Falta ' + R(pg.falta) : 'Quitado'}</span></span>
       ${ic('voltar', 'ic hj-chev')}
@@ -1573,8 +1593,12 @@ function desenharHoje() {
   const porHora = (a, b) => (a.hora_retirada || '99').localeCompare(b.hora_retirada || '99') || a.cliente_nome.localeCompare(b.cliente_nome);
   const pendentes = hojeLista.filter(p => !p.finalizado).sort(porHora);
   const feitos = hojeLista.filter(p => p.finalizado).sort(porHora);
-  $('#hjResumo').innerHTML = `<span><b>${pendentes.length}</b> para retirar</span>
-    <span><b>${feitos.length}</b> já ${esc((ret?.nome || 'retirado').toLowerCase())}${feitos.length === 1 ? '' : 's'}</span>`;
+  // com entregas no dia: "para retirar", "para entregar" e "já retirados ou entregues"
+  const comEntregas = hojeLista.some(ehEntrega), aEntregar = pendentes.filter(ehEntrega).length, aRetirar = pendentes.length - aEntregar;
+  const jaFeito = n => (comEntregas ? `retirado${n === 1 ? '' : 's'} ou entregue${n === 1 ? '' : 's'}` : `${(ret?.nome || 'retirado').toLowerCase()}${n === 1 ? '' : 's'}`);
+  $('#hjResumo').innerHTML = `${aRetirar || !aEntregar ? `<span><b>${aRetirar}</b> para retirar</span>` : ''}
+    ${aEntregar ? `<span><b>${aEntregar}</b> para entregar</span>` : ''}
+    <span><b>${feitos.length}</b> já ${esc(jaFeito(feitos.length))}</span>`;
   $('#hjAtraso').innerHTML = hojeAtrasados
     ? `<div class="aviso-box hj-atraso">${hojeAtrasados === 1 ? '1 pedido de dias anteriores ainda não foi retirado.' : `${hojeAtrasados} pedidos de dias anteriores ainda não foram retirados.`}
        <a href="#pedidos" data-filtro="atrasados">Ver</a></div>` : '';
@@ -1584,13 +1608,13 @@ function desenharHoje() {
     return;
   }
   lista.innerHTML = (pv.length ? pv.map(cartaoHoje).join('')
-      : (termo ? '' : `<div class="vazio"><h2>${feitos.length ? 'Tudo retirado por hoje' : 'Nenhuma retirada marcada para hoje'}</h2><p>${feitos.length ? 'Bom trabalho!' : 'Os pedidos com retirada hoje aparecem aqui.'}</p></div>`))
-    + (fv.length ? `<p class="hj-sec">Já ${esc((ret?.nome || 'retirado').toLowerCase())}s</p>${fv.map(cartaoHoje).join('')}` : '');
+      : (termo ? '' : `<div class="vazio"><h2>${feitos.length ? (comEntregas ? 'Tudo retirado e entregue por hoje' : 'Tudo retirado por hoje') : 'Nenhuma retirada marcada para hoje'}</h2><p>${feitos.length ? 'Bom trabalho!' : 'Os pedidos com retirada ou entrega hoje aparecem aqui.'}</p></div>`))
+    + (fv.length ? `<p class="hj-sec">Já ${esc(jaFeito(2))}</p>${fv.map(cartaoHoje).join('')}` : '');
 }
 function detalheHoje(id) {
   const p = hojeDetalhes.get(id);
   if (!p) { carregarDetalheHoje(id); return '<div class="skel" style="height:140px"></div>'; }
-  const pg = situacaoPagamento(p), ret = statusRetirado();
+  const pg = situacaoPagamento(p), ret = statusFinal(p), sair = podeSairEntrega(p);
   const itens = p.itens.map(i => {
     const det = [i.peso_kg && formatarPeso(i.peso_kg), i.massa, i.formato, i.segundo_recheio && '2º recheio: ' + i.segundo_recheio, i.faixa_preco].filter(Boolean);
     return `<div class="hj-it"><div class="l"><b>${i.quantidade}× ${esc(i.nome)}</b><span>${R(i.subtotal)}</span></div>
@@ -1599,7 +1623,7 @@ function detalheHoje(id) {
   }).join('');
   const fixadas = (p.observacoes || []).filter(o => o.fixada);
   const anterior = p.finalizado ? (p.historico || []).slice().reverse().find(h => h.status_novo === p.status)?.status_anterior : null;
-  return `<div class="hj-cols">
+  return `${ehEntrega(p) ? caixaEntregaHoje(p) : ''}<div class="hj-cols">
       <section class="hj-box"><h3>O que tem no pedido</h3>${itens}
         ${p.observacao_cliente ? `<p class="hj-nota"><b>Observação do cliente:</b> ${esc(p.observacao_cliente)}</p>` : ''}
         ${fixadas.map(o => `<p class="hj-nota fix">📌 ${esc(o.texto)}</p>`).join('')}</section>
@@ -1612,8 +1636,9 @@ function detalheHoje(id) {
       </section>
     </div>
     <div class="hj-acoes">
-      ${!p.finalizado && ret ? `<button type="button" class="btn teal retirar" data-hj-retirar="${esc(id)}">${ic('ok')}Marcar como ${esc(ret.nome.toLowerCase())}</button>` : ''}
-      ${p.finalizado && anterior ? `<button type="button" class="btn ghost" data-hj-desfazer="${esc(id)}" data-antes="${esc(anterior)}">${ic('atualizar')}Desfazer: voltar para “${esc(statusDe(anterior).nome)}”</button>` : ''}
+      ${sair ? `<button type="button" class="btn ent sair" data-hj-sair="${esc(id)}">${ic('entrega')}Sair para entrega</button>` : ''}
+      ${!p.finalizado && ret ? `<button type="button" class="btn ${sair ? 'ghost' : 'teal retirar'}" data-hj-retirar="${esc(id)}">${ic('ok')}Marcar como ${esc(ret.nome.toLowerCase())}</button>` : ''}
+      ${p.finalizado && anterior ? `<button type="button" class="btn ghost" data-hj-desfazer="${esc(id)}" data-antes="${esc(anterior)}">${ic('atualizar')}Desfazer: voltar para “${esc(nomeStatus(p, statusDe(anterior)))}”</button>` : ''}
       <button type="button" class="btn ghost" data-ped="${esc(id)}">Ver pedido completo</button>
     </div>`;
 }
@@ -1630,9 +1655,29 @@ async function carregarDetalheHoje(id) {
 }
 carregarDetalheHoje.emCurso = new Set();
 
+/** Endereço da entrega nos detalhes do dia, com a rota no Waze e no Google Maps. */
+function caixaEntregaHoje(p) {
+  const e = p.entrega, rec = quemRecebe(p), lugar = [e.bairro, e.cidade].filter(Boolean).join(' · ');
+  return `<section class="hj-box hj-ent"><h3>Entrega</h3>
+    <div class="ent-end"><b>${esc(e.endereco)}</b>${e.complemento ? `<small>${esc(e.complemento)}</small>` : ''}${lugar ? `<small>${esc(lugar)}</small>` : ''}</div>
+    <div class="lin"><span>Quem recebe</span><b>${esc(rec.nome)}</b></div>
+    ${rec.telefone ? `<div class="lin"><span>Telefone</span>${telLink(rec.telefone)}</div>` : ''}
+    <div class="lin"><span>Taxa de entrega</span><b>${Number(e.taxa) > 0 ? R(e.taxa) : 'grátis'}</b></div>
+    <div class="ent-acoes"><a class="btn sm ghost" href="${esc(linkWaze(e))}" target="_blank" rel="noopener">${ic('rota')}Waze</a>
+      <a class="btn sm ghost" href="${esc(linkMapa(e))}" target="_blank" rel="noopener">${ic('mapa')}Google Maps</a></div>
+  </section>`;
+}
 async function modalRetirar(id) {
-  const p = hojeDetalhes.get(id); const ret = statusRetirado();
-  if (!p || !ret) return;
+  const p = hojeDetalhes.get(id); if (!p) return;
+  modalConcluir(p, async r => { hojeDetalhes.set(id, r); hojeAberto = null; await recarregarHoje(); });
+}
+/**
+ * Concluir o pedido: "Retirado" (retirada) ou "Entregue" (entrega). Recebe o que falta, muda o status e avisa o cliente.
+ * depois(pedido atualizado): o que a tela que chamou faz em seguida (o Hoje recarrega a lista; a gaveta redesenha).
+ */
+async function modalConcluir(p, depois) {
+  const ret = statusFinal(p), id = p.id, naEntrega = ret?.codigo === 'entregue';
+  if (!ret) return;
   const pg = situacaoPagamento(p);
   const aviso = await campoAvisoWa(p, ret);
   const m = abrirModal({
@@ -1659,24 +1704,28 @@ async function modalRetirar(id) {
     let pgtoId = null, forma = null;
     if (pg.falta && chkDe(m, 'rtPagar')) {
       forma = valDe(m, 'rtForma');
-      const r1 = await api.admin.pedidos.registrarPagamento(id, { valor: pg.falta, forma, tipo: Number(p.valor_pago) > 0 ? 'restante' : 'outro', observacao: 'Recebido na retirada' }).catch(falhou);
+      const r1 = await api.admin.pedidos.registrarPagamento(id, { valor: pg.falta, forma, tipo: Number(p.valor_pago) > 0 ? 'restante' : 'outro', observacao: naEntrega ? 'Recebido na entrega' : 'Recebido na retirada' }).catch(falhou);
       pgtoId = (r1.pagamentos || []).find(g => !idsAntes.has(g.id))?.id || null;
     }
-    const comentario = pgtoId ? `Retirado. Restante de ${R(pg.falta).replace(/\u00a0/g, ' ')} recebido (${FORMAS[forma] || forma}).` : (pg.falta ? `Retirado com ${R(pg.falta).replace(/\u00a0/g, ' ')} ainda a receber.` : 'Retirado.');
+    const falta = R(pg.falta).replace(/\u00a0/g, ' ');
+    const comentario = pgtoId ? `${ret.nome}. Restante de ${falta} recebido (${FORMAS[forma] || forma}).` : (pg.falta ? `${ret.nome} com ${falta} ainda a receber.` : `${ret.nome}.`);
     const r2 = await api.admin.pedidos.alterarStatus(id, ret.codigo, comentario).catch(falhou);
     wa.enviar();
     m.fechar();
-    hojeDetalhes.set(id, r2); hojeAberto = null;
-    toast(`${p.cliente_nome} (${p.codigo}): ${ret.nome.toLowerCase()}${pgtoId ? ' e pago' : ''}.`, { acao: { rotulo: 'Desfazer', fn: () => desfazerRetirada(id, antes, pgtoId) } });
-    await recarregarHoje(); atualizarBadge();
+    toast(`${p.cliente_nome} (${p.codigo}): ${ret.nome.toLowerCase()}${pgtoId ? ' e pago' : ''}.`,
+      { acao: { rotulo: 'Desfazer', fn: () => desfazerRetirada(id, antes, pgtoId, null, naEntrega ? 'Entrega desfeita.' : 'Retirada desfeita.') } });
+    await depois?.(r2); atualizarBadge();
   }));
 }
-async function desfazerRetirada(id, statusAntes, pgtoId, btn = null) {
+/** Desfaz a conclusão (ou a saída para entrega): volta o status e apaga o pagamento recebido na hora, se houver. */
+async function desfazerRetirada(id, statusAntes, pgtoId, btn = null, comentario = 'Retirada desfeita.') {
   await ocupado(btn, async () => {
     if (pgtoId) await api.admin.pedidos.removerPagamento(pgtoId);
-    const r = await api.admin.pedidos.alterarStatus(id, statusAntes, 'Retirada desfeita.');
+    const r = await api.admin.pedidos.alterarStatus(id, statusAntes, comentario);
     hojeDetalhes.set(id, r);
-    toast(`Voltou para “${statusDe(statusAntes).nome}”.`);
+    toast(`Voltou para “${nomeStatus(r, statusDe(statusAntes))}”.`);
+    if (gavetaAbertaId === id && $('#gaveta')?.classList.contains('on')) renderGaveta(r);
+    precisaRecarregar = true;
     await recarregarHoje(); atualizarBadge();
   });
 }
@@ -1684,8 +1733,18 @@ document.addEventListener('click', e => {
   if (telaAtual !== 'hoje' || !e.target.closest('#hjLista')) return;
   const ret = e.target.closest('[data-hj-retirar]');
   if (ret) { modalRetirar(ret.dataset.hjRetirar); return; }
+  const sair = e.target.closest('[data-hj-sair]');
+  if (sair) {
+    const p = hojeDetalhes.get(sair.dataset.hjSair);
+    if (p) modalSairEntrega(p, async r => { hojeDetalhes.set(p.id, r); await recarregarHoje(); });
+    return;
+  }
   const des = e.target.closest('[data-hj-desfazer]');
-  if (des) { desfazerRetirada(des.dataset.hjDesfazer, des.dataset.antes, null, des); return; }
+  if (des) {
+    const id = des.dataset.hjDesfazer;
+    desfazerRetirada(id, des.dataset.antes, null, des, ehEntrega(hojeDetalhes.get(id)) ? 'Entrega desfeita.' : 'Retirada desfeita.');
+    return;
+  }
   const row = e.target.closest('.hj-row'); if (!row) return;
   const id = row.closest('[data-hj]').dataset.hj;
   hojeAberto = hojeAberto === id ? null : id;
@@ -1900,7 +1959,7 @@ async function carregarPedidos(mais = false, silencioso = false) {
   if (!mais && !silencioso) lista.innerHTML = '<div class="skel"></div>'.repeat(3);
   const pedido = ++carregarPedidos.n;
   try {
-    const f = { ...consultaPedidos(), pagina: mais ? paginaPedidos + 1 : 1 };
+    const f = { ...consultaPedidos(), pagina: mais ? paginaPedidos + 1 : 1, comEntrega: true };
     if (silencioso && !mais) f.porPagina = Math.max(30, listaPedidos.length);
     const r = await api.admin.pedidos.listar(f);
     if (pedido !== carregarPedidos.n || !$('#listaPed')) return;
@@ -1950,7 +2009,7 @@ async function recarregarGaveta() {
 function proximoStatus(p) {
   const atual = statusDe(p.status);
   if (atual.finalizado) return null;
-  return STATUS.filter(s => s.ativo && s.ordem > (atual.ordem ?? 0) && s.codigo !== 'cancelado').sort((a, b) => a.ordem - b.ordem)[0] || null;
+  return statusDoPedido(p).find(s => s.ordem > (atual.ordem ?? 0) && s.codigo !== 'cancelado') || null;
 }
 /* ---- Imagem de referência do item (topper): vem do site na observação, como "Referência: <link>" ---- */
 function itemReferencia(i) {
@@ -2092,6 +2151,10 @@ function cupomTermica(p, loja, pix) {
       ${texto ? `<div class="d ob">Obs: ${esc(texto)}</div>` : ''}${imagem ? '<div class="d ob">* Imagem de referência anexada (ver no sistema)</div>' : ''}</div>`;
   }).join('<div class="sep fino"></div>');
   const fixadas = (p.observacoes || []).filter(o => o.fixada);
+  const e = p.entrega, rec = e ? quemRecebe(p) : null;
+  const entrega = e ? `<div class="box"><b>Entregar em</b>${esc(e.endereco)}${e.complemento ? `<br>${esc(e.complemento)}` : ''}
+      ${[e.bairro, e.cidade].filter(Boolean).length ? `<br>${esc([e.bairro, e.cidade].filter(Boolean).join(' - '))}` : ''}${e.cep ? `<br>CEP ${esc(formatarCep(e.cep))}` : ''}
+      <br>Recebe: ${esc(rec.nome)}${rec.telefone ? ` · ${esc(formatarTel(rec.telefone) || rec.telefone)}` : ''}</div>` : '';
   return `<section class="cupom">
     <div class="c loja">${esc(loja.nome_loja || 'Rita Bolos')}</div>
     <div class="c sub">${esc(loja.slogan || 'Bolos e sobremesas')}</div>
@@ -2101,13 +2164,14 @@ function cupomTermica(p, loja, pix) {
     <div><b>Cliente:</b> ${esc(p.cliente_nome)}</div>
     ${p.cliente_telefone ? `<div><b>Tel.:</b> ${esc(formatarTel(p.cliente_telefone) || p.cliente_telefone)}</div>` : ''}
     <div><b>Situação:</b> ${esc(p.status_nome || p.status)}</div>
-    <div class="ret"><small>RETIRADA</small><b>${esc(dataCurta(p.data_retirada).toUpperCase())}</b><b>${esc(formatarData(p.data_retirada))}${p.hora_retirada ? ' às ' + esc(hora(p.hora_retirada)) : ''}</b></div>
+    <div class="ret"><small>${e ? 'ENTREGA' : 'RETIRADA'}</small><b>${esc(dataCurta(p.data_retirada).toUpperCase())}</b><b>${esc(formatarData(p.data_retirada))}${p.hora_retirada ? ' às ' + esc(hora(p.hora_retirada)) : ''}</b></div>
+    ${entrega}
     <div class="t">ITENS</div>${itens}
     <div class="sep forte"></div>
-    ${l('Subtotal', R(p.subtotal))}${Number(p.desconto) > 0 ? l('Desconto', '- ' + R(p.desconto)) : ''}
+    ${l('Subtotal', R(p.subtotal))}${Number(p.desconto) > 0 ? l('Desconto', '- ' + R(p.desconto)) : ''}${e ? l('Entrega', Number(e.taxa) > 0 ? '+ ' + R(e.taxa) : 'grátis') : ''}
     ${l('TOTAL', R(p.total), 'tot')}
     ${l(`Sinal (${pct}%)`, R(p.valor_sinal))}${l('Pago', R(p.valor_pago))}
-    ${l(falta > 0 ? 'FALTA PAGAR' : 'PAGO', falta > 0 ? R(falta) : 'OK', 'falta')}
+    ${l(falta > 0 ? (e ? 'RECEBER NA ENTREGA' : 'FALTA PAGAR') : 'PAGO', falta > 0 ? R(falta) : 'OK', 'falta')}
     ${p.observacao_cliente ? `<div class="box"><b>Observação do cliente</b>${esc(p.observacao_cliente)}</div>` : ''}
     ${fixadas.length ? `<div class="box"><b>Anotações</b>${fixadas.map(o => esc(o.texto)).join('<br>')}</div>` : ''}
     ${falta > 0 && pix ? `<div class="box pix"><b>Pix${pix.tipo ? ` (${esc(pix.tipo)})` : ''}</b><span class="k">${esc(pix.chave)}</span>${esc(pix.nome)}</div>` : ''}
@@ -2408,8 +2472,11 @@ function desenharEtiquetaPedido(k, p, loja) {
   if (nLinhas && itens) { g.font = fonte(fI, 700); quebrar(itens, largura, nLinhas).forEach((l, i) => escrever(l, M, y + mm(0.6) + (i + 1) * entre - fI * 0.2)); }
   const fPg = encaixar(pagto, fP, 900, largura * 0.62);
   g.font = fonte(fPg, 900); escrever(pagto, W - M, rodape, 'right');
-  const nomeLoja = loja.nome_loja || 'Rita Bolos';
-  if (medir(nomeLoja, mm(2.4), 700) <= largura - medir(pagto, fPg, 900) - mm(2)) { g.font = fonte(mm(2.4), 700); escrever(nomeLoja, M, rodape); }   // só se couber inteiro
+  // embaixo, à esquerda: o nome da loja; num pedido com entrega, "ENTREGA" e o bairro (o que couber inteiro)
+  const peso = p.entrega ? 900 : 700;
+  const rotulos = p.entrega ? [p.entrega.bairro ? `ENTREGA · ${p.entrega.bairro}` : '', 'ENTREGA'].filter(Boolean) : [loja.nome_loja || 'Rita Bolos'];
+  const rotulo = rotulos.find(t => medir(t, mm(2.4), peso) <= largura - medir(pagto, fPg, 900) - mm(2));
+  if (rotulo) { g.font = fonte(mm(2.4), peso); escrever(rotulo, M, rodape); }
 }
 /** O que vai na etiqueta de um bolo, já em texto. */
 function textosEtiquetaBolo({ p, item: i, n, total, topos = [], fins = [] }) {
@@ -2835,31 +2902,35 @@ function renderGaveta(p) {
         ${isAdmin() ? `<button type="button" class="btn sm ghost" data-gav="prejuizo">${ic('alerta')}Lançar prejuízo</button>` : ''}
       </div>
 
-      <section class="card"><div class="card-h"><h2>Status</h2>${pill(p.status_nome, p.status_cor)}</div>
-        <div class="status-sel" role="group" aria-label="Mudar status">${STATUS.filter(s => s.ativo).sort((a, b) => a.ordem - b.ordem).map(s => {
+      <section class="card"><div class="card-h"><h2>Status</h2>${pill(nomeStatus(p), p.status_cor)}</div>
+        <div class="status-sel" role="group" aria-label="Mudar status">${statusDoPedido(p).map(s => {
           const atual = s.codigo === p.status;
-          return `<button type="button" class="st-btn" data-status="${esc(s.codigo)}" ${atual ? `aria-current="true" style="background:${esc(s.cor)};color:${corTexto(s.cor)}"` : ''}><span class="dot" style="background:${esc(s.cor)}"></span>${esc(s.nome)}</button>`;
+          return `<button type="button" class="st-btn" data-status="${esc(s.codigo)}" ${atual ? `aria-current="true" style="background:${esc(s.cor)};color:${corTexto(s.cor)}"` : ''}><span class="dot" style="background:${esc(s.cor)}"></span>${esc(nomeStatus(p, s))}</button>`;
         }).join('')}</div>
-        ${prox ? `<button type="button" class="btn teal block prox" data-status="${esc(prox.codigo)}">${ic('ok')}Avançar para “${esc(prox.nome)}”</button>` : ''}
+        ${prox ? (prox.codigo === 'em_rota' && ehEntrega(p)
+          ? `<button type="button" class="btn ent block prox" data-status="em_rota">${ic('entrega')}Sair para entrega</button>`
+          : `<button type="button" class="btn teal block prox" data-status="${esc(prox.codigo)}">${ic('ok')}Avançar para “${esc(nomeStatus(p, prox))}”</button>`) : ''}
       </section>
 
-      <section class="card"><div class="card-h"><h2>Retirada</h2></div>
+      ${ehEntrega(p) ? cartaoEntrega(p) : `<section class="card"><div class="card-h"><h2>Retirada</h2></div>
         <dl class="kv">
           <dt>Data</dt><dd>${esc(formatarData(p.data_retirada))} (${esc(dataCurta(p.data_retirada))})</dd>
           <dt>Horário</dt><dd>${p.hora_retirada ? esc(hora(p.hora_retirada)) : 'não informado'}</dd>
           <dt>Cliente</dt><dd>${esc(p.cliente_nome)}</dd>
-          <dt>Telefone</dt><dd>${p.cliente_telefone ? `<a href="tel:${esc(String(p.cliente_telefone).replace(/[^\d+]/g, ''))}">${esc(formatarTel(p.cliente_telefone) || p.cliente_telefone)}</a>` : 'não informado'}</dd>
+          <dt>Telefone</dt><dd>${p.cliente_telefone ? telLink(p.cliente_telefone) : 'não informado'}</dd>
         </dl>
         ${p.observacao_cliente ? `<div class="cliente-obs"><b>Observação do cliente:</b> ${esc(p.observacao_cliente)}</div>` : ''}
-      </section>
+        ${statusDe(p.status).finalizado ? '' : `<div class="ent-add"><span>Vai ser entregue?</span><button type="button" class="btn sm ghost" data-gav="entrega">${ic('entrega')}Incluir entrega</button></div>`}
+      </section>`}
 
       <section class="card"><div class="card-h"><h2>Itens</h2><span class="tag cinza">${p.itens.length} ${p.itens.length === 1 ? 'item' : 'itens'}</span></div>${itens}</section>
 
       <section class="card valores"><div class="card-h"><h2>Valores</h2><button type="button" class="btn sm teal" data-gav="pagar">${ic('moeda')}Registrar pagamento</button></div>
         <div class="lin"><span>Subtotal</span><span>${R(p.subtotal)}</span></div>
         ${Number(p.desconto) > 0 ? `<div class="lin"><span>Desconto</span><span>− ${R(p.desconto)}</span></div>` : ''}
+        ${ehEntrega(p) ? `<div class="lin"><span>Entrega</span><span>${Number(p.entrega.taxa) > 0 ? '+ ' + R(p.entrega.taxa) : 'grátis'}</span></div>` : ''}
         <div class="lin tot"><span>Total</span><span>${R(p.total)}</span></div>
-        <div class="lin"><span>Sinal (${Number(p.percentual_sinal).toLocaleString('pt-BR')}%)</span><span>${R(p.valor_sinal)}</span></div>
+        <div class="lin"><span>Sinal (${Number(p.percentual_sinal).toLocaleString('pt-BR')}%${Number(p.entrega?.taxa) > 0 ? ' dos produtos' : ''})</span><span>${R(p.valor_sinal)}</span></div>
         <div class="lin"><span>Pago</span><span>${R(p.valor_pago)}</span></div>
         <div class="lin ${quitado ? 'quit' : 'saldo'}"><span>${quitado ? 'Quitado' : 'Falta receber'}</span><span>${quitado ? ic('ok') : R(p.saldo)}</span></div>
         ${p.pagamentos.length ? `<div style="margin-top:10px">${p.pagamentos.map(g2 => `<div class="pgto"><span><b>${R(g2.valor)}</b> · ${esc(FORMAS[g2.forma] || g2.forma)} · ${esc(TIPOS_PGTO[g2.tipo] || g2.tipo)}
@@ -2911,12 +2982,21 @@ async function acaoGaveta(btn, fn) {
 document.addEventListener('click', async e => {
   const g = $('#gaveta'); if (!g || !g.contains(e.target)) return;
   const st = e.target.closest('[data-status]');
-  if (st && pedidoAtual) { modalStatus(pedidoAtual, st.dataset.status); return; }
+  if (st && pedidoAtual) {
+    const p = pedidoAtual, codigo = st.dataset.status;
+    const depois = r => { renderGaveta(r); precisaRecarregar = true; };
+    // sair para entrega: aviso para quem recebe e a rota; terminar (retirado ou entregue): recebe o que falta
+    if (codigo === 'em_rota' && ehEntrega(p) && codigo !== p.status) modalSairEntrega(p, depois);
+    else if (codigo === statusFinal(p)?.codigo && codigo !== p.status) modalConcluir(p, depois);
+    else modalStatus(p, codigo);
+    return;
+  }
   const b = e.target.closest('[data-gav]'); if (!b) return;
   const p = pedidoAtual;
   switch (b.dataset.gav) {
     case 'fechar': fecharGaveta(); break;
     case 'editar': modalEditarPedido(p); break;
+    case 'entrega': modalEntrega(p); break;
     case 'pagar': modalPagamento(p); break;
     case 'prejuizo': modalPrejuizo(p); break;
     case 'termica': imprimirTermica(p); break;
@@ -2959,10 +3039,15 @@ document.addEventListener('click', async e => {
 async function urlReciboCliente(p) {
   return linkRecibo(p.token, (await configLoja())?.url_site || RAIZ_SITE) + (DEMO ? '&demo' : '');
 }
+/** Quem recebe o aviso: "Saiu para entrega" vai para quem recebe a entrega; os outros status, para o cliente. */
+const contatoAviso = (p, status) => ((status?.codigo || status) === 'em_rota' && ehEntrega(p) ? quemRecebe(p) : { nome: p.cliente_nome, telefone: p.cliente_telefone });
 /** Campo do modal de status: "Avisar no WhatsApp" + mensagem editável. */
 async function campoAvisoWa(p, status) {
-  if (!telefoneWa(p.cliente_telefone)) return `<p class="dica" style="margin:14px 0 0">Este pedido não tem o WhatsApp do cliente, então ninguém será avisado. Para avisar, inclua o telefone editando o pedido.</p>`;
-  const nome = String(p.cliente_nome || '').trim().split(/\s+/)[0] || 'o cliente';
+  const quem = contatoAviso(p, status);
+  if (!telefoneWa(quem.telefone)) return `<p class="dica" style="margin:14px 0 0">${(status?.codigo || status) === 'em_rota'
+    ? 'Sem o WhatsApp de quem recebe, ninguém será avisado. Para avisar, inclua o telefone na entrega.'
+    : 'Este pedido não tem o WhatsApp do cliente, então ninguém será avisado. Para avisar, inclua o telefone editando o pedido.'}</p>`;
+  const nome = String(quem.nome || '').trim().split(/\s+/)[0] || 'o cliente';
   const msg = montarMensagemStatus(p, status, await urlReciboCliente(p), await configLoja());
   return `<div style="margin-top:14px">${inChk('avWa', `Avisar ${esc(nome)} no WhatsApp`, true)}
     <div id="avWaBox" style="margin-top:6px">${inTa('avWaMsg', 'Mensagem <span style="font-weight:400;color:var(--ink-3)">(pode editar antes de enviar)</span>', msg, { attrs: 'maxlength="2000" style="min-height:170px"' })}</div></div>`;
@@ -2973,14 +3058,14 @@ function ligarAvisoWa(m, rotulo) {
   const atualizar = () => { m.$('#avWaBox').hidden = !chk.checked; bt.innerHTML = chk.checked ? `${ic('wa')}${esc(rotulo)} e avisar` : original; };
   chk.addEventListener('change', atualizar); atualizar();
 }
-/** Chamar direto no clique, antes de qualquer await: já deixa a aba do WhatsApp aberta. */
-function avisoWa(m, p) {
-  const wa = telefoneWa(p.cliente_telefone), msg = valDe(m, 'avWaMsg');
+/** Chamar direto no clique, antes de qualquer await: já deixa a aba do WhatsApp aberta. status: o novo (define quem recebe o aviso). */
+function avisoWa(m, p, status = null) {
+  const quem = contatoAviso(p, status), wa = telefoneWa(quem.telefone), msg = valDe(m, 'avWaMsg');
   if (!wa || !chkDe(m, 'avWa') || !msg) return { enviar() {}, cancelar() {} };
   const aba = prepararAba(), url = linkWhatsApp(wa, msg);
   return {
     enviar() {
-      if (!aba.ir(url)) toast(`O navegador bloqueou o WhatsApp. Avise ${p.cliente_nome} por aqui:`, { acao: { rotulo: 'Abrir WhatsApp', fn: () => abrirWhatsApp(url) } });
+      if (!aba.ir(url)) toast(`O navegador bloqueou o WhatsApp. Avise ${quem.nome} por aqui:`, { acao: { rotulo: 'Abrir WhatsApp', fn: () => abrirWhatsApp(url) } });
     },
     cancelar() { aba.fechar(); }
   };
@@ -3003,13 +3088,18 @@ function modelosMensagem(p, urlRecibo, pix) {
   const saldo = Math.max(0, Number(p.saldo) || 0);
   const faltaSinal = Math.max(0, Math.round((Number(p.valor_sinal) - Number(p.valor_pago)) * 100) / 100);
   const itens = (p.itens || []).map(i => `• ${i.quantidade}× ${i.nome}${i.peso_kg ? ' ' + formatarPeso(i.peso_kg) : ''}`).join('\n');
-  const st = statusDe(p.status);
+  const st = statusDe(p.status), e = p.entrega;
   const modelos = [
     { id: 'oi', rot: 'Saudação', txt: `${ola}\n\nEstou falando sobre o seu pedido ${ped}.` },
     faltaSinal > 0 && !st.finalizado && { id: 'sinal', rot: 'Lembrar do sinal', txt: `${ola}\n\nPara confirmar o seu pedido ${ped}, falta o sinal de *${v(faltaSinal)}*. Pode mandar o comprovante por aqui mesmo.${comPix}\n\nAgradecemos!` },
-    !st.finalizado && { id: 'retirada', rot: 'Lembrar da retirada', txt: `${ola}\n\nPassando para lembrar: a retirada do seu pedido ${ped} é ${quando}.\n\n${itens}${saldo > 0 ? `\n\nNa retirada, falta pagar *${v(saldo)}*.` : ''}` },
-    !st.finalizado && { id: 'pronto', rot: 'Pedido pronto', txt: `${ola}\n\nSeu pedido ${ped} está *pronto para retirada*!${p.hora_retirada || d ? ` Combinamos ${quando}.` : ''}${saldo > 0 ? `\n\nFalta pagar *${v(saldo)}*: pode ser na retirada.` : '\n\nEstá tudo pago, é só vir buscar.'}` },
-    saldo > 0 && faltaSinal <= 0 && { id: 'saldo', rot: 'Saldo a pagar', txt: `${ola}\n\nO restante do seu pedido ${ped} é *${v(saldo)}*. Pode pagar na retirada ou mandar o comprovante por aqui.${comPix}` },
+    !st.finalizado && (e
+      ? { id: 'retirada', rot: 'Lembrar da entrega', txt: `${ola}\n\nPassando para lembrar: a entrega do seu pedido ${ped} é ${quando}.\n*Endereço:* ${textoEndereco(e)}\n\n${itens}${saldo > 0 ? `\n\nNa entrega, falta pagar *${v(saldo)}*.` : ''}` }
+      : { id: 'retirada', rot: 'Lembrar da retirada', txt: `${ola}\n\nPassando para lembrar: a retirada do seu pedido ${ped} é ${quando}.\n\n${itens}${saldo > 0 ? `\n\nNa retirada, falta pagar *${v(saldo)}*.` : ''}` }),
+    !st.finalizado && e && { id: 'endereco', rot: 'Confirmar endereço', txt: `${ola}\n\nPara a entrega do seu pedido ${ped} (${quando}), pode confirmar o endereço?\n\n*${textoEndereco(e)}*${e.cep ? `\nCEP ${formatarCep(e.cep)}` : ''}\nQuem recebe: ${quemRecebe(p).nome}` },
+    !st.finalizado && (e
+      ? { id: 'pronto', rot: 'Pedido pronto', txt: `${ola}\n\nSeu pedido ${ped} está *pronto* e logo sai para entrega!${saldo > 0 ? `\n\nNa entrega, falta pagar *${v(saldo)}*.` : '\n\nEstá tudo pago.'}` }
+      : { id: 'pronto', rot: 'Pedido pronto', txt: `${ola}\n\nSeu pedido ${ped} está *pronto para retirada*!${p.hora_retirada || d ? ` Combinamos ${quando}.` : ''}${saldo > 0 ? `\n\nFalta pagar *${v(saldo)}*: pode ser na retirada.` : '\n\nEstá tudo pago, é só vir buscar.'}` }),
+    saldo > 0 && faltaSinal <= 0 && { id: 'saldo', rot: 'Saldo a pagar', txt: `${ola}\n\nO restante do seu pedido ${ped} é *${v(saldo)}*. Pode pagar ${e ? 'na entrega' : 'na retirada'} ou mandar o comprovante por aqui.${comPix}` },
     urlRecibo && { id: 'recibo', rot: 'Enviar recibo', txt: `${ola}\n\nAqui está o recibo do seu pedido ${ped}, com os itens e os valores:\n${urlRecibo}` },
     { id: 'livre', rot: 'Escrever do zero', txt: `${ola}\n\n` }
   ].filter(Boolean);
@@ -3068,7 +3158,7 @@ async function modalStatus(p, codigo) {
   m.$('[data-ok]').addEventListener('click', ev => {
     const com = valDe(m, 'stCom');
     const sinal = faltaSinal > 0 && chkDe(m, 'stSinal'), forma = valDe(m, 'stForma') || 'pix';
-    const wa = avisoWa(m, p);   // abre a aba do WhatsApp ainda no clique
+    const wa = avisoWa(m, p, s);   // abre a aba do WhatsApp ainda no clique
     m.fechar();
     acaoGaveta(null, async () => {
       if (sinal) await api.admin.pedidos.registrarPagamento(p.id, { valor: faltaSinal, forma, tipo: 'sinal', observacao: 'Registrado ao confirmar o pedido' })
@@ -3109,6 +3199,192 @@ function modalPagamento(p) {
       toast(`Pagamento de ${R(v)} registrado.`);
       return r;
     });
+  }));
+}
+
+/* =========================================================
+   ENTREGAS (sql/entregas.sql)
+   Pedido com entrega: endereço, quem recebe e a taxa, que entra no total.
+   A taxa sai da distância de carro (regra em Ajustes > Loja > Entrega) ou é
+   digitada. "Sair para entrega" muda o status, avisa quem recebe no WhatsApp
+   e deixa a rota do Waze a um toque.
+========================================================= */
+/** Cartão "Entrega" da gaveta (no lugar do cartão "Retirada"). */
+function cartaoEntrega(p) {
+  const e = p.entrega, rec = quemRecebe(p), fim = statusFinal(p);
+  const lugar = [e.bairro, e.cidade, e.cep && `CEP ${formatarCep(e.cep)}`].filter(Boolean).join(' · ');
+  const distancia = e.distancia_km != null ? ` <span style="color:var(--ink-3);font-weight:400">(${esc(kmTxt(e.distancia_km))}${e.duracao_min ? `, uns ${e.duracao_min} min` : ''})</span>` : '';
+  return `<section class="card ent-card"><div class="card-h"><h2>${ic('entrega')}Entrega</h2>
+      <button type="button" class="btn sm ghost" data-gav="entrega">${ic('editar')}Editar</button></div>
+    <div class="ent-end"><b>${esc(e.endereco)}</b>${e.complemento ? `<small>${esc(e.complemento)}</small>` : ''}${lugar ? `<small>${esc(lugar)}</small>` : ''}</div>
+    <dl class="kv">
+      <dt>Data</dt><dd>${esc(formatarData(p.data_retirada))} (${esc(dataCurta(p.data_retirada))})</dd>
+      <dt>Horário</dt><dd>${p.hora_retirada ? esc(hora(p.hora_retirada)) : 'não informado'}</dd>
+      <dt>Quem recebe</dt><dd>${esc(rec.nome)}</dd>
+      <dt>Telefone</dt><dd>${rec.telefone ? telLink(rec.telefone) : 'não informado'}</dd>
+      ${rec.outraPessoa ? `<dt>Cliente</dt><dd>${esc(p.cliente_nome)}${p.cliente_telefone ? ' · ' + telLink(p.cliente_telefone) : ''}</dd>` : ''}
+      <dt>Taxa de entrega</dt><dd>${Number(e.taxa) > 0 ? R(e.taxa) : 'grátis'}${distancia}</dd>
+    </dl>
+    ${p.observacao_cliente ? `<div class="cliente-obs"><b>Observação do cliente:</b> ${esc(p.observacao_cliente)}</div>` : ''}
+    <div class="ent-acoes">
+      ${podeSairEntrega(p) ? `<button type="button" class="btn ent sair" data-status="em_rota">${ic('entrega')}Sair para entrega</button>` : ''}
+      ${p.status === 'em_rota' && fim ? `<button type="button" class="btn teal sair" data-status="${esc(fim.codigo)}">${ic('ok')}Marcar como ${esc(fim.nome.toLowerCase())}</button>` : ''}
+      <a class="btn ghost" href="${esc(linkWaze(e))}" target="_blank" rel="noopener">${ic('rota')}Abrir no Waze</a>
+      <a class="btn ghost" href="${esc(linkMapa(e))}" target="_blank" rel="noopener">${ic('mapa')}Google Maps</a>
+    </div>
+  </section>`;
+}
+/** A regra da taxa em palavras (Ajustes > Loja > Entrega). */
+function regraTaxaTxt(c) {
+  const min = Number(c?.entrega_taxa_minima) || 0, inc = Number(c?.entrega_km_incluidos) || 0, porKm = Number(c?.entrega_valor_km) || 0, raio = Number(c?.entrega_raio_km) || 0;
+  const partes = [min && `${R(min)}${inc ? ` até ${kmTxt(inc)}` : ''}`, porKm && `${R(porKm)} por km${min || inc ? ' a mais' : ''}`].filter(Boolean);
+  return `Regra: ${partes.join(' + ') || 'sem valores'}, arredondado para cima${raio ? `; entrega até ${kmTxt(raio)}` : ''}.`;
+}
+/** O que a busca no mapa achou: o número da casa, a rua, o CEP ou só o bairro. */
+const NIVEIS_MAPA = { numero: '', exato: '', rua: 'pela rua: o número da casa não está no mapa', cep: 'pelo CEP, aproximado', bairro: 'só pelo bairro: confira a taxa' };
+/** Incluir ou mudar a entrega: endereço (o CEP preenche o resto), quem recebe e a taxa (pela distância ou digitada). */
+async function modalEntrega(p) {
+  if (!await api.admin.entregas.disponivel().catch(() => false)) {
+    abrirModal({ titulo: 'Entregas',
+      corpo: '<div class="aviso-box" style="margin:0">Para registrar entregas, rode no Supabase o arquivo <code>sql/entregas.sql</code> (SQL Editor &gt; New query &gt; cole tudo &gt; Run) e recarregue esta página.</div>',
+      rodape: '<button type="button" class="btn primary" data-fechar>Entendi</button>' });
+    return;
+  }
+  const cfg = await configLoja();
+  const e = p.entrega || {}, novo = !p.entrega;
+  // no primeiro endereço, a cidade da loja já vem preenchida ("..., Campinas - SP")
+  const cidadeLoja = novo ? String(cfg?.entrega_origem || '').split(',').map(x => x.trim()).filter(x => /[a-zà-ú]/i.test(x)).pop() || '' : '';
+  const podeCalcular = !!origemEntrega(cfg) && temRegraEntrega(cfg);
+  let medida = e.distancia_km != null ? { km: Number(e.distancia_km), minutos: e.duracao_min ?? null } : null;   // vale enquanto o endereço não muda
+  const m = abrirModal({
+    titulo: novo ? 'Incluir entrega' : 'Entrega',
+    corpo: `<p class="dica" style="margin:0 0 12px;color:var(--ink-3)">${esc(p.codigo)} · ${esc(p.cliente_nome)} · ${esc(dataCurta(p.data_retirada))}${p.hora_retirada ? ' às ' + esc(hora(p.hora_retirada)) : ''}</p>
+      <div class="grid2">${inTxt('enCep', 'CEP', formatarCep(e.cep), { attrs: 'inputmode="numeric" maxlength="9" autocomplete="off" placeholder="00000-000"', dica: 'Preenche a rua, o bairro e a cidade.' })}
+        ${inTxt('enCidade', 'Cidade', e.cidade || cidadeLoja, { attrs: 'maxlength="80" placeholder="Ex.: Campinas - SP"' })}</div>
+      ${inTxt('enRua', 'Rua e número', e.endereco || '', { attrs: 'maxlength="200" autocomplete="off" placeholder="Ex.: Rua das Flores, 123"' })}
+      <div class="grid2">${inTxt('enBairro', 'Bairro', e.bairro || '', { attrs: 'maxlength="80"' })}
+        ${inTxt('enComp', 'Complemento ou referência', e.complemento || '', { attrs: 'maxlength="160" placeholder="Apto, bloco, portão…"' })}</div>
+      <p class="secao-t">Quem recebe</p>
+      <div class="grid2">${inTxt('enNome', 'Nome', e.recebedor_nome || p.cliente_nome || '', { attrs: 'maxlength="120"' })}
+        ${inTxt('enTel', 'WhatsApp', formatarTel(e.recebedor_telefone || p.cliente_telefone) || '', { attrs: ATTR_TEL })}</div>
+      <p class="dica" style="margin:-6px 0 0">Num presente, coloque quem vai receber: o aviso de “saiu para entrega” vai para esse número.</p>
+      <p class="secao-t">Taxa de entrega</p>
+      <div class="ent-calc">${inDin('enTaxa', 'Valor cobrado do cliente', e.taxa ?? '')}
+        <button type="button" class="btn ghost" data-calc ${podeCalcular ? '' : 'disabled'}>${ic('rota')}Calcular pela distância</button></div>
+      <div id="enRes" aria-live="polite">${podeCalcular
+        ? (medida ? `<p class="ent-res">${esc(kmTxt(medida.km))} de carro${medida.minutos ? `, uns ${medida.minutos} min` : ''} (último cálculo).</p>` : '')
+        : '<p class="ent-res aviso">Para calcular pela distância, preencha o endereço da loja e a regra da taxa em Ajustes &gt; Loja &gt; Entrega. Até lá, digite o valor.</p>'}</div>`,
+    rodape: `${novo ? '' : `<button type="button" class="btn danger esq" data-tirar>${ic('lixo')}Tirar entrega</button>`}<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>${novo ? 'Incluir entrega' : 'Salvar entrega'}</button>`
+  });
+  const res = m.$('#enRes');
+  const endereco = () => ({ cep: valDe(m, 'enCep').replace(/\D/g, ''), endereco: valDe(m, 'enRua').replace(/[\s,]+$/, ''), complemento: valDe(m, 'enComp'),
+    bairro: valDe(m, 'enBairro'), cidade: valDe(m, 'enCidade') });
+  const mudouEndereco = () => { if (medida) { medida = null; res.innerHTML = ''; } };   // a distância calculada era de outro endereço
+  ['enRua', 'enBairro', 'enCidade'].forEach(id => m.$('#' + id).addEventListener('input', mudouEndereco));
+  // CEP: com os 8 números, preenche rua, bairro e cidade; o cursor vai para o número da casa
+  const cep = m.$('#enCep');
+  let cepBuscado = String(e.cep || '');
+  cep.addEventListener('input', async () => {
+    const d = cep.value.replace(/\D/g, '').slice(0, 8);
+    cep.value = d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
+    mudouEndereco();
+    if (d.length !== 8 || d === cepBuscado) return;
+    cepBuscado = d;
+    try {
+      const r = await buscarCep(d);
+      if (cep.value.replace(/\D/g, '') !== d) return;   // mudou enquanto buscava
+      if (!r) { toast('CEP não encontrado. Confira os números ou preencha o endereço à mão.', { tipo: 'erro' }); return; }
+      const rua = m.$('#enRua');
+      if (r.endereco && !rua.value.toLowerCase().startsWith(r.endereco.toLowerCase())) rua.value = r.endereco + ', ';
+      if (r.bairro) m.$('#enBairro').value = r.bairro;
+      if (r.cidade) m.$('#enCidade').value = r.cidade;
+      if (r.endereco) { rua.focus(); rua.setSelectionRange(rua.value.length, rua.value.length); }
+    } catch (err) { toast(err.message, { tipo: 'erro' }); }
+  });
+  m.$('[data-calc]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    const end = endereco();
+    if (!end.endereco && !end.bairro) { m.$('#enRua').focus(); throw new Error('Preencha o endereço para calcular.'); }
+    res.innerHTML = '<p class="ent-res">Procurando o endereço no mapa…</p>';
+    try {
+      const r = await calcularTaxaEntrega(end, cfg);
+      medida = { km: r.km, minutos: r.aproximado ? null : r.minutos };
+      m.$('#enTaxa').value = valorTxt(r.taxa);
+      m.$('#enTaxa').removeAttribute('aria-invalid');
+      const onde = NIVEIS_MAPA[r.nivel] ? ` (${NIVEIS_MAPA[r.nivel]})` : '';
+      res.innerHTML = `<p class="ent-res ${r.foraDoRaio || r.nivel === 'bairro' ? 'aviso' : ''}"><b>${esc(kmTxt(r.km))}</b> de carro${r.aproximado ? ' (estimado: o serviço de rotas não respondeu)' : `, uns ${r.minutos} min`}: taxa de <b>${R(r.taxa)}</b>.
+        ${r.foraDoRaio ? `<br><b>Passa de ${esc(kmTxt(cfg.entrega_raio_km))}</b>, o limite de entrega da regra. Confirme antes de aceitar.` : ''}
+        <small>No mapa: ${esc(r.local.nome)}${esc(onde)} · <a href="https://www.google.com/maps?q=${r.local.lat},${r.local.lng}" target="_blank" rel="noopener">conferir</a></small>
+        <small>${esc(regraTaxaTxt(cfg))} Você pode trocar o valor.</small></p>`;
+    } catch (err) { res.innerHTML = `<p class="ent-res erro">${esc(err.message)}</p>`; }
+  }));
+  m.$('[data-tirar]')?.addEventListener('click', async () => {
+    if (jaSaiu(p)) { toast('Este pedido já saiu para entrega. Volte o status antes de tirar a entrega.', { tipo: 'erro' }); return; }
+    if (!await confirmar('Tirar a entrega?', `O pedido volta a ser de retirada${Number(e.taxa) > 0 ? ` e a taxa de ${R(e.taxa)} sai do total` : ''}.`, { botao: 'Tirar entrega', perigo: true })) return;
+    m.fechar();
+    await acaoGaveta(null, async () => { const r = await api.admin.entregas.remover(p.id); toast('Entrega tirada: o pedido voltou a ser de retirada.'); return r; });
+  });
+  m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    const end = endereco();
+    if (!end.endereco) { m.$('#enRua').setAttribute('aria-invalid', 'true'); m.$('#enRua').focus(); throw new Error('Informe a rua e o número.'); }
+    const taxa = lerValor(valDe(m, 'enTaxa'));
+    if (taxa == null || Number.isNaN(taxa) || taxa < 0) {
+      m.$('#enTaxa').setAttribute('aria-invalid', 'true'); m.$('#enTaxa').focus();
+      throw new Error(taxa == null ? 'Informe a taxa de entrega (0 se for grátis).' : 'Confira a taxa de entrega.');
+    }
+    const tel = valDe(m, 'enTel');
+    if (!telOk(tel)) { m.$('#enTel').focus(); throw new Error('WhatsApp de quem recebe incompleto: informe DDD + número.'); }
+    const dados = { taxa, cep: end.cep || null, endereco: end.endereco, complemento: end.complemento || null, bairro: end.bairro || null, cidade: end.cidade || null,
+      recebedor_nome: valDe(m, 'enNome') || null, recebedor_telefone: formatarTel(tel) || null, distancia_km: medida?.km ?? null, duracao_min: medida?.minutos ?? null };
+    m.fechar();
+    await acaoGaveta(null, async () => {
+      const r = await api.admin.entregas.salvar(p.id, dados);
+      toast(novo ? `Entrega incluída.${taxa > 0 ? ` A taxa de ${R(taxa)} entrou no total.` : ''}` : 'Entrega atualizada.');
+      return r;
+    });
+  }));
+}
+/**
+ * Sair para entrega: o pedido passa para "Saiu para entrega", quem recebe é avisado no WhatsApp (a mensagem vai pronta:
+ * é só tocar em Enviar) e a rota do Waze fica a um toque. O navegador só deixa abrir um aplicativo por toque: primeiro
+ * abre o WhatsApp; de volta aqui, o botão do Waze. depois(pedido atualizado): o que a tela que chamou faz em seguida.
+ */
+async function modalSairEntrega(p, depois) {
+  const st = statusAtivo('em_rota');
+  if (!st) { toast('O status “Saiu para entrega” está desligado em Ajustes > Status.', { tipo: 'erro' }); return; }
+  const e = p.entrega, rec = quemRecebe(p), saldo = Math.max(0, Number(p.saldo) || 0);
+  const lugar = [e.bairro, e.cidade].filter(Boolean).join(' · ');
+  const aviso = await campoAvisoWa(p, st);
+  const m = abrirModal({
+    titulo: 'Sair para entrega',
+    corpo: `<p class="dica" style="margin:0 0 10px;color:var(--ink-3)">${esc(p.codigo)} · ${esc(p.cliente_nome)}</p>
+      <div class="ent-end"><b>${esc(e.endereco)}</b>${e.complemento ? `<small>${esc(e.complemento)}</small>` : ''}${lugar ? `<small>${esc(lugar)}</small>` : ''}
+        <small>Recebe: ${esc(rec.nome)}${rec.telefone ? ' · ' + esc(formatarTel(rec.telefone) || rec.telefone) : ''}</small></div>
+      <div class="hj-falta-g ${saldo ? 'deve' : 'zero'}" style="margin:0;padding:0;border:0"><span>${saldo ? 'Receber na entrega' : 'Tudo pago'}</span><span>${saldo ? R(saldo) : ic('ok')}</span></div>
+      ${aviso}`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn ent" data-ok>${ic('entrega')}Sair para entrega</button>`
+  });
+  ligarAvisoWa(m, 'Sair para entrega');
+  setTimeout(() => m.$('[data-ok]')?.focus(), 60);
+  m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    const wa = avisoWa(m, p, st);   // abre a aba do WhatsApp ainda no clique
+    const avisando = chkDe(m, 'avWa') && !!valDe(m, 'avWaMsg') && !!telefoneWa(rec.telefone);
+    const antes = p.status;
+    const r = await api.admin.pedidos.alterarStatus(p.id, st.codigo, 'Saiu para entrega.').catch(err => { wa.cancelar(); throw err; });
+    wa.enviar();
+    // segundo passo: a rota
+    const nome = String(rec.nome || '').trim().split(/\s+/)[0] || 'quem recebe';
+    m.$('.modal-b').innerHTML = `<div class="ent-saida-ok">
+        <div class="ok-ic">${ic('ok')}</div>
+        <h3>Saiu para entrega</h3>
+        <p>${avisando ? `A mensagem para ${esc(nome)} abriu no WhatsApp: toque em Enviar. Depois, volte aqui e abra a rota.` : 'Agora é só abrir a rota.'}</p>
+        <a class="btn ent waze" href="${esc(linkWaze(e))}" target="_blank" rel="noopener" data-rota>${ic('rota')}Abrir a rota no Waze</a>
+        <a class="btn ghost" href="${esc(linkMapa(e))}" target="_blank" rel="noopener" data-rota>${ic('mapa')}Abrir no Google Maps</a>
+      </div>`;
+    m.$('.modal-f').innerHTML = '<button type="button" class="btn ghost" data-fechar>Fechar</button>';
+    m.$$('[data-rota]').forEach(a => a.addEventListener('click', () => setTimeout(() => m.fechar(), 500)));
+    setTimeout(() => m.$('.waze')?.focus(), 60);
+    toast(`${p.codigo}: saiu para entrega.`, { acao: { rotulo: 'Desfazer', fn: () => { m.fechar(); desfazerRetirada(p.id, antes, null, null, 'Saída para entrega desfeita.'); } } });
+    await depois?.(r); atualizarBadge();
   }));
 }
 
@@ -3326,6 +3602,7 @@ async function modalNovoPedido() {
   let c;
   try { c = await carregarCardapioAtivo(true); } catch (e) { erroToast(e); return; }
   const { prods, bolos, finalizacoes, opcoesProd } = catalogoPedido(c);
+  const temEntregas = await api.admin.entregas.disponivel().catch(() => false);
   let n = 0;
   const linha = () => {
     const k = ++n;
@@ -3356,6 +3633,7 @@ async function modalNovoPedido() {
       <div class="grid3">${inSel('npOrig', 'Pedido feito por', [['whatsapp', 'WhatsApp'], ['balcao', 'Balcão'], ['backoffice', 'Outro']], 'whatsapp')}
         ${campo('npData', 'Data da retirada', `<input class="in" id="npData" type="date" value="${hojeISO(Number(c.configuracoes?.dias_retirada_sugerida ?? 2))}">`)}
         ${campo('npHora', 'Horário', `<input class="in" id="npHora" type="time" value="${esc(hora(c.configuracoes?.hora_retirada_sugerida || '10:00'))}">`)}</div>
+      ${temEntregas ? `<div class="np-concl np-ent">${inChk('npEnt', '<span><strong>Tem entrega</strong><small>Depois de criar o pedido, você informa o endereço, quem recebe e a taxa.</small></span>')}</div>` : ''}
       ${inTxt('npObs', 'Observação geral <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>', '', { attrs: 'maxlength="1000"' })}
       <p class="secao-t">Itens</p>
       <div id="npItens">${linha()}</div>
@@ -3391,11 +3669,16 @@ async function modalNovoPedido() {
   m.el.addEventListener('change', atualizar);
   m.el.addEventListener('input', e => { if (e.target.dataset.np === 'qtd') atualizar(); });
   // Pedido já concluído: pede a forma de pagamento e a data vira "quando foi retirado" (não pode ser no futuro)
+  const rotuloData = () => { m.$('label[for="npData"]').textContent = chkDe(m, 'npConcl') ? 'Data em que foi retirado' : chkDe(m, 'npEnt') ? 'Data da entrega' : 'Data da retirada'; };
+  // com entrega: a data é a da entrega; um pedido lançado já concluído entra como retirado (sem entrega)
+  m.$('#npEnt')?.addEventListener('change', e => { m.$('.np-ent').classList.toggle('on', e.target.checked); rotuloData(); });
   m.$('#npConcl').addEventListener('change', e => {
     const on = e.target.checked;
     m.$('.np-concl').classList.toggle('on', on);
     m.$('.np-concl-op').hidden = !on;
-    m.$('label[for="npData"]').textContent = on ? 'Data em que foi retirado' : 'Data da retirada';
+    const ent = m.$('#npEnt');
+    if (ent) { if (on) ent.checked = false; ent.disabled = on; m.$('.np-ent').classList.toggle('on', ent.checked); }
+    rotuloData();
     m.$('#npData').max = on ? hojeISO() : '';
     if (on && valDe(m, 'npData') > hojeISO()) m.$('#npData').value = hojeISO();
     m.$('[data-ok]').textContent = on ? 'Lançar pedido concluído' : 'Criar pedido';
@@ -3446,6 +3729,10 @@ async function modalNovoPedido() {
     if (telaAtual === 'painel' || telaAtual === 'pedidos') recarregarTela();
     atualizarBadge();
     verPedido(r.id);
+    // com entrega: o endereço, quem recebe e a taxa logo em seguida
+    if (!concluido && chkDe(m, 'npEnt')) {
+      try { modalEntrega(await api.admin.pedidos.obter(r.id)); } catch (e) { erroToast(e); }
+    }
   }));
 }
 
@@ -3804,6 +4091,35 @@ function ajustesPixRetirada(f) {
   return { pix_chave: pixChave, pix_tipo: tipo || null, pix_nome: valDe(f, 'lPixNome') || null,
     retirada_inicio: ini, retirada_fim: fim, retirada_intervalo_min: Number(valDe(f, 'lRetPasso')) || 30, retirada_dias: Math.round(dias) };
 }
+/**
+ * Entrega do formulário de Ajustes > Loja, já conferida (sql/entregas.sql): { dados, achado }.
+ * O endereço da loja é procurado no mapa só quando muda (ou quando ainda não foi achado).
+ */
+async function ajustesEntrega(f, c) {
+  const falha = (id, msg) => { const el = f.$('#' + id); el?.setAttribute('aria-invalid', 'true'); el?.focus(); throw new Error(msg); };
+  ['lEntMin', 'lEntInc', 'lEntKm', 'lEntRaio'].forEach(id => f.$('#' + id)?.removeAttribute('aria-invalid'));
+  const dinheiro = id => { const v = lerValor(valDe(f, id)); if (Number.isNaN(v) || v < 0) falha(id, 'Confira os valores da entrega.'); return v ?? 0; };
+  const km = id => { const v = numDe(f, id); if (v != null && !(v >= 0)) falha(id, 'Confira as distâncias da entrega.'); return v; };
+  const origem = valDe(f, 'lEntOrig');
+  const dados = { entrega_origem: origem || null, entrega_taxa_minima: dinheiro('lEntMin'), entrega_km_incluidos: km('lEntInc') ?? 0,
+    entrega_valor_km: dinheiro('lEntKm'), entrega_raio_km: km('lEntRaio') || null };
+  let achado = null;
+  if (!origem) Object.assign(dados, { entrega_origem_lat: null, entrega_origem_lng: null });
+  else if (origem !== (c.entrega_origem || '') || c.entrega_origem_lat == null) {
+    achado = await localizarEndereco(origem).catch(() => null);
+    Object.assign(dados, { entrega_origem_lat: achado?.lat ?? null, entrega_origem_lng: achado?.lng ?? null });
+    if (!achado) toast('Não achei o endereço da loja no mapa. Confira (rua, número, bairro e cidade) ou cole as coordenadas do Google Maps: sem ele, a taxa não é calculada pela distância.', { tipo: 'erro', tempo: 9000 });
+  }
+  return { dados, achado };
+}
+/** Abaixo do endereço da loja: achado no mapa (com o link para conferir) ou não achado. */
+function mostrarOrigemEntrega(f, c, achado) {
+  const el = f.$('#lEntMapa'), ponto = origemEntrega(c); if (!el) return;
+  el.className = 'aj-ent-mapa ' + (ponto ? 'ok' : c.entrega_origem ? 'erro' : '');
+  el.innerHTML = ponto ? `Achado no mapa${achado?.nome ? `: ${esc(achado.nome)}` : ''} · <a href="https://www.google.com/maps?q=${ponto.lat},${ponto.lng}" target="_blank" rel="noopener">conferir o ponto</a>`
+    : c.entrega_origem ? 'Não achei esse endereço no mapa. Confira ou cole as coordenadas do Google Maps (ex.: -22.9056, -47.0583).'
+      : 'Ao salvar, o endereço é procurado no mapa (OpenStreetMap). Para ficar exato, você pode colar as coordenadas do Google Maps (ex.: -22.9056, -47.0583).';
+}
 async function ajLoja(box) {
   let c;
   const topos = await contatoTopos();
@@ -3814,6 +4130,9 @@ async function ajLoja(box) {
   const ret = { ini: hm5(c.retirada_inicio) || '08:00', fim: hm5(c.retirada_fim) || '18:00', passo: Number(c.retirada_intervalo_min) || 30, dias: Number(c.retirada_dias) || 14 };
   const passos = PASSOS_RETIRADA.some(([v]) => v === ret.passo) ? PASSOS_RETIRADA : [...PASSOS_RETIRADA, [ret.passo, `${ret.passo} minutos`]].sort((a, b) => a[0] - b[0]);
   const tipos = [...new Set([...TIPOS_PIX, pix.tipo].filter(Boolean))].map(t => [t, t]);
+  // Entrega: endereço de onde sai e a regra da taxa (campos do sql/entregas.sql)
+  const temEntrega = 'entrega_origem' in c, soEnt = temEntrega ? '' : 'disabled';
+  const origem = origemEntrega(c);
   box.innerHTML = `
     <div class="pausa ${c.aceitando_pedidos ? 'on' : 'off'}" id="ajPausa">
       <input type="checkbox" class="switch" id="lAceita" ${c.aceitando_pedidos ? 'checked' : ''} aria-describedby="lAceitaTxt">
@@ -3841,6 +4160,16 @@ async function ajLoja(box) {
       <p class="ajuste-dica" id="lRetPrev" aria-live="polite"></p>
       <div class="grid2">${inNum('lDias', 'Retirada sugerida (dias depois do pedido)', c.dias_retirada_sugerida, { attrs: 'min="0"', dica: 'Só para pedidos lançados aqui pela equipe. No site, o cliente escolhe o dia.' })}${campo('lHora', 'Horário sugerido', `<input class="in" id="lHora" type="time" value="${esc(hora(c.hora_retirada_sugerida))}">`, 'Idem: no site, o cliente escolhe o horário.')}</div>
 
+      <p class="secao-t linha">Entrega</p>
+      ${temEntrega ? '' : '<div class="aviso-box">Rode no Supabase o arquivo <code>sql/entregas.sql</code> para registrar entregas nos pedidos e calcular a taxa pela distância.</div>'}
+      ${inTxt('lEntOrig', 'Endereço de onde sai a entrega (a loja)', c.entrega_origem || '', { attrs: `maxlength="200" placeholder="Ex.: Rua das Flores, 123, Centro, Campinas - SP" ${soEnt}` })}
+      <p class="aj-ent-mapa ${origem ? 'ok' : ''}" id="lEntMapa">${origem
+        ? `Achado no mapa · <a href="https://www.google.com/maps?q=${origem.lat},${origem.lng}" target="_blank" rel="noopener">conferir o ponto</a>`
+        : 'Ao salvar, o endereço é procurado no mapa (OpenStreetMap). Para ficar exato, você pode colar as coordenadas do Google Maps (ex.: -22.9056, -47.0583).'}</p>
+      <div class="grid2">${inDin('lEntMin', 'Taxa mínima', c.entrega_taxa_minima ?? '', { attrs: soEnt })}${inNum('lEntInc', 'Km que a taxa mínima cobre', c.entrega_km_incluidos ?? '', { attrs: `min="0" step="0.5" ${soEnt}` })}</div>
+      <div class="grid2">${inDin('lEntKm', 'Valor de cada km a mais', c.entrega_valor_km ?? '', { attrs: soEnt })}${inNum('lEntRaio', 'Entrega até (km)', c.entrega_raio_km ?? '', { attrs: `min="0" step="1" placeholder="Sem limite" ${soEnt}` })}</div>
+      <p class="aj-ent-prev" id="lEntPrev" aria-live="polite"></p>
+
       <p class="secao-t linha">Topos de bolo</p>
       <div class="grid2">${inTxt('lTopNum', 'WhatsApp de quem faz os topos', formatarTel(topos.numero), { attrs: ATTR_TEL, dica: 'Usado no botão “Enviar para quem faz o topo”, ao lado da imagem de referência.' })}${inTxt('lTopNome', 'Nome de quem faz os topos', topos.nome, { attrs: 'maxlength="60"' })}</div>
       <div style="display:flex;justify-content:flex-end"><button type="button" class="btn primary" id="lSalvar">Salvar ajustes</button></div>
@@ -3856,7 +4185,18 @@ async function ajLoja(box) {
       + `${dias >= 1 ? `, nos próximos ${dias} ${dias === 1 ? 'dia' : 'dias'}` : ''}. O cliente ainda pode digitar outro horário.`;
   };
   previaRetirada();
-  box.oninput = e => { if (/^lRet/.test(e.target.id)) previaRetirada(); };
+  // prévia da taxa de entrega: exemplos de distância com a regra do formulário
+  const previaEntrega = () => {
+    const el = box.querySelector('#lEntPrev'); if (!el || !temEntrega) return;
+    const regra = { entrega_taxa_minima: lerValor(valDe(fake, 'lEntMin')) || 0, entrega_km_incluidos: numDe(fake, 'lEntInc') || 0,
+      entrega_valor_km: lerValor(valDe(fake, 'lEntKm')) || 0, entrega_raio_km: numDe(fake, 'lEntRaio') || null };
+    if (!temRegraEntrega(regra)) { el.textContent = 'Preencha a taxa mínima ou o valor por km para o sistema sugerir a taxa pela distância. No pedido, a equipe sempre pode digitar outro valor.'; return; }
+    const exemplos = [2, 5, 8, 12].filter(km => !regra.entrega_raio_km || km <= regra.entrega_raio_km);
+    el.textContent = `${exemplos.length ? `Exemplos: ${exemplos.map(km => `${kmTxt(km)} → ${R(taxaPelaDistancia(km, regra).taxa)}`).join(' · ')}. ` : ''}`
+      + 'A distância é a de carro, pelas ruas, e o valor é arredondado para cima, em reais. No pedido, a equipe pode trocar o valor.';
+  };
+  previaEntrega();
+  box.oninput = e => { if (/^lRet/.test(e.target.id)) previaRetirada(); if (/^lEnt/.test(e.target.id)) previaEntrega(); };
   box.querySelector('#lAceita').addEventListener('change', async e => {
     const on = e.target.checked;
     try {
@@ -3872,13 +4212,15 @@ async function ajLoja(box) {
     if (!(sinal >= 0 && sinal <= 100)) throw new Error('O sinal precisa ficar entre 0 e 100%.');
     exigir(fake, 'lNome', 'Informe o nome da loja.');
     const pixRetirada = temAjustes ? ajustesPixRetirada(fake) : {};
+    const { dados: entrega = {}, achado = null } = temEntrega ? await ajustesEntrega(fake, c) : {};
     await api.admin.configuracoes.salvar({
       mensagem_pausa: valDe(fake, 'lPausa') || null, nome_loja: valDe(fake, 'lNome'), slogan: valDe(fake, 'lSlogan') || null,
       whatsapp_numero: wa, whatsapp_exibicao: valDe(fake, 'lWaEx') || formatarTel(waDig), percentual_sinal: sinal,
       antecedencia_minima_dias: numDe(fake, 'lAnt') || 0, tolerancia_peso_bolo_g: numDe(fake, 'lTol') || 0,
       dias_retirada_sugerida: numDe(fake, 'lDias') || 0, hora_retirada_sugerida: valDe(fake, 'lHora') || '10:00',
-      url_site: valDe(fake, 'lUrl') || null, logo_path: fotoDe(fake, 'lLogo'), ...pixRetirada
+      url_site: valDe(fake, 'lUrl') || null, logo_path: fotoDe(fake, 'lLogo'), ...pixRetirada, ...entrega
     });
+    if (temEntrega) mostrarOrigemEntrega(fake, Object.assign(c, entrega), achado);
     if (temAjustes) fake.$('#lPixChave').value = pixRetirada.pix_chave || '';   // como ficou gravada (CPF só com números etc.)
     const topNum = digitosTel(valDe(fake, 'lTopNum'));
     if (topNum && topNum.length < 10) throw new Error('Informe o WhatsApp de quem faz os topos com DDD.');

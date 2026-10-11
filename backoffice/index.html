@@ -42,6 +42,7 @@
   --rose: #E890A8; --rose-600: #A8405F; --rose-50: #FCEDF1; --rose-rgb: 168, 64, 95;
   --warm-50: #FCF0DC; --gold: #8A6418; --gold-rgb: 169, 128, 47;
   --error: #B3261E; --error-50: #FCE8E6;
+  --ent: #2F6A9A; --ent-50: #E6EFF7; --ent-rgb: 47, 106, 154;   /* entregas (status "Saiu para entrega") */
   --focus: #E890A8;
   --accent-wash: rgba(43, 116, 101, .10);
   --destaque-a: #2E7D6C; --destaque-b: #1C5247;   /* cartão preenchido (teal da marca) */
@@ -68,6 +69,7 @@
     --rose-600: #F2A7BC; --rose-50: rgba(232, 144, 168, .14); --rose-rgb: 242, 167, 188;
     --warm-50: rgba(255, 210, 150, .10); --gold: #E2C27A; --gold-rgb: 226, 194, 122;
     --error: #FF9C94; --error-50: rgba(255, 120, 110, .14);
+    --ent: #9CC4E8; --ent-50: rgba(120, 170, 220, .14); --ent-rgb: 156, 196, 232;
     --accent-wash: rgba(143, 211, 191, .10);
     --destaque-a: #2F7F6E; --destaque-b: #173F37;
     --dot-filter: brightness(1.55) saturate(1.1);
@@ -87,6 +89,7 @@
   --rose-600: #F2A7BC; --rose-50: rgba(232, 144, 168, .14); --rose-rgb: 242, 167, 188;
   --warm-50: rgba(255, 210, 150, .10); --gold: #E2C27A; --gold-rgb: 226, 194, 122;
   --error: #FF9C94; --error-50: rgba(255, 120, 110, .14);
+  --ent: #9CC4E8; --ent-50: rgba(120, 170, 220, .14); --ent-rgb: 156, 196, 232;
   --accent-wash: rgba(143, 211, 191, .10);
   --destaque-a: #2F7F6E; --destaque-b: #173F37;
   --dot-filter: brightness(1.55) saturate(1.1);
@@ -334,7 +337,7 @@ main.conteudo { padding: 28px 32px 48px; min-width: 0; max-width: 1240px; width:
 .destaque-card .btn { margin-top: auto; align-self: flex-start; background: rgba(255, 255, 255, .14); color: #fff; border-color: rgba(255, 255, 255, .28); }
 .destaque-card .btn:hover { background: rgba(255, 255, 255, .24); }
 .destaque-card .dc-art { position: absolute; right: -18px; bottom: -22px; width: 150px; height: 150px; opacity: .13; color: #fff; stroke-width: 1.2; }
-.kpi-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); padding: 0; margin-bottom: 18px; overflow: hidden; }
+.kpi-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); padding: 0; margin-bottom: 18px; overflow: hidden; }   /* com "Saiu para entrega", cabem 6 numa linha */
 .kpi { display: flex; align-items: center; gap: 14px; padding: 20px 22px; text-decoration: none; color: inherit; border-left: 1px solid var(--line); transition: background .14s; min-width: 0; }
 .kpi:first-child { border-left: 0; }
 .kpi:hover { background: var(--surface-2); }
@@ -446,6 +449,7 @@ a.chip { text-decoration: none; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; font-size: 14px; }
 .kv dt { color: var(--ink-3); }
 .kv dd { margin: 0; font-weight: 500; text-align: right; overflow-wrap: anywhere; }
+.kv dd a[href^="tel:"] { white-space: nowrap; }
 .it { padding: 11px 0; border-bottom: 1px solid var(--line); }
 .it:last-child { border-bottom: 0; }
 .it-l { display: flex; justify-content: space-between; gap: 12px; font-weight: 600; }
@@ -1176,6 +1180,51 @@ span.gt-l-v:hover { background: none; }
 /* Algarismos de largura fixa onde números alinham em coluna */
 .valor-numerico, .ped .total, .valores .lin, .it-l, .pgto, .preco-in .in, .money .in, .np-item .sub, .hj-pg .falta, .hj-pagto, .hj-it .l, .hj-resumo,
 .status-bar, .tbl, .kv dd, .pill, .tag, .nav-badge, .hj-falta-g { font-variant-numeric: tabular-nums; }
+
+/* ---------- Entregas (sql/entregas.sql) ---------- */
+.tag.ent { background: var(--ent-50); color: var(--ent); }
+.ped .ent-tag, .hj-nome .ent-tag { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-ui); font-size: 11.5px; font-weight: 600; color: var(--ent); }
+.ent-tag .ic { width: 14px; height: 14px; }
+.hj-nome small .ent-tag { vertical-align: -2px; }
+.ent-card { border-color: rgba(var(--ent-rgb), .35); }
+.ent-card .card-h h2 { display: flex; align-items: center; gap: 8px; }
+.ent-card .card-h h2 .ic { color: var(--ent); }
+.ent-end { margin: 2px 0 12px; padding: 12px 14px; border-radius: var(--r-sm); background: var(--ent-50); font-size: 15px; line-height: 1.45; }
+.ent-end b { display: block; font-size: 16px; }
+.ent-end small { display: block; color: var(--ink-2); font-size: 13px; margin-top: 2px; }
+.ent-acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.ent-acoes .btn { flex: 1 1 150px; }
+.ent-acoes .sair { flex: 1 1 100%; min-height: 50px; font-size: 15.5px; }
+.btn.ent { background: var(--ent); color: #fff; box-shadow: 0 12px 26px -12px rgba(var(--ent-rgb), .7); }
+.btn.ent:hover { filter: brightness(1.07); }
+:root[data-theme="dark"] .btn.ent { color: #0E1B26; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme]) .btn.ent { color: #0E1B26; } }
+.ent-add { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line-2); font-size: 13.5px; color: var(--ink-3); }
+.ent-calc { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.ent-calc .field { flex: 1 1 160px; margin-bottom: 0; }
+.ent-calc .btn { margin-bottom: 0; }
+.ent-res { margin: 10px 0 0; padding: 10px 12px; border-radius: var(--r-sm); background: var(--ent-50); font-size: 13.5px; line-height: 1.45; }
+.ent-res.aviso { background: var(--warm-50); }
+.ent-res.erro { background: var(--error-50); color: var(--error); }
+.ent-res small { display: block; color: var(--ink-3); font-size: 12px; margin-top: 2px; overflow-wrap: anywhere; }
+.ent-res a { font-weight: 600; }
+.ent-saida-ok { text-align: center; padding: 6px 0 2px; }
+.ent-saida-ok .ok-ic { width: 56px; height: 56px; margin: 0 auto 10px; border-radius: 50%; display: grid; place-items: center; background: var(--teal-50); color: var(--teal); }
+.ent-saida-ok .ok-ic .ic { width: 30px; height: 30px; stroke-width: 2.4; }
+.ent-saida-ok h3 { font-family: var(--font-display); font-size: 19px; margin: 0 0 4px; }
+.ent-saida-ok p { margin: 0 0 16px; color: var(--ink-2); font-size: 14px; }
+.ent-saida-ok .btn { width: 100%; }
+.ent-saida-ok .btn + .btn { margin-top: 10px; }
+.ent-saida-ok .waze { min-height: 56px; font-size: 17px; }
+.hj-ent .ent-end { margin: 0 0 10px; font-size: 14px; }
+.hj-ent .ent-end b { font-size: 15px; }
+.hj-ent .lin { display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; padding: 2px 0; }
+.hj-ent .ent-acoes { margin-top: 10px; }
+.hj-acoes .sair { flex: 1 1 260px; min-height: 52px; font-size: 16px; }
+.aj-ent-prev { font-size: 12.5px; color: var(--ink-3); margin: -6px 0 14px; }
+.aj-ent-mapa { font-size: 12.5px; margin: -6px 0 14px; color: var(--ink-3); overflow-wrap: anywhere; }
+.aj-ent-mapa.ok { color: var(--teal); }
+.aj-ent-mapa.erro { color: var(--error); }
 </style>
 </head>
 <body>
@@ -1221,6 +1270,9 @@ span.gt-l-v:hover { background: none; }
     <symbol id="i-grafico" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6" rx="1"/><rect x="12.5" y="7" width="3" height="10" rx="1"/><rect x="18" y="13" width="3" height="4" rx="1"/></symbol>
     <symbol id="i-alerta" viewBox="0 0 24 24"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
     <symbol id="i-menos" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-entrega" viewBox="0 0 24 24"><path d="M2.5 6h11v10.5h-11z"/><path d="M13.5 9.5h4.2l3.3 3.6v3.4h-7.5"/><circle cx="7" cy="17.5" r="1.9"/><circle cx="17" cy="17.5" r="1.9"/></symbol>
+    <symbol id="i-rota" viewBox="0 0 24 24"><path d="M3.5 11.2 20.5 3.5l-7.7 17-2.1-7.4z"/></symbol>
+    <symbol id="i-mapa" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.8-6.5-11a6.5 6.5 0 0 1 13 0c0 5.2-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></symbol>
   </defs>
 </svg>
 

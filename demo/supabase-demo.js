@@ -11,7 +11,7 @@ import { DADOS_DEMO } from './dados-demo.js';
 
 const CHAVE = 'ritabolos.demo.v2';
 const USUARIO_DEMO = { id: '00000000-0000-4000-8000-000000000001', email: 'rita@demo.com.br' };
-const TABELAS_COM_ATUALIZADO = ['configuracoes', 'categorias', 'grupos', 'produtos', 'bolo_massas', 'bolo_formatos', 'banners', 'avisos', 'pedidos', 'pedido_observacoes', 'topos_pedidos'];
+const TABELAS_COM_ATUALIZADO = ['configuracoes', 'categorias', 'grupos', 'produtos', 'bolo_massas', 'bolo_formatos', 'banners', 'avisos', 'pedidos', 'pedido_observacoes', 'topos_pedidos', 'pedido_entregas'];
 /* Quem produz os personalizados na demonstração: entre com topos@demo.com.br para ver o backoffice como ela vê */
 const PRODUTORA_DEMO = { user_id: '00000000-0000-4000-8000-000000000002', nome: 'Bia Andrade', email: 'topos@demo.com.br', ativo: true, avatar: null };
 const TABELAS_TOPOS = ['topos_pedidos', 'topos_historico'];
@@ -46,7 +46,7 @@ function precoTopo(precos, titulo) {
 const CAMPOS_CUSTO_TOPO = ['custo_unitario', 'custo_manual', 'pagamento_id'];
 const mudouPedidoTopo = (a, b) => Object.keys({ ...a, ...b }).some(k => k !== 'atualizado_em' && !CAMPOS_CUSTO_TOPO.includes(k) && JSON.stringify(a[k] ?? null) !== JSON.stringify(b[k] ?? null));
 const UNICOS = { categorias: ['slug'], produtos: ['slug'], bolo_massas: ['slug'], bolo_formatos: ['slug'], status_pedido: ['codigo'], bolo_pesos: ['peso_kg'] };
-const CHAVES = { status_pedido: 'codigo', bolo_pesos: 'peso_kg', administradores: 'user_id' };
+const CHAVES = { status_pedido: 'codigo', bolo_pesos: 'peso_kg', administradores: 'user_id', pedido_entregas: 'pedido_id' };
 
 const clone = o => JSON.parse(JSON.stringify(o));
 const agora = () => new Date().toISOString();
@@ -90,6 +90,19 @@ export function criarSupabaseDemo(opcoes = {}) {
     if (!b.topos_pedidos) semearTopos(b);
     if (!b.notificacoes) { b.notificacoes = []; b.topos_pedidos.filter(t => t.status === 'pronto').forEach(t => avisoTopoPronto(b.notificacoes, t)); }
     if (!b.topos_precos) semearGastosTopos(b);
+    // Entregas (igual a sql/entregas.sql): "Saiu para entrega" e "Entregue" logo depois de "Pronto", o endereço de cada
+    // pedido e a regra da taxa. Na demonstração, a loja fica num endereço de exemplo em Campinas, para o cálculo funcionar.
+    if (b.status_pedido && !b.status_pedido.some(s => s.codigo === 'em_rota')) {
+      const pronto = b.status_pedido.find(s => s.codigo === 'pronto')?.ordem ?? Math.max(0, ...b.status_pedido.filter(s => !s.finalizado).map(s => s.ordem));
+      b.status_pedido.forEach(s => { if (s.ordem > pronto && s.codigo !== 'entregue') s.ordem += 2; });
+      b.status_pedido.push({ codigo: 'em_rota', nome: 'Saiu para entrega', descricao: 'A caminho do endereço de entrega.', cor: '#3F7CAC', ordem: pronto + 1, finalizado: false, ativo: true });
+      if (!b.status_pedido.some(s => s.codigo === 'entregue'))
+        b.status_pedido.push({ codigo: 'entregue', nome: 'Entregue', descricao: 'Entregue no endereço do cliente.', cor: '#3B4A6B', ordem: pronto + 2, finalizado: true, ativo: true });
+    }
+    b.pedido_entregas = b.pedido_entregas || [];
+    (b.pedidos || []).forEach(p => { if (p.taxa_entrega == null) p.taxa_entrega = 0; });
+    if (cf && !('entrega_origem' in cf)) Object.assign(cf, { entrega_origem: 'Rua Barão de Jaguara, 1000, Centro, Campinas - SP', entrega_origem_lat: -22.9056951,
+      entrega_origem_lng: -47.0583412, entrega_taxa_minima: 8, entrega_km_incluidos: 3, entrega_valor_km: 1.5, entrega_raio_km: 15 });
     // notificações no celular (igual a sql/notificacoes-celular.sql; na demonstração nada sai pela internet)
     b.push_config = b.push_config || { vapid_publica: null, vapid_privada: null };
     b.push_aparelhos = b.push_aparelhos || [];
@@ -266,8 +279,9 @@ export function criarSupabaseDemo(opcoes = {}) {
   function recalcularPedido(p) {
     p.subtotal = r2(db.pedido_itens.filter(i => i.pedido_id === p.id).reduce((s, i) => s + i.preco_unitario * i.quantidade, 0));
     p.desconto = Math.min(Number(p.desconto || 0), p.subtotal);
-    p.total = r2(p.subtotal - p.desconto);
-    p.valor_sinal = r2(p.total * p.percentual_sinal / 100);
+    const produtos = r2(p.subtotal - p.desconto);
+    p.total = r2(produtos + Number(p.taxa_entrega || 0));   // gatilho de sql/entregas.sql: a entrega entra no total…
+    p.valor_sinal = r2(produtos * p.percentual_sinal / 100);   // …mas o sinal é só dos produtos
     p.valor_pago = r2(db.pedido_pagamentos.filter(g => g.pedido_id === p.id).reduce((s, g) => s + Number(g.valor), 0));
   }
   function historico(pedidoId, de, para, comentario) {
@@ -283,7 +297,7 @@ export function criarSupabaseDemo(opcoes = {}) {
 
   /* ----------------------- vistas ----------------------- */
   function vista(nome) {
-    if (nome === 'vw_pedidos') return db.pedidos.map(p => {
+    if (nome === 'vw_pedidos') return db.pedidos.map(({ taxa_entrega, ...p }) => {   // a vista do banco é anterior à taxa de entrega
       const s = status(p.status), itens = db.pedido_itens.filter(i => i.pedido_id === p.id).sort((a, b) => a.ordem - b.ordem);
       return { ...p, status_nome: s.nome, status_cor: s.cor, status_ordem: s.ordem, finalizado: !!s.finalizado,
         saldo: Math.max(r2(p.total - p.valor_pago), 0), sinal_pago: p.valor_pago >= p.valor_sinal, qtd_itens: itens.length,
@@ -303,6 +317,7 @@ export function criarSupabaseDemo(opcoes = {}) {
     const api = {
       select(_c, o) { if (q.op !== 'select') q.retornar = true; if (o?.count) q.contar = true; return api; },
       insert(d) { q.op = 'insert'; q.dados = d; return api; },
+      upsert(d, o = {}) { q.op = 'upsert'; q.dados = d; q.conflito = o.onConflict; return api; },
       update(d) { q.op = 'update'; q.dados = d; return api; },
       delete() { q.op = 'delete'; return api; },
       eq(c, v) { q.filtros.push(r => r[c] == v); return api; },
@@ -353,6 +368,15 @@ export function criarSupabaseDemo(opcoes = {}) {
       if (q.op !== 'select' && !adminLoja()) return q.op === 'delete' ? finalizar([], q, 0) : erro('new row violates row-level security policy', '42501');
       if (q.op === 'insert' || q.op === 'update') return erro('new row violates row-level security policy', '42501');
     }
+    if (tabela === 'pedido_entregas' && !equipe())   // endereço e telefone de quem recebe: só a equipe da loja
+      return q.op === 'select' ? finalizar([], q, 0) : erro('new row violates row-level security policy for table "pedido_entregas"', '42501');
+    if (q.op === 'upsert') {   // grava por cima quando a chave já existe (ex.: a entrega do pedido)
+      const chave = q.conflito || CHAVES[tabela] || 'id', linhas = Array.isArray(q.dados) ? q.dados : [q.dados];
+      const existem = linhas.filter(d => fonte.some(r => r[chave] == d[chave])), novos = linhas.filter(d => !existem.includes(d));
+      for (const d of existem) { const r = executar(tabela, { ...q, op: 'update', dados: d, filtros: [x => x[chave] == d[chave]], retornar: false }); if (r.error) return r; }
+      if (novos.length) { const r = executar(tabela, { ...q, op: 'insert', dados: novos, retornar: false }); if (r.error) return r; }
+      return finalizar(clone(vista(tabela).filter(r => linhas.some(d => r[chave] == d[chave]))), q, linhas.length);
+    }
     if (tabela === 'push_aparelhos') {   // cada pessoa vê só os próprios aparelhos; gravar, só pelas funções
       if (q.op !== 'select') return erro('new row violates row-level security policy', '42501');
       q.filtros.push(r => r.user_id === usuarioId());
@@ -386,6 +410,7 @@ export function criarSupabaseDemo(opcoes = {}) {
       for (const n of novos) {
         for (const col of UNICOS[tabela] || []) if (fonte.some(r => r[col] == n[col])) return erro('duplicate key value violates unique constraint', '23505');
         if (tabela === 'topos_pedidos') custoTopo(n, null);
+        if (tabela === 'pedido_entregas') { const e = conferirEntrega(n); if (e) return e; }
         fonte.push(n);
         aposEscrever(tabela, n, null);
       }
@@ -399,6 +424,7 @@ export function criarSupabaseDemo(opcoes = {}) {
         for (const col of UNICOS[tabela] || []) if (q.dados[col] !== undefined && fonte.some(x => x !== r && x[col] == q.dados[col])) return erro('duplicate key value violates unique constraint', '23505');
         Object.assign(r, clone(q.dados));
         if (tabela === 'topos_pedidos') custoTopo(r, antigo);
+        if (tabela === 'pedido_entregas') { const e = conferirEntrega(r); if (e) { Object.assign(r, antigo); return e; } }
         if (TABELAS_COM_ATUALIZADO.includes(tabela) && (tabela !== 'topos_pedidos' || mudouPedidoTopo(antigo, r))) r.atualizado_em = agora();
         aposEscrever(tabela, r, antigo);
       }
@@ -434,7 +460,8 @@ export function criarSupabaseDemo(opcoes = {}) {
       prejuizos: { quantidade: 1, data: hojeSP(), registrado_por: USUARIO_DEMO.id },
       topos_pedidos: { tipo: 'topo', quantidade: 1, referencias: [], status: 'novo', valor: 0, pago: false, custo_unitario: null, custo_manual: false, pagamento_id: null, criado_por: usuarioId() },
       estoque_itens: { unidade: 'unidade', quantidade: 0, minimo: 0, ativo: true, categoria: null, observacao: null },
-      estoque_consumos: { por_kg: false }
+      estoque_consumos: { por_kg: false },
+      pedido_entregas: { taxa: 0, cep: null, complemento: null, bairro: null, cidade: null, recebedor_nome: null, recebedor_telefone: null, distancia_km: null, duracao_min: null }
     }[tabela] || {};
     if (tabela === 'topos_pedidos') extra.numero = db._seqTopo = (db._seqTopo || 0) + 1;
     if (tabela === 'pedido_observacoes' || tabela === 'pedido_historico') id.id = Date.now() + Math.floor(Math.random() * 1000);
@@ -451,13 +478,17 @@ export function criarSupabaseDemo(opcoes = {}) {
     if (tabela === 'pedidos' && !novo && antigo) {
       sincronizarEstoquePedido(antigo.id, false, antigo.codigo);   // pedido excluído: devolve o que tinha saído
       (db.estoque_movimentos || []).filter(m => m.pedido_id === antigo.id).forEach(m => { m.pedido_id = null; });
-      for (const t of ['pedido_itens', 'pedido_historico', 'pedido_observacoes', 'pedido_pagamentos']) db[t] = db[t].filter(r => r.pedido_id !== antigo.id);
+      for (const t of ['pedido_itens', 'pedido_historico', 'pedido_observacoes', 'pedido_pagamentos', 'pedido_entregas']) db[t] = (db[t] || []).filter(r => r.pedido_id !== antigo.id);
       emitir('DELETE', null, antigo);
     }
     if (['pedido_itens', 'pedido_pagamentos'].includes(tabela)) {
       const p = db.pedidos.find(x => x.id === (novo || antigo).pedido_id);
       if (p && tabela === 'pedido_itens') sincronizarEstoquePedido(p.id, consomeEstoque(p.status));   // itens mudaram num pedido confirmado: acerta a diferença
       if (p) { recalcularPedido(p); emitir('UPDATE', p); }
+    }
+    if (tabela === 'pedido_entregas') {   // gatilho de sql/entregas.sql: a taxa vai para o pedido (e o total muda)
+      const p = db.pedidos.find(x => x.id === (novo || antigo).pedido_id);
+      if (p) { const antes = clone(p); p.taxa_entrega = novo ? Number(novo.taxa || 0) : 0; recalcularPedido(p); p.atualizado_em = agora(); emitir('UPDATE', p, antes); }
     }
     if (tabela === 'estoque_itens' && novo && antigo) avisarEstoque(antigo, novo);   // mudou o mínimo ou desligou o item
     if (tabela === 'estoque_itens' && !novo && antigo) {
@@ -488,6 +519,47 @@ export function criarSupabaseDemo(opcoes = {}) {
       if (voltam.length) emitir('UPDATE', voltam[0], null, 'topos_pedidos');
     }
   }
+  /* ---- Entregas: as regras da tabela pedido_entregas (sql/entregas.sql) ---- */
+  /** Limpa os campos como o gatilho do banco e confere o que o banco recusa. Devolve o erro, ou null. */
+  function conferirEntrega(e) {
+    const t = v => (String(v ?? '').trim() || null);
+    e.endereco = String(e.endereco ?? '').trim();
+    e.cep = String(e.cep ?? '').replace(/\D/g, '') || null;
+    ['complemento', 'bairro', 'cidade', 'recebedor_nome', 'recebedor_telefone'].forEach(k => { e[k] = t(e[k]); });
+    e.taxa = r2(e.taxa ?? 0);
+    if (!e.endereco) return erro('new row for relation "pedido_entregas" violates check constraint "pedido_entregas_endereco_check"', '23514');
+    if (!(e.taxa >= 0)) return erro('new row for relation "pedido_entregas" violates check constraint "pedido_entregas_taxa_check"', '23514');
+    if (!db.pedidos.some(p => p.id === e.pedido_id)) return erro('insert or update on table "pedido_entregas" violates foreign key constraint', '23503');
+    return null;
+  }
+  /** Um pedido de hoje com entrega, pronto para sair (uma vez só em cada banco de demonstração). */
+  function semearEntregas() {
+    if (db._entregasSemeadas) return;
+    db._entregasSemeadas = true;
+    if (db.pedido_entregas.length) return;
+    let id;
+    try {
+      ({ id } = criarPedido({ cliente_nome: 'Fernanda Rocha', cliente_telefone: '(19) 99654-3210', data_retirada: hojeSP(0), hora_retirada: '15:00',
+        itens: [{ produto_slug: 'bolo-ninho-morango', quantidade: 1, peso_kg: 2, massa: 'branca', formato: 'redondo', observacao: 'Escrever "Feliz aniversário, Lu!"' },
+                { produto_slug: 'bebida-coca-cola-2-l', quantidade: 2 }],
+        _criado_em: new Date(Date.now() - 36e5 * 26).toISOString() }));
+    } catch (e) { return; }   // cardápio da demonstração diferente: fica sem o exemplo
+    const p = db.pedidos.find(x => x.id === id);
+    p.origem = 'whatsapp';
+    db.pedido_entregas.push({ pedido_id: id, taxa: 20, cep: '13084791', endereco: 'Avenida Doutor Romeu Tórtima, 450', complemento: 'Casa 3, portão branco',
+      bairro: 'Barão Geraldo', cidade: 'Campinas - SP', recebedor_nome: 'Fernanda Rocha', recebedor_telefone: '(19) 99654-3210', distancia_km: 10.4, duracao_min: 13,
+      criado_em: p.criado_em, atualizado_em: p.criado_em });
+    p.taxa_entrega = 20; recalcularPedido(p);
+    db.pedido_pagamentos.push({ id: novoId(), pedido_id: id, tipo: 'sinal', forma: 'pix', valor: p.valor_sinal, pago_em: p.criado_em, observacao: null, registrado_por: USUARIO_DEMO.id, criado_em: p.criado_em });
+    let anterior = 'recebido';
+    for (const s of ['confirmado', 'em_producao', 'pronto']) {
+      db.pedido_historico.push({ id: db.pedido_historico.length + 1, pedido_id: id, status_anterior: anterior, status_novo: s, comentario: s === 'confirmado' ? 'Sinal recebido por Pix' : null,
+        alterado_por: USUARIO_DEMO.id, alterado_em: agora() });
+      anterior = s;
+    }
+    p.status = 'pronto'; recalcularPedido(p);
+  }
+
   /* ---- Gastos com topos: o que os gatilhos de sql/topos-gastos.sql fazem ---- */
   /** Quem não é da Administração não mexe no valor nem no pagamento; sem valor digitado (e ainda não pago), vale a tabela. */
   function custoTopo(novo, antigo) {
@@ -666,6 +738,10 @@ export function criarSupabaseDemo(opcoes = {}) {
     obter_cardapio: () => obterCardapio(),
     criar_pedido: ({ p_pedido }) => { const { id, repetido } = criarPedido(p_pedido); return { ...pedidoJson(id, false), token: db.pedidos.find(p => p.id === id).token, repetido }; },
     consultar_pedido: ({ p_token }) => { const p = db.pedidos.find(x => x.token === p_token); return p ? pedidoJson(p.id, false) : null; },
+    entrega_publica: ({ p_token }) => {   // sql/entregas.sql: endereço e taxa para o recibo do cliente, sem telefone
+      const p = db.pedidos.find(x => x.token === String(p_token || '').trim()), e = p && db.pedido_entregas.find(x => x.pedido_id === p.id);
+      return e ? { taxa: e.taxa, cep: e.cep, endereco: e.endereco, complemento: e.complemento, bairro: e.bairro, cidade: e.cidade, recebedor_nome: e.recebedor_nome } : null;
+    },
     recibo_pedido: ({ p_pedido_id }) => { exigirEquipe(); const r = pedidoJson(p_pedido_id, true); if (!r) throw ['Pedido não encontrado.', 'P0002']; return r; },
     alterar_status_pedido: ({ p_pedido_id, p_status, p_comentario }) => {
       exigirEquipe();
@@ -893,9 +969,10 @@ export function criarSupabaseDemo(opcoes = {}) {
   }
 
   db = carregar();
+  semearEntregas();
   salvar();
   return { from, rpc, auth, storage, channel, removeChannel: c => canais.delete(c),
-    _demo: { reiniciar() { localStorage.removeItem(CHAVE); db = carregar(); salvar(); } } };
+    _demo: { reiniciar() { localStorage.removeItem(CHAVE); db = carregar(); semearEntregas(); salvar(); } } };
 }
 
 const DEF_PRODUTO = { tipo: 'simples', unidade_preco: 'unidade', pede_observacao: false, observacao_obrigatoria: false, destaque: false, antecedencia_minima_dias: 0, ordem: 0, ativo: true };

@@ -44,6 +44,7 @@ function mensagemAmigavel(e) {
   if (e.code === '23503') return 'Este registro está em uso em outro cadastro e não pode ser removido. Você pode desativá-lo.';
   if (e.code === '23514') return 'Algum campo tem um valor fora do permitido. Confira os dados.';
   if (e.code === 'PGRST202' || /could not find the function/i.test(msg)) return 'Esta função ainda não existe no banco. Rode o script SQL mais recente no Supabase.';
+  if (e.code === 'PGRST205' || e.code === '42P01' || /could not find the table/i.test(msg)) return 'Esta parte ainda não existe no banco. Rode o script SQL mais recente no Supabase.';
   return msg || 'Erro inesperado.';
 }
 
@@ -206,22 +207,33 @@ export function montarMensagemWhatsApp(pedido, urlRecibo, cfg) {
  */
 export function montarMensagemStatus(pedido, status, urlRecibo, cfg) {
   const p = pedido, s = status || {}, pix = textoPix(pixDe(cfg));
-  const nome = String(p.cliente_nome || '').trim().split(/\s+/)[0];
+  const e = p.entrega || null, rec = e ? quemRecebe(p) : null;
+  // "Saiu para entrega" vai para quem recebe; se for outra pessoa (um presente), sem valores nem o link do recibo
+  const paraOutro = s.codigo === 'em_rota' && !!rec?.outraPessoa;
+  const nome = String((s.codigo === 'em_rota' && rec ? rec.nome : p.cliente_nome) || '').trim().split(/\s+/)[0];
   const ped = `*${p.codigo}*`;
-  const retirada = `*Retirada:* ${formatarData(p.data_retirada)}${p.hora_retirada ? ' \u00e0s ' + String(p.hora_retirada).slice(0, 5) : ''}`;
+  const quando = `${formatarData(p.data_retirada)}${p.hora_retirada ? ' \u00e0s ' + String(p.hora_retirada).slice(0, 5) : ''}`;
+  const retirada = e ? `*Entrega:* ${quando}` : `*Retirada:* ${quando}`;
+  const endereco = e ? `*Endere\u00e7o:* ${textoEndereco(e)}` : '';
   const saldo = Number(p.saldo ?? 0);
   const pct = Number(p.percentual_sinal ?? 50).toLocaleString('pt-BR');
   const textos = {
-    recebido: [`Recebemos o seu pedido ${ped}.`, `Para confirmar, envie o comprovante do sinal de ${formatarPreco(p.valor_sinal)} (${pct}% do total).`, pix ? `\n${pix}` : ''],
-    confirmado: [`Seu pedido ${ped} est\u00e1 *confirmado*! Recebemos o sinal.`, retirada],
+    recebido: [`Recebemos o seu pedido ${ped}.`, `Para confirmar, envie o comprovante do sinal de ${formatarPreco(p.valor_sinal)} (${pct}% ${e && Number(e.taxa) > 0 ? 'dos produtos' : 'do total'}).`, pix ? `\n${pix}` : ''],
+    confirmado: [`Seu pedido ${ped} est\u00e1 *confirmado*! Recebemos o sinal.`, retirada, endereco],
     em_producao: [`Seu pedido ${ped} j\u00e1 est\u00e1 *em produ\u00e7\u00e3o*.`, retirada],
-    pronto: [`Seu pedido ${ped} est\u00e1 *pronto para retirada*!`, retirada, saldo > 0 ? `*Falta pagar:* ${formatarPreco(saldo)}` : 'Est\u00e1 tudo pago, \u00e9 s\u00f3 vir buscar.'],
+    pronto: e
+      ? [`Seu pedido ${ped} est\u00e1 *pronto* e logo sai para entrega!`, retirada, saldo > 0 ? `*Falta pagar na entrega:* ${formatarPreco(saldo)}` : 'Est\u00e1 tudo pago.']
+      : [`Seu pedido ${ped} est\u00e1 *pronto para retirada*!`, retirada, saldo > 0 ? `*Falta pagar:* ${formatarPreco(saldo)}` : 'Est\u00e1 tudo pago, \u00e9 s\u00f3 vir buscar.'],
+    em_rota: paraOutro
+      ? ['Um pedido para voc\u00ea *saiu para entrega* e j\u00e1 est\u00e1 a caminho!', endereco, 'Qualquer coisa, \u00e9 s\u00f3 responder esta mensagem.']
+      : [`Seu pedido ${ped} *saiu para entrega* e j\u00e1 est\u00e1 a caminho!`, endereco, saldo > 0 ? `*Falta pagar na entrega:* ${formatarPreco(saldo)}` : 'Est\u00e1 tudo pago, \u00e9 s\u00f3 receber.'],
     retirado: [`Pedido ${ped} retirado. Agradecemos a prefer\u00eancia e bom apetite!`],
+    entregue: [`Pedido ${ped} entregue. Agradecemos a prefer\u00eancia e bom apetite!`],
     cancelado: [`Seu pedido ${ped} foi *cancelado*.`, 'Se tiver alguma d\u00favida, \u00e9 s\u00f3 responder esta mensagem.']
   };
   const corpo = textos[s.codigo] || [`Seu pedido ${ped} mudou para *${s.nome || s.codigo}*.`, s.descricao, s.finalizado ? '' : retirada];
   const l = [`Ol\u00e1${nome ? ', ' + nome : ''}! Aqui \u00e9 da ${p.loja?.nome || 'Rita Bolos'}.`, '', ...corpo.filter(Boolean)];
-  if (urlRecibo && !['retirado', 'cancelado'].includes(s.codigo)) l.push('', `Acompanhe o pedido: ${urlRecibo}`);
+  if (urlRecibo && !paraOutro && !['retirado', 'entregue', 'cancelado'].includes(s.codigo)) l.push('', `Acompanhe o pedido: ${urlRecibo}`);
   return l.join('\n').replace(/\u00a0/g, ' ');
 }
 
@@ -251,6 +263,181 @@ export function prepararAba() {
     },
     fechar() { try { if (w && !w.closed) w.close(); } catch (e) { /* j\u00e1 fechada */ } }
   };
+}
+
+/* ================================================================
+   Entregas (sql/entregas.sql)
+   Endereço, links para o Waze e o Google Maps e a taxa pela distância.
+   CEP: ViaCEP (ou BrasilAPI). Endereço no mapa: OpenStreetMap (Nominatim).
+   Caminho de carro: OSRM. Todos gratuitos e sem chave; o OpenStreetMap
+   pede no máximo uma busca por segundo, e as buscas daqui respeitam isso.
+================================================================ */
+/** CEP com hífen (13024-000). */
+export const formatarCep = cep => { const d = String(cep ?? '').replace(/\D/g, ''); return d.length === 8 ? `${d.slice(0, 5)}-${d.slice(5)}` : d; };
+/**
+ * Endereço numa linha: "Rua X, 123 · Apto 4 · Cambuí · Campinas - SP".
+ * paraMapa: só rua, bairro e cidade, com vírgulas (o complemento atrapalha a busca no mapa).
+ */
+export function textoEndereco(e, { paraMapa = false } = {}) {
+  if (!e) return '';
+  const partes = paraMapa ? [e.endereco, e.bairro, e.cidade] : [e.endereco, e.complemento, e.bairro, e.cidade];
+  return partes.map(x => String(x ?? '').trim()).filter(Boolean).join(paraMapa ? ', ' : ' · ');
+}
+/** Waze com a rota até o endereço: no celular abre o aplicativo já navegando. */
+export const linkWaze = e => `https://waze.com/ul?q=${encodeURIComponent(textoEndereco(e, { paraMapa: true }))}&navigate=yes`;
+/** Google Maps com a rota de carro até o endereço. */
+export const linkMapa = e => `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(textoEndereco(e, { paraMapa: true }))}&travelmode=driving`;
+const primeiroNome = s => String(s ?? '').trim().split(/\s+/)[0].normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+/**
+ * Quem recebe a entrega: { nome, telefone, outraPessoa }. Em branco, é o próprio cliente.
+ * outraPessoa: outro telefone (ou, sem telefone, outro nome), como num presente.
+ */
+export function quemRecebe(p) {
+  const e = p?.entrega || {};
+  const nome = String(e.recebedor_nome ?? '').trim() || String(p?.cliente_nome ?? '').trim();
+  const telefone = String(e.recebedor_telefone ?? '').trim() || String(p?.cliente_telefone ?? '').trim();
+  const dig = t => String(t ?? '').replace(/\D/g, '').slice(-8);
+  const outraPessoa = e.recebedor_telefone && p?.cliente_telefone
+    ? dig(e.recebedor_telefone) !== dig(p.cliente_telefone)
+    : !!e.recebedor_nome && primeiroNome(e.recebedor_nome) !== primeiroNome(p?.cliente_nome);
+  return { nome, telefone, outraPessoa };
+}
+
+const buscarComPrazo = (url, ms = 9000) => fetch(url, typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? { signal: AbortSignal.timeout(ms) } : {});
+
+/** Rua, bairro e cidade de um CEP: { cep, endereco, bairro, cidade }. null: o CEP não existe. */
+export async function buscarCep(cep) {
+  const d = String(cep ?? '').replace(/\D/g, '');
+  if (d.length !== 8) return null;
+  try {
+    const r = await buscarComPrazo(`https://viacep.com.br/ws/${d}/json/`, 6000);
+    if (r.ok) {
+      const j = await r.json();
+      if (j.erro) return null;
+      return { cep: d, endereco: j.logradouro || '', bairro: j.bairro || '', cidade: [j.localidade, j.uf].filter(Boolean).join(' - ') };
+    }
+  } catch (e) { /* tenta o outro serviço */ }
+  const falhou = 'Não foi possível consultar o CEP agora. Preencha o endereço à mão.';
+  let r;
+  try { r = await buscarComPrazo(`https://brasilapi.com.br/api/cep/v2/${d}`); } catch (e) { throw new Error(falhou); }
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(falhou);
+  const j = await r.json();
+  return { cep: d, endereco: j.street || '', bairro: j.neighborhood || '', cidade: [j.city, j.state].filter(Boolean).join(' - ') };
+}
+
+let ultimaBuscaMapa = 0;
+/** Uma busca por vez no OpenStreetMap, com 1,1 s entre elas (regra de uso do serviço). */
+async function vezDoMapa() {
+  const vez = Math.max(Date.now(), ultimaBuscaMapa + 1100);
+  ultimaBuscaMapa = vez;
+  if (vez > Date.now()) await new Promise(r => setTimeout(r, vez - Date.now()));
+}
+/** Ponto do CEP pela BrasilAPI (nem todo CEP tem). */
+async function pontoDoCep(cep) {
+  try {
+    const r = await buscarComPrazo(`https://brasilapi.com.br/api/cep/v2/${cep}`);
+    const c = r.ok ? (await r.json())?.location?.coordinates : null;
+    const lat = Number(c?.latitude), lng = Number(c?.longitude);
+    return Number.isFinite(lat) && Number.isFinite(lng) && (lat || lng) ? { lat, lng, nivel: 'cep', nome: `CEP ${formatarCep(cep)}` } : null;
+  } catch (e) { return null; }
+}
+const RAIO_BUSCA = 0.6;   // graus em volta da loja (uns 60 km): uma rua com o mesmo nome em outra cidade não serve
+const pertoDe = (a, b) => Math.abs(a.lat - b.lat) <= RAIO_BUSCA && Math.abs(a.lng - b.lng) <= RAIO_BUSCA;
+/** Precisão do que o mapa achou (place_rank do OpenStreetMap): o número da casa, só a rua ou só o bairro. */
+const nivelDoMapa = rank => (rank >= 30 ? 'numero' : rank >= 26 ? 'rua' : rank >= 18 ? 'bairro' : null);
+/**
+ * Ponto no mapa de um endereço: { lat, lng, nivel, nome } ou null (não achou).
+ * nivel: 'exato' (coordenadas coladas), 'numero', 'rua', 'cep' ou 'bairro' (os dois últimos, aproximados).
+ * e: { endereco, bairro, cidade, cep } ou o endereço numa linha; também aceita coordenadas coladas do
+ * Google Maps ("-22.9056, -47.0583"). perto: { lat, lng } da loja (só procura em volta dela).
+ */
+export async function localizarEndereco(e, { perto } = {}) {
+  const linha = typeof e === 'string' ? e.trim() : '';
+  const coord = linha.match(/^(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$/);
+  if (coord) return { lat: Number(coord[1]), lng: Number(coord[2]), nivel: 'exato', nome: linha };
+  const end = typeof e === 'string' ? { endereco: e } : (e || {});
+  const limpo = x => String(x ?? '').trim();
+  const rua = limpo(end.endereco), bairro = limpo(end.bairro), cidade = limpo(end.cidade), cep = limpo(end.cep).replace(/\D/g, '');
+  // a cidade digitada (sem o "- SP") tem de bater com a do resultado: "Avenida Paulista, São Paulo" não pode virar a de Americana
+  const norm = x => String(x ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const cidadeDigitada = norm(cidade.replace(/\s*[-/,]\s*[a-z]{2}\s*$/i, ''));
+  const mesmaCidade = achado => {
+    const cidades = ['city', 'town', 'village', 'municipality', 'city_district'].map(k => norm(achado.address?.[k])).filter(Boolean);
+    return cidadeDigitada.length < 3 || !cidades.length || cidades.some(c => c === cidadeDigitada || c.includes(cidadeDigitada) || cidadeDigitada.includes(c));
+  };
+  // sem o número da casa (só quando ele vem depois de vírgula ou "nº": "Rua 7" continua "Rua 7")
+  const semNumero = rua.replace(/\s*(,\s*|\s+n[º°o.]?\s*)\d+\s*[a-z]?\s*$/i, '').trim();
+  const juntar = (...l) => l.filter(Boolean).join(', ');
+  const tentativas = [juntar(rua, bairro, cidade), cep.length === 8 && 'cep',
+    semNumero !== rua && semNumero.split(/\s+/).length >= 2 && juntar(semNumero, cidade || bairro), bairro && cidade && juntar(bairro, cidade)];
+  for (const t of [...new Set(tentativas.filter(Boolean))]) {
+    if (t === 'cep') {
+      const ponto = await pontoDoCep(cep);
+      if (ponto && (!perto || pertoDe(ponto, perto))) return ponto;
+      continue;
+    }
+    await vezDoMapa();
+    const qs = new URLSearchParams({ format: 'jsonv2', limit: '1', addressdetails: '1', countrycodes: 'br', 'accept-language': 'pt-BR', q: t });
+    if (perto) { qs.set('viewbox', [perto.lng - RAIO_BUSCA, perto.lat + RAIO_BUSCA, perto.lng + RAIO_BUSCA, perto.lat - RAIO_BUSCA].join(',')); qs.set('bounded', '1'); }
+    let r;
+    try { r = await buscarComPrazo(`https://nominatim.openstreetmap.org/search?${qs}`); } catch (err) { r = null; }
+    if (!r?.ok) throw new Error('O mapa não respondeu agora. Tente de novo em instantes ou digite a taxa.');
+    const [achado] = await r.json();
+    const nivel = achado && mesmaCidade(achado) ? nivelDoMapa(Number(achado.place_rank)) : null;
+    if (nivel) return { lat: Number(achado.lat), lng: Number(achado.lon), nivel, nome: achado.display_name };
+  }
+  return null;
+}
+/** Linha reta entre dois pontos, em km. */
+function kmEmLinhaReta(a, b) {
+  const rad = x => x * Math.PI / 180;
+  const h = Math.sin(rad(b.lat - a.lat) / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lng - a.lng) / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(h));
+}
+/**
+ * Caminho de carro entre dois pontos: { km, minutos, aproximado }, pelas ruas do OpenStreetMap (OSRM).
+ * Se o serviço não responder, estima pela linha reta com 30% a mais (aproximado: true).
+ */
+export async function distanciaDeCarro(a, b) {
+  try {
+    const r = await buscarComPrazo(`https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=false&alternatives=false&steps=false`);
+    const j = r.ok ? await r.json() : null;
+    const rota = j?.code === 'Ok' ? j.routes?.[0] : null;
+    if (rota) return { km: rota.distance / 1000, minutos: Math.max(1, Math.round(rota.duration / 60)), aproximado: false };
+  } catch (e) { /* sem rota: estima */ }
+  const km = kmEmLinhaReta(a, b) * 1.3;
+  return { km, minutos: Math.max(1, Math.round(km / 30 * 60)), aproximado: true };
+}
+/** Ponto de onde sai a entrega (a loja), das configurações; null enquanto não for cadastrado. */
+export const origemEntrega = cfg => (cfg && cfg.entrega_origem_lat != null && cfg.entrega_origem_lng != null
+  ? { lat: Number(cfg.entrega_origem_lat), lng: Number(cfg.entrega_origem_lng) } : null);
+/** A regra da taxa está preenchida (Ajustes > Loja > Entrega)? */
+export const temRegraEntrega = cfg => Number(cfg?.entrega_taxa_minima) > 0 || Number(cfg?.entrega_valor_km) > 0;
+/**
+ * Taxa pela regra da loja: a taxa mínima cobre os primeiros km e cada km a mais soma o valor por km.
+ * Arredonda para cima, em reais inteiros. foraDoRaio: passou da distância máxima de entrega.
+ */
+export function taxaPelaDistancia(km, cfg) {
+  const minima = Number(cfg?.entrega_taxa_minima) || 0, inclui = Number(cfg?.entrega_km_incluidos) || 0;
+  const porKm = Number(cfg?.entrega_valor_km) || 0, raio = Number(cfg?.entrega_raio_km) || 0;
+  const bruto = Math.round((minima + Math.max(0, km - inclui) * porKm) * 100) / 100;
+  return { taxa: Math.max(0, Math.ceil(bruto - 0.001)), foraDoRaio: raio > 0 && km > raio };
+}
+/**
+ * Taxa sugerida para um endereço: acha o endereço no mapa, mede o caminho de carro desde a loja e aplica a regra.
+ * Devolve { km, minutos, taxa, aproximado, foraDoRaio, nivel, local }. A equipe confere e pode digitar outro valor.
+ */
+export async function calcularTaxaEntrega(e, cfg) {
+  const origem = origemEntrega(cfg);
+  if (!origem) throw new Error('Cadastre o endereço da loja em Ajustes > Loja > Entrega para calcular pela distância.');
+  if (!temRegraEntrega(cfg)) throw new Error('Preencha a regra da taxa em Ajustes > Loja > Entrega para calcular pela distância.');
+  if (!String(e?.endereco ?? '').trim() && !String(e?.bairro ?? '').trim()) throw new Error('Preencha o endereço para calcular.');
+  const local = await localizarEndereco(e, { perto: origem });
+  if (!local) throw new Error('Não achei esse endereço no mapa. Confira a rua, o bairro e a cidade, ou digite a taxa.');
+  const rota = await distanciaDeCarro(origem, local);
+  const km = Math.round(rota.km * 10) / 10;
+  return { ...rota, km, ...taxaPelaDistancia(km, cfg), nivel: local.nivel, local };
 }
 
 /* ================================================================
@@ -293,6 +480,34 @@ export function criarApi(supabase, opcoes = {}) {
     if (!path) return null;
     if (/^(https?:|data:|blob:)/.test(path)) return path;
     return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+  }
+
+  /* Entregas (sql/entregas.sql). Enquanto o script não roda, a tabela não existe e os pedidos seguem sem entrega. */
+  let semEntregas = false;
+  const faltaNoBanco = e => ['PGRST205', 'PGRST202', '42P01', '42883'].includes(e?.code) || /could not find|does not exist/i.test(e?.message || '');
+  /** Entregas de vários pedidos: Map pedido_id → entrega. */
+  async function entregasDe(ids) {
+    const mapa = new Map(), lista = [...new Set((ids || []).filter(Boolean))];
+    if (semEntregas || !lista.length) return mapa;
+    const partes = Array.from({ length: Math.ceil(lista.length / 80) }, (_, i) => lista.slice(i * 80, i * 80 + 80));
+    const respostas = await Promise.all(partes.map(l => supabase.from('pedido_entregas').select('*').in('pedido_id', l)));
+    for (const { data, error } of respostas) {
+      if (error) {
+        if (faltaNoBanco(error)) { semEntregas = true; return new Map(); }
+        throw new ErroApi(error, 'entregas');
+      }
+      for (const e of data || []) mapa.set(e.pedido_id, e);
+    }
+    return mapa;
+  }
+  /** O pedido com a entrega junto: pedido.entrega (endereço, quem recebe e taxa), ou null quando é retirada. */
+  async function comEntrega(pedido) {
+    if (!pedido?.id) return pedido;
+    return { ...pedido, entrega: (await entregasDe([pedido.id])).get(pedido.id) || null };
+  }
+  async function juntarEntregas(lista) {
+    const mapa = await entregasDe(lista.map(p => p.id));
+    return lista.map(p => ({ ...p, entrega: mapa.get(p.id) || null }));
   }
 
   /** CRUD genérico de uma tabela do cadastro (RLS libera escrita só para admin). */
@@ -366,8 +581,12 @@ export function criarApi(supabase, opcoes = {}) {
       criar: (pedido) => rpc('criar_pedido', {
         p_pedido: { chave_idempotencia: pedido.chave_idempotencia || novaChave(), ...pedido }
       }),
-      /** Recibo pelo token enviado no WhatsApp (versão do cliente). */
-      consultar: (token) => rpc('consultar_pedido', { p_token: token })
+      /** Recibo pelo token enviado no WhatsApp (versão do cliente), com a entrega (endereço e taxa) quando houver. */
+      async consultar(token) {
+        const [p, entrega] = await Promise.all([rpc('consultar_pedido', { p_token: token }),
+          supabase.rpc('entrega_publica', { p_token: token }).then(r => (r.error ? null : r.data), () => null)]);
+        return p ? { ...p, entrega: entrega || null } : p;
+      }
     },
 
     /* --------------------- LOGIN DA EQUIPE --------------------- */
@@ -425,8 +644,10 @@ export function criarApi(supabase, opcoes = {}) {
          * Lista de pedidos com filtros e paginação.
          * @param {{status?: string|string[], de?: string, ate?: string, antesDe?: string, datas?: string[], busca?: string,
          *          apenasAbertos?: boolean, sinalPago?: boolean, comSaldo?: boolean, quitado?: boolean, origem?: string,
-         *          criadoDesde?: string, pagina?: number, porPagina?: number, ordenarPor?: string, crescente?: boolean}} [f]
+         *          criadoDesde?: string, pagina?: number, porPagina?: number, ordenarPor?: string, crescente?: boolean,
+         *          comEntrega?: boolean}} [f]
          * busca: nome, código, telefone ou item do pedido (ex.: "kit").
+         * comEntrega: junta a entrega de cada pedido (p.entrega, ou null quando é retirada).
          */
         async listar(f = {}) {
           const pagina = f.pagina || 1, porPagina = f.porPagina || 30;
@@ -436,7 +657,7 @@ export function criarApi(supabase, opcoes = {}) {
                .range((pagina - 1) * porPagina, pagina * porPagina - 1);
           const { data, error, count } = await q;
           if (error) throw new ErroApi(error, 'pedidos');
-          return { pedidos: data, total: count ?? data.length, pagina, porPagina };
+          return { pedidos: f.comEntrega ? await juntarEntregas(data) : data, total: count ?? data.length, pagina, porPagina };
         },
         /** Quantos pedidos há em cada dia de retirada (mesmos filtros da lista): { 'AAAA-MM-DD': n } */
         async contarPorDia(f = {}) {
@@ -445,18 +666,18 @@ export function criarApi(supabase, opcoes = {}) {
           for (const l of linhas) n[l.data_retirada] = (n[l.data_retirada] || 0) + 1;
           return n;
         },
-        /** Pedido completo: itens, pagamentos, observações e histórico (também usado no recibo). */
-        obter: (id) => rpc('recibo_pedido', { p_pedido_id: id }),
+        /** Pedido completo: itens, pagamentos, observações, histórico e a entrega (também usado no recibo). */
+        obter: async (id) => comEntrega(await rpc('recibo_pedido', { p_pedido_id: id })),
         /** Lançar pedido pela equipe (WhatsApp, balcão...). Mesmo formato do site. */
         criar: (pedido) => rpc('criar_pedido', { p_pedido: { origem: 'backoffice', chave_idempotencia: novaChave(), ...pedido } }),
-        alterarStatus: (id, status, comentario) =>
-          rpc('alterar_status_pedido', { p_pedido_id: id, p_status: status, p_comentario: comentario ?? null }),
+        alterarStatus: async (id, status, comentario) =>
+          comEntrega(await rpc('alterar_status_pedido', { p_pedido_id: id, p_status: status, p_comentario: comentario ?? null })),
         /** Corrige dados do pedido (cliente, origem, retirada, desconto). Itens: admin.pedidos.itens. Status: use alterarStatus. */
         async atualizar(id, campos) {
           const permitidos = ['cliente_nome', 'cliente_telefone', 'origem', 'data_retirada', 'hora_retirada', 'observacao_cliente', 'desconto'];
           const dados = Object.fromEntries(Object.entries(campos).filter(([k]) => permitidos.includes(k)));
           conferir(await supabase.from('pedidos').update(dados).eq('id', id), 'pedido');
-          return rpc('recibo_pedido', { p_pedido_id: id });
+          return comEntrega(await rpc('recibo_pedido', { p_pedido_id: id }));
         },
         adicionarObservacao: (id, texto, fixada = false) =>
           rpc('adicionar_observacao_pedido', { p_pedido_id: id, p_texto: texto, p_fixada: fixada }),
@@ -470,10 +691,10 @@ export function criarApi(supabase, opcoes = {}) {
           conferir(await supabase.from('pedido_observacoes').delete().eq('id', observacaoId), 'observação');
           return true;
         },
-        registrarPagamento: (id, { valor, forma = 'pix', tipo = 'sinal', observacao = null, pagoEm = null }) =>
-          rpc('registrar_pagamento', {
+        registrarPagamento: async (id, { valor, forma = 'pix', tipo = 'sinal', observacao = null, pagoEm = null }) =>
+          comEntrega(await rpc('registrar_pagamento', {
             p_pedido_id: id, p_valor: valor, p_forma: forma, p_tipo: tipo, p_observacao: observacao, p_pago_em: pagoEm
-          }),
+          })),
         async removerPagamento(pagamentoId) {
           conferir(await supabase.from('pedido_pagamentos').delete().eq('id', pagamentoId), 'pagamento');
           return true;
@@ -498,6 +719,36 @@ export function criarApi(supabase, opcoes = {}) {
                 (m) => callback({ tipo: m.eventType, pedido: m.new && Object.keys(m.new).length ? m.new : m.old }))
             .subscribe((estado) => aoEstado?.(estado));
           return () => supabase.removeChannel(canal);
+        }
+      },
+
+      /*
+       * Entregas (sql/entregas.sql): endereço, quem recebe e a taxa de cada pedido com entrega.
+       * A taxa entra sozinha no total do pedido (gatilho do banco). Sem o script rodado, disponivel() = false.
+       */
+      entregas: {
+        /** O banco já tem as entregas? */
+        async disponivel() {
+          if (!semEntregas) {
+            const { error } = await supabase.from('pedido_entregas').select('pedido_id').limit(1);
+            if (error && faltaNoBanco(error)) semEntregas = true;
+          }
+          return !semEntregas;
+        },
+        /** Entregas de vários pedidos: Map pedido_id → entrega. */
+        dosPedidos: (ids) => entregasDe(ids),
+        /** Cria ou muda a entrega do pedido. Devolve o pedido atualizado (o total já com a taxa). */
+        async salvar(pedidoId, dados) {
+          const campos = ['taxa', 'cep', 'endereco', 'complemento', 'bairro', 'cidade', 'recebedor_nome', 'recebedor_telefone', 'distancia_km', 'duracao_min'];
+          const linha = { pedido_id: pedidoId };
+          for (const k of campos) if (dados[k] !== undefined) linha[k] = dados[k];
+          conferir(await supabase.from('pedido_entregas').upsert(linha, { onConflict: 'pedido_id' }), 'entrega');
+          return comEntrega(await rpc('recibo_pedido', { p_pedido_id: pedidoId }));
+        },
+        /** Tira a entrega: o pedido volta a ser de retirada e a taxa sai do total. Devolve o pedido atualizado. */
+        async remover(pedidoId) {
+          conferir(await supabase.from('pedido_entregas').delete().eq('pedido_id', pedidoId), 'entrega');
+          return comEntrega(await rpc('recibo_pedido', { p_pedido_id: pedidoId }));
         }
       },
 
@@ -741,7 +992,8 @@ export function criarApi(supabase, opcoes = {}) {
       }
     },
 
-    util: { formatarPreco, formatarPeso, formatarData, novaChave, linkWhatsApp, abrirWhatsApp, alvoWhatsApp, linkCompartilhavel, linkRecibo, montarMensagemWhatsApp, montarMensagemStatus, prepararAba, separarReferencia, juntarReferencia, ehTopper, PIX, pixDe, textoPix }
+    util: { formatarPreco, formatarPeso, formatarData, novaChave, linkWhatsApp, abrirWhatsApp, alvoWhatsApp, linkCompartilhavel, linkRecibo, montarMensagemWhatsApp, montarMensagemStatus, prepararAba, separarReferencia, juntarReferencia, ehTopper, PIX, pixDe, textoPix,
+      formatarCep, textoEndereco, linkWaze, linkMapa, quemRecebe, buscarCep, localizarEndereco, distanciaDeCarro, taxaPelaDistancia, calcularTaxaEntrega, origemEntrega, temRegraEntrega }
   };
 }
 

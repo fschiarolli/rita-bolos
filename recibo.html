@@ -90,6 +90,7 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 20px; margin
 .bloco strong { display: block; margin-bottom: 2px; }
 .bloco.aviso { border: 2px dashed var(--ink); background: #FFF6E6; }
 .bloco.interno { background: var(--mint-50); }
+.bloco.entrega { margin-top: 0; margin-bottom: 18px; background: #E6EFF7; }   /* endereço da entrega (sql/entregas.sql) */
 .bloco ul { margin: 4px 0 0; padding-left: 18px; }
 .rodape { margin-top: 22px; padding-top: 14px; border-top: 1px solid #C8B89A; text-align: center; }
 .rodape p { margin: 0; }
@@ -181,7 +182,7 @@ body.cupom .bloco.aviso { border: 1px dashed #000; padding: 6px; }
 </main>
 
 <script type="module">
-import { conectar, formatarPreco as R, formatarPeso, formatarData, separarReferencia, PIX, pixDe, mapaKits, achatarCardapio, conteudoKit } from './js/rita-api.js';
+import { conectar, formatarPreco as R, formatarPeso, formatarData, formatarCep, separarReferencia, PIX, pixDe, mapaKits, achatarCardapio, conteudoKit } from './js/rita-api.js';
 
 const LOGO_DEMO = null;
 const PEDIDO_DEMO = {
@@ -211,6 +212,12 @@ function estado(titulo, texto) {
 
 function render(p, { urlLogo, interno, mostrarInterno, pix, kits }) {
   const pct = Number(p.percentual_sinal ?? 50).toLocaleString('pt-BR');
+  // pedido com entrega: endereço e taxa (a taxa entra no total; o sinal é sobre os produtos)
+  const e = p.entrega || null, taxa = Number(e?.taxa) || 0;
+  const recebe = e && (e.recebedor_nome || (interno && e.recebedor_telefone))
+    ? `<br>Quem recebe: ${esc(e.recebedor_nome || p.cliente_nome)}${interno && e.recebedor_telefone ? ' · ' + esc(e.recebedor_telefone) : ''}` : '';
+  const entrega = e ? `<div class="bloco entrega"><strong>Endereço da entrega</strong>${esc(e.endereco)}${e.complemento ? '<br>' + esc(e.complemento) : ''}
+      ${[e.bairro, e.cidade].filter(Boolean).length ? '<br>' + esc([e.bairro, e.cidade].filter(Boolean).join(' - ')) : ''}${e.cep ? '<br>CEP ' + esc(formatarCep(e.cep)) : ''}${recebe}</div>` : '';
   const itens = (p.itens || []).map((i, n) => {
     const det = [];
     if (i.peso_kg) det.push(`<div class="det"><strong>Peso:</strong> ${formatarPeso(i.peso_kg)}${i.preco_kg ? ` (${R(i.preco_kg)} o kg)` : ''}</div>`);
@@ -247,29 +254,31 @@ function render(p, { urlLogo, interno, mostrarInterno, pix, kits }) {
       <div><span>Cliente</span><strong>${esc(p.cliente_nome)}</strong></div>
       ${interno && p.cliente_telefone ? `<div><span>Telefone</span><strong>${esc(p.cliente_telefone)}</strong></div>` : ''}
       <div><span>Situação</span><strong><span class="selo" style="background:${esc(p.status_cor || '#4A2A1C')}">${esc(p.status_nome || p.status)}</span></strong></div>
-      <div class="retirada"><span>Retirada</span><strong>${formatarData(p.data_retirada)}${p.hora_retirada ? ' às ' + esc(p.hora_retirada) : ''}</strong></div>
+      <div class="retirada"><span>${e ? 'Entrega' : 'Retirada'}</span><strong>${formatarData(p.data_retirada)}${p.hora_retirada ? ' às ' + esc(p.hora_retirada) : ''}</strong></div>
     </section>
+    ${entrega}
     <h2>Itens do pedido</h2>
     ${itens}
     <section class="totais">
       <div class="t"><span>Subtotal</span><strong>${R(p.subtotal)}</strong></div>
       ${Number(p.desconto) > 0 ? `<div class="t"><span>Desconto</span><strong>− ${R(p.desconto)}</strong></div>` : ''}
+      ${e ? `<div class="t"><span>Entrega</span><strong>${taxa > 0 ? '+ ' + R(taxa) : 'grátis'}</strong></div>` : ''}
       <div class="t total"><span>Total</span><strong>${R(p.total)}</strong></div>
-      <div class="t sinal"><span>Sinal mínimo (${pct}%)</span><strong>${R(p.valor_sinal)}</strong></div>
+      <div class="t sinal"><span>Sinal mínimo (${pct}%${taxa > 0 ? ' dos produtos' : ''})</span><strong>${R(p.valor_sinal)}</strong></div>
       <div class="t"><span>Valor pago</span><strong>${R(p.valor_pago)}</strong></div>
       <div class="t saldo"><span>Falta pagar</span><strong>${R(p.saldo)}</strong></div>
     </section>
     ${p.observacao_cliente ? `<div class="bloco"><strong>Observação do cliente</strong>${esc(p.observacao_cliente)}</div>` : ''}
     ${pagamentos}${anotacoes}
     ${Number(p.saldo) > 0 && pix ? `<div class="bloco pix"><strong>Pagamento por Pix</strong>Chave${pix.tipo ? ` (${esc(pix.tipo)})` : ''}: <b>${esc(pix.chave)}</b>${pix.nome ? `<br>${esc(pix.nome)}` : ''}</div>` : ''}
-    <div class="bloco aviso"><strong>Atenção</strong>O pedido só é confirmado mediante envio do comprovante de pagamento de pelo menos ${pct}% do valor total.</div>
+    <div class="bloco aviso"><strong>Atenção</strong>O pedido só é confirmado mediante envio do comprovante de pagamento de pelo menos ${pct}% do valor ${taxa > 0 ? 'dos produtos' : 'total'}.</div>
     <footer class="rodape">
       ${p.loja?.whatsapp_exibicao ? `<p class="zap">WhatsApp: ${esc(p.loja.whatsapp_exibicao)}</p>` : ''}
       <p class="obg">Obrigada pelo seu pedido!</p>
     </footer>
   </article>`;
   document.title = `Recibo ${p.codigo} — ${p.loja?.nome || 'Rita Bolos'}`;
-  document.getElementById('barraTitulo').innerHTML = `Recibo ${esc(p.codigo)}<small>${esc(p.cliente_nome)}, retirada ${formatarData(p.data_retirada)}</small>`;
+  document.getElementById('barraTitulo').innerHTML = `Recibo ${esc(p.codigo)}<small>${esc(p.cliente_nome)}, ${e ? 'entrega' : 'retirada'} ${formatarData(p.data_retirada)}</small>`;
 }
 
 function configurarBarra(p, opts) {
