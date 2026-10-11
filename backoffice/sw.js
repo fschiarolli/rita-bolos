@@ -3,9 +3,10 @@
  * - Sempre busca na rede primeiro: os dados vêm do Supabase e cada publicação traz arquivos novos, que valem na hora.
  * - Guarda uma cópia dos arquivos das telas: sem internet, o app abre mesmo assim e avisa que está sem conexão.
  * - Só mexe nos arquivos deste site. Chamadas ao Supabase, fontes e bibliotecas de fora passam direto, sem cópia.
+ * - Mostra as notificações que chegam com o app fechado (sql/notificacoes-celular.sql) e, no toque, abre a tela certa.
  * Mudou a lista ou a forma de guardar? Troque a VERSAO: a cópia antiga é apagada sozinha.
  */
-const VERSAO = 'rb-backoffice-v1';
+const VERSAO = 'rb-backoffice-v2';
 const ESSENCIAIS = ['./', './index.html', './app.js', './avatares.js', './logo.png', './quadro.html', './quadro.js',
   './manifest.webmanifest', './quadro.webmanifest', './icones/app-192.png', './icones/quadro-192.png',
   '../js/rita-api.js', '../js/config.js', '../icons/icon-192.png'];
@@ -43,5 +44,33 @@ self.addEventListener('fetch', e => {
       }
       throw erro;
     }
+  })());
+});
+
+/* Notificação que chega pelo serviço do aparelho, mesmo com o app fechado */
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (erro) { d = { texto: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(d.titulo || 'Rita Bolos', {
+    body: d.texto || '',
+    tag: d.tag || undefined,
+    renotify: !!d.tag,          // a mesma notificação de novo (ex.: o mesmo pedido) toca outra vez, sem empilhar
+    lang: 'pt-BR',
+    icon: 'icones/app-192.png',
+    badge: 'icones/aviso-badge.png',
+    data: { url: d.url || './' }
+  }));
+});
+
+/* Tocou na notificação: abre (ou traz para frente) o app já na tela do aviso */
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = new URL(e.notification.data?.url || './', self.registration.scope).href;
+  e.waitUntil((async () => {
+    const janelas = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const app = janelas.find(j => j.url.startsWith(self.registration.scope) && !j.url.includes('quadro.html'));
+    if (!app) return self.clients.openWindow(url);
+    app.postMessage({ tipo: 'abrir', url });   // o app troca de tela sem recarregar
+    return app.focus();
   })());
 });

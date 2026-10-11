@@ -673,6 +673,23 @@ export function criarApi(supabase, opcoes = {}) {
           return () => supabase.removeChannel(canal);
         }
       },
+      /*
+       * Notificações no celular e no computador, mesmo com o app fechado (sql/notificacoes-celular.sql + função "notificar").
+       * Cada aparelho tem um endereço de entrega (endpoint) e escolhe o que quer receber (tipos).
+       */
+      push: {
+        /** Chave pública das notificações (null: ninguém ligou ainda). */
+        chave: () => rpc('chave_push'),
+        /** Na primeira vez: guarda o par de chaves criado pelo app. Devolve a chave pública que ficou valendo. */
+        iniciar: (publica, privada) => rpc('iniciar_push', { p_publica: publica, p_privada: privada }),
+        salvarAparelho: ({ endpoint, p256dh, auth, tipos, aparelho }) =>
+          rpc('salvar_aparelho_push', { p_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth, p_tipos: tipos, p_aparelho: aparelho || null }),
+        removerAparelho: (endpoint) => rpc('remover_aparelho_push', { p_endpoint: endpoint }),
+        /** O cadastro deste aparelho (só os da própria pessoa aparecem), ou null. */
+        meuAparelho: async (endpoint) => conferir(await supabase.from('push_aparelhos').select('*').eq('endpoint', endpoint).maybeSingle(), 'notificações'),
+        /** Manda uma notificação de teste para este aparelho. */
+        testar: (endpoint) => rpc('testar_push', { p_endpoint: endpoint })
+      },
       /* Quem produz os personalizados: entra no backoffice e só vê o módulo de topos */
       personalizados: {
         listar: async () => conferir(await supabase.from('produtores_personalizados').select('*').order('nome'), 'equipe de personalizados'),

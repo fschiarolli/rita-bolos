@@ -356,6 +356,8 @@ async function aposLogin() {
   if (isAdmin()) badgeEstoque();
   if (!ehProdutor() && confNiimbot().usar) { carregarNiimblue().catch(() => {}); reconectarNiimbot(); }
   if (!ehProdutor() && impressaoAuto().ligada) toast('Impressão automática ligada neste aparelho: pedidos confirmados saem na impressora.', { tempo: 6000 });
+  // notificações: a mesma pessoa volta a receber neste aparelho; no app instalado, oferece ligar uma vez
+  retomarNotif().finally(() => { if (perfil) sugerirNotif(); });
 }
 
 function modalNovaSenha(titulo = 'Criar nova senha') {
@@ -641,6 +643,162 @@ window.addEventListener('offline', avisoRede);
 window.addEventListener('online', () => { avisoRede(); if (perfil) { toast('A internet voltou.'); recarregarTela(); } });
 avisoRede();
 
+/* =========================================================
+   NOTIFICAÇÕES NO CELULAR E NO COMPUTADOR (sql/notificacoes-celular.sql + função "notificar" no Supabase)
+   Chegam mesmo com o app fechado. Cada aparelho escolhe o que quer receber, entre o que o perfil permite.
+   Sair da conta desliga as deste aparelho; quando a mesma pessoa entra de novo, voltam sozinhas.
+========================================================= */
+const TIPOS_NOTIF = [
+  { id: 'pedido_novo', rot: 'Pedido novo pelo site', para: ['admin', 'atendente'] },
+  { id: 'topo_pronto', rot: 'Topo pronto', para: ['admin', 'atendente'] },
+  { id: 'estoque', rot: 'Estoque acabando', para: ['admin'] },
+  { id: 'topo_novo', rot: 'Pedido de topo novo', para: ['personalizados', 'admin'], ligado: ['personalizados'] },
+  { id: 'pagamento_topos', rot: 'Pagamento recebido pelos topos', para: ['personalizados'] }
+];
+const tiposNotif = () => TIPOS_NOTIF.filter(t => t.para.includes(perfil.papel));
+const tiposNotifPadrao = () => tiposNotif().filter(t => (t.ligado || t.para).includes(perfil.papel)).map(t => t.id);
+const suportaNotif = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const chaveNotifLocal = () => 'ritabolos.notif.' + perfil.user_id;   // o que esta pessoa ligou neste aparelho
+const bytesDeB64u = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4)), c => c.charCodeAt(0));
+const b64uDeBytes = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+/** O service worker pronto, ou null se este navegador não registrou em pouco tempo. */
+const swPronto = (ms = 5000) => ('serviceWorker' in navigator
+  ? Promise.race([navigator.serviceWorker.ready, new Promise(ok => setTimeout(() => ok(null), ms))]) : Promise.resolve(null));
+/** "Android · Chrome", "iPhone · app": para a pessoa reconhecer o aparelho. */
+function nomeAparelho() {
+  const ua = navigator.userAgent;
+  const so = [['iPhone', /iphone/i], ['iPad', /ipad/i], ['Android', /android/i], ['Windows', /windows/i], ['Mac', /mac os/i]].find(([, re]) => re.test(ua))?.[0] || 'Computador';
+  const nav = [['Edge', /edg\//i], ['Firefox', /firefox/i], ['Chrome', /chrome|crios/i], ['Safari', /safari/i]].find(([, re]) => re.test(ua))?.[0] || '';
+  return [so, ehApp() ? 'app' : nav].filter(Boolean).join(' · ');
+}
+const lerTiposNotif = () => { try { const t = JSON.parse(localStorage.getItem(chaveNotifLocal()) || 'null'); return Array.isArray(t) ? t : null; } catch (e) { return null; } };
+const semPush = e => /chave_push|push_aparelhos|salvar_aparelho_push|PGRST20[2-5]|42P01|schema cache/i.test(`${e?.message} ${e?.codigo}`);
+/** Situação das notificações neste aparelho. */
+async function estadoNotif() {
+  if (ehIOS() && !ehApp()) return { e: 'instalar' };   // no iPhone, só o app instalado recebe
+  if (!suportaNotif()) return { e: 'sem-suporte' };
+  if (Notification.permission === 'denied') return { e: 'bloqueado' };
+  const reg = await swPronto();
+  if (!reg) return { e: 'sem-suporte' };
+  const sub = Notification.permission === 'granted' ? await reg.pushManager.getSubscription() : null;
+  const linha = sub ? await api.admin.push.meuAparelho(sub.endpoint) : null;
+  return linha ? { e: 'ligado', tipos: linha.tipos, endpoint: sub.endpoint, reg } : { e: 'desligado', reg };
+}
+/** Chave pública das notificações. Na primeira vez no sistema, este aparelho cria o par e guarda no banco. */
+async function chavePush() {
+  const atual = await api.admin.push.chave();
+  if (atual) return atual;
+  const par = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const publica = b64uDeBytes(await crypto.subtle.exportKey('raw', par.publicKey));
+  const { d } = await crypto.subtle.exportKey('jwk', par.privateKey);
+  return api.admin.push.iniciar(publica, d);
+}
+/** Inscreve o aparelho no serviço de notificações dele e guarda no banco o que ele quer receber. */
+async function inscreverNotif(tipos, reg) {
+  const chave = await chavePush();
+  let sub = await reg.pushManager.getSubscription();
+  if (sub?.options?.applicationServerKey && b64uDeBytes(sub.options.applicationServerKey) !== chave) { await sub.unsubscribe().catch(() => {}); sub = null; }
+  sub = sub || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytesDeB64u(chave) });
+  const j = sub.toJSON();
+  await api.admin.push.salvarAparelho({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, tipos, aparelho: nomeAparelho() });
+  try { localStorage.setItem(chaveNotifLocal(), JSON.stringify(tipos)); } catch (e) { /* sem armazenamento */ }
+  return j.endpoint;
+}
+/** Liga as notificações. Precisa vir de um toque: o iPhone só pergunta assim. */
+async function ligarNotif(tipos = lerTiposNotif() || tiposNotifPadrao()) {
+  const permissao = await Notification.requestPermission();   // a primeira coisa, ainda no toque
+  if (permissao !== 'granted') {
+    throw new Error(permissao === 'denied' ? 'As notificações estão bloqueadas para o backoffice neste aparelho. Libere nas configurações do navegador e tente de novo.' : 'As notificações não foram liberadas.');
+  }
+  const reg = await swPronto();
+  if (!reg) throw new Error('Este navegador não deixou ligar as notificações. Use o app instalado, o Chrome ou o Edge.');
+  try { return await inscreverNotif(tipos, reg); }
+  catch (e) { throw semPush(e) ? new Error(isAdmin() ? 'As notificações ainda não estão no banco: rode o sql/notificacoes-celular.sql no Supabase.' : 'As notificações ainda não foram ligadas no sistema. Avise a Administração.') : e; }
+}
+async function desligarNotif() {
+  const reg = await swPronto(), sub = await reg?.pushManager.getSubscription();
+  if (sub) { await api.admin.push.removerAparelho(sub.endpoint).catch(() => {}); await sub.unsubscribe().catch(() => {}); }
+  try { localStorage.removeItem(chaveNotifLocal()); } catch (e) { /* sem armazenamento */ }
+}
+/** Ao sair da conta: este aparelho para de receber as notificações desta pessoa (a escolha fica guardada aqui). */
+async function soltarNotif() {
+  try {
+    const reg = await swPronto(1500), sub = await reg?.pushManager.getSubscription();
+    if (sub) await api.admin.push.removerAparelho(sub.endpoint);
+  } catch (e) { /* sem as notificações no banco: nada a soltar */ }
+}
+async function sairDaConta() { await soltarNotif(); await api.auth.sair().catch(() => {}); }
+/** Ao entrar (ou abrir o app): a mesma pessoa volta a receber o que tinha ligado neste aparelho. */
+async function retomarNotif() {
+  const tipos = lerTiposNotif();
+  if (!tipos || !suportaNotif() || Notification.permission !== 'granted') return;
+  const reg = await swPronto();
+  if (reg) await inscreverNotif(tipos, reg).catch(() => { /* sem rede ou sem o SQL: tenta na próxima vez */ });
+}
+/** No app instalado, uma vez por pessoa: oferece ligar as notificações. */
+function sugerirNotif() {
+  if (!ehApp() || !suportaNotif() || Notification.permission !== 'default') return;
+  const chave = 'ritabolos.notif.sugerido.' + perfil.user_id;
+  try { if (localStorage.getItem(chave)) return; localStorage.setItem(chave, '1'); } catch (e) { return; }
+  toast('Quer receber as notificações neste aparelho, mesmo com o app fechado?', { tempo: 15000,
+    acao: { rotulo: 'Ligar', fn: () => ligarNotif().then(() => toast('Notificações ligadas neste aparelho.'), erroToast) } });
+}
+/* tocou numa notificação com o app já aberto: o service worker pede para ir à tela do aviso */
+navigator.serviceWorker?.addEventListener('message', e => {
+  if (e.data?.tipo !== 'abrir' || !e.data.url) return;
+  const destino = new URL(e.data.url, location.href);
+  if (destino.hash && destino.hash !== location.hash) location.hash = destino.hash;
+});
+
+/** Em Minha conta: liga, escolhe o que receber, testa e desliga as notificações deste aparelho. */
+async function painelNotif(box) {
+  const corpo = box.querySelector('.notif-corpo');
+  let est;
+  try { est = await estadoNotif(); } catch (e) { est = { e: semPush(e) ? 'sem-banco' : 'erro' }; }
+  if (!document.contains(box)) return;
+  const marcados = est.e === 'ligado' ? est.tipos : (lerTiposNotif() || tiposNotifPadrao());
+  const lista = `<div class="notif-tipos" role="group" aria-label="O que receber">${tiposNotif().map(t => `<label class="chk"><input type="checkbox" data-notif-tipo="${t.id}" ${marcados.includes(t.id) ? 'checked' : ''}>${esc(t.rot)}</label>`).join('')}</div>`;
+  const textos = {
+    instalar: `<p class="dica">No iPhone, as notificações chegam pelo app instalado. Instale (Compartilhar › Adicionar à Tela de Início), abra pelo ícone e ligue aqui.</p>
+      <div class="imp-linha"><button type="button" class="btn sm ghost" data-notif-instalar>Como instalar</button></div>`,
+    'sem-suporte': '<p class="dica">Este navegador não recebe notificações. Use o app instalado, o Chrome ou o Edge.</p>',
+    bloqueado: '<p class="dica">As notificações estão bloqueadas para o backoffice neste aparelho. Libere nas configurações do navegador (no computador, no cadeado ao lado do endereço) e abra esta tela de novo.</p>',
+    'sem-banco': `<p class="dica">${isAdmin() ? 'As notificações ainda não estão no banco: rode o sql/notificacoes-celular.sql no Supabase.' : 'As notificações ainda não foram ligadas no sistema. Avise a Administração.'}</p>`,
+    erro: '<p class="dica">Não deu para conferir as notificações agora. Tente de novo daqui a pouco.</p>',
+    desligado: `${lista}<div class="imp-linha"><button type="button" class="btn sm teal" data-notif-ligar>${ic('sino')}Ligar notificações</button></div>
+      <p class="dica">Chegam mesmo com o app fechado, como as do WhatsApp. Cada aparelho escolhe as suas.</p>`,
+    ligado: `<p class="notif-ok">${ic('ok')}Ligadas neste aparelho</p>${lista}
+      <div class="imp-linha"><button type="button" class="btn sm ghost" data-notif-teste>Enviar um teste</button><button type="button" class="btn sm ghost" data-notif-desligar>Desligar</button></div>
+      <p class="dica">${isAdmin() ? 'Se o teste não chegar em um minuto, confira no Supabase se a função "notificar" está publicada, com "Enforce JWT verification" desligado.' : 'Mudou a escolha? Vale na hora.'}</p>`
+  };
+  corpo.innerHTML = textos[est.e];
+  box.dataset.endpoint = est.endpoint || '';
+}
+function ligarPainelNotif(box, aoInstalar) {
+  const marcados = () => [...box.querySelectorAll('[data-notif-tipo]:checked')].map(i => i.dataset.notifTipo);
+  box.addEventListener('click', e => {
+    const b = e.target.closest('[data-notif-ligar],[data-notif-teste],[data-notif-desligar],[data-notif-instalar]');
+    if (!b) return;
+    if (b.dataset.notifInstalar !== undefined) aoInstalar();
+    else if (b.dataset.notifLigar !== undefined) ocupado(b, async () => { await ligarNotif(marcados()); toast('Notificações ligadas neste aparelho.'); painelNotif(box); });
+    else if (b.dataset.notifDesligar !== undefined) ocupado(b, async () => { await desligarNotif(); toast('Notificações desligadas neste aparelho.'); painelNotif(box); });
+    else ocupado(b, async () => {
+      if (DEMO) {   // na demonstração nada sai pela internet: o próprio aparelho mostra como fica
+        (await swPronto())?.showNotification('Notificações ligadas', { body: 'É assim que os avisos vão chegar neste aparelho, mesmo com o app fechado.', icon: 'icones/app-192.png', badge: 'icones/aviso-badge.png', tag: 'teste' });
+        toast('Na demonstração, o teste aparece só neste aparelho.');
+        return;
+      }
+      await api.admin.push.testar(box.dataset.endpoint);
+      toast('Teste enviado: a notificação chega em alguns segundos.');
+    });
+  });
+  // ligado: mudar o que recebe vale na hora
+  box.addEventListener('change', e => {
+    if (!e.target.dataset.notifTipo || !box.dataset.endpoint) return;
+    swPronto().then(reg => reg && inscreverNotif(marcados(), reg)).then(() => toast('Escolha salva para este aparelho.'), erroToast);
+  });
+}
+
 function modalConta() {
   const m = abrirModal({
     titulo: 'Minha conta',
@@ -654,6 +812,8 @@ function modalConta() {
             <button type="button" class="btn sm ghost" data-como-instalar>${ehApp() ? 'Como instalar em outro aparelho' : 'Como instalar'}</button></div>
           <p class="dica">${ehApp() ? 'Você está usando o app instalado. Ele se atualiza sozinho quando o sistema é atualizado.'
             : 'Ícone na tela inicial, janela própria e atalhos para Hoje, Pedidos e Topos. Funciona no celular e no computador.'}</p></div>
+        <div class="imp-auto" id="notifBox"><p class="secao-t" style="margin:4px 0 8px">Notificações neste aparelho</p>
+          <div class="notif-corpo"><p class="dica">Conferindo…</p></div></div>
         ${ehProdutor() ? '' : `<div class="imp-auto"><p class="secao-t" style="margin:4px 0 8px">Impressora deste aparelho</p>
           ${inChk('impAuto', 'Imprimir sozinho cada pedido confirmado', impressaoAuto().ligada)}
           <div class="imp-linha"><label class="sr" for="impFormato">O que imprimir</label>
@@ -684,6 +844,8 @@ function modalConta() {
   m.$('[data-trocar-avatar]').addEventListener('click', () => { m.fechar(); modalAvatar(); });
   m.$('[data-instalar]')?.addEventListener('click', () => { m.fechar(); instalarApp(); });
   m.$('[data-como-instalar]').addEventListener('click', () => { m.fechar(); modalComoInstalar(); });
+  ligarPainelNotif(m.$('#notifBox'), () => { m.fechar(); modalComoInstalar(); });
+  painelNotif(m.$('#notifBox'));
   const salvarImp = () => {
     salvarImpressaoAuto({ ligada: chkDe(m, 'impAuto'), formato: valDe(m, 'impFormato') || 'etiqueta' });
     if (chkDe(m, 'impAuto')) toast('Impressão automática ligada neste aparelho: cada pedido confirmado sai na impressora.');
@@ -735,7 +897,7 @@ function modalConta() {
     if (!await confirmar('Recomeçar a demonstração?', 'Os pedidos e mudanças feitos aqui serão apagados e os dados de exemplo voltam ao original.', { botao: 'Recomeçar', perigo: true })) return;
     api.supabase._demo?.reiniciar(); location.reload();
   });
-  m.$('[data-sair]').addEventListener('click', async () => { m.fechar(); await api.auth.sair().catch(() => {}); });
+  m.$('[data-sair]').addEventListener('click', async () => { m.fechar(); await sairDaConta(); });
 }
 
 /* =========================================================
@@ -817,7 +979,7 @@ document.addEventListener('click', e => {
       break;
     case 'sair':
       confirmar('Sair da conta?', 'Você volta para a tela de entrada do backoffice.', { botao: 'Sair' })
-        .then(ok => { if (ok) api.auth.sair().catch(() => {}); });
+        .then(ok => { if (ok) sairDaConta(); });
       break;
   }
 });

@@ -90,6 +90,9 @@ export function criarSupabaseDemo(opcoes = {}) {
     if (!b.topos_pedidos) semearTopos(b);
     if (!b.notificacoes) { b.notificacoes = []; b.topos_pedidos.filter(t => t.status === 'pronto').forEach(t => avisoTopoPronto(b.notificacoes, t)); }
     if (!b.topos_precos) semearGastosTopos(b);
+    // notificações no celular (igual a sql/notificacoes-celular.sql; na demonstração nada sai pela internet)
+    b.push_config = b.push_config || { vapid_publica: null, vapid_privada: null };
+    b.push_aparelhos = b.push_aparelhos || [];
     // Estoque (igual a sql/estoque.sql), com itens de exemplo
     if (!b.estoque_itens) semearEstoque(b);
     const adic = (b.categorias || []).find(c => c.slug === 'adicionais');
@@ -349,6 +352,10 @@ export function criarSupabaseDemo(opcoes = {}) {
       if (q.op === 'select' && !podeTopos()) return finalizar([], q, 0);
       if (q.op !== 'select' && !adminLoja()) return q.op === 'delete' ? finalizar([], q, 0) : erro('new row violates row-level security policy', '42501');
       if (q.op === 'insert' || q.op === 'update') return erro('new row violates row-level security policy', '42501');
+    }
+    if (tabela === 'push_aparelhos') {   // cada pessoa vê só os próprios aparelhos; gravar, só pelas funções
+      if (q.op !== 'select') return erro('new row violates row-level security policy', '42501');
+      q.filtros.push(r => r.user_id === usuarioId());
     }
     if (TABELAS_ESTOQUE.includes(tabela)) {   // estoque: só a Administração; movimentos só pelas funções
       if (!adminLoja()) return q.op === 'select' ? finalizar([], q, 0) : erro('new row violates row-level security policy', '42501');
@@ -711,6 +718,13 @@ export function criarSupabaseDemo(opcoes = {}) {
     }
   };
   function exigirEquipe() { if (!equipe()) throw ['Acesso restrito à equipe da Rita Bolos.', '42501']; }
+  /** Notificações: a equipe da loja e quem produz os personalizados (igual a push_pode_usar / push_tipos_permitidos). */
+  function exigirPush() { if (!equipe() && !podeTopos()) throw ['Sem acesso.', '42501']; }
+  function tiposPushPermitidos(uid) {
+    const a = db.administradores.find(x => x.user_id === uid && x.ativo);
+    if (a) return a.papel === 'admin' ? ['pedido_novo', 'topo_pronto', 'estoque', 'topo_novo'] : ['pedido_novo', 'topo_pronto'];
+    return (db.produtores_personalizados || []).some(p => p.user_id === uid && p.ativo) ? ['topo_novo', 'pagamento_topos'] : [];
+  }
   const EMAILS_DEMO = { '00000000-0000-4000-8000-000000000001': 'rita@demo.com.br' };
   function listarEquipe() {
     return [...db.administradores].sort((a, b) => a.nome.localeCompare(b.nome)).map(a => ({ user_id: a.user_id, nome: a.nome, papel: a.papel, ativo: a.ativo,
@@ -789,6 +803,31 @@ export function criarSupabaseDemo(opcoes = {}) {
       topos.forEach(t => { t.pagamento_id = pg.id; });
       salvar(); emitir('UPDATE', topos[0], null, 'topos_pedidos');
       return pg;
+    },
+    /* Notificações no celular (sql/notificacoes-celular.sql): aparelhos e chaves; na demonstração nada é entregue */
+    chave_push: () => { exigirPush(); return db.push_config.vapid_publica; },
+    iniciar_push: ({ p_publica, p_privada }) => {
+      exigirPush();
+      if (!/^[A-Za-z0-9_-]{87}$/.test(p_publica || '') || !/^[A-Za-z0-9_-]{43}$/.test(p_privada || '')) throw 'Chave das notificações inválida.';
+      if (!db.push_config.vapid_publica) Object.assign(db.push_config, { vapid_publica: p_publica, vapid_privada: p_privada });
+      salvar(); return db.push_config.vapid_publica;
+    },
+    salvar_aparelho_push: ({ p_endpoint, p_p256dh, p_auth, p_tipos, p_aparelho }) => {
+      exigirPush();
+      if (!/^https:\/\//.test(p_endpoint || '') || !p_p256dh || !p_auth) throw 'Aparelho inválido.';
+      const pode = tiposPushPermitidos(usuarioId()), tipos = [...new Set((p_tipos || []).filter(t => pode.includes(t)))].sort();
+      db.push_aparelhos = db.push_aparelhos.filter(a => a.endpoint !== p_endpoint || a.user_id === usuarioId());
+      let a = db.push_aparelhos.find(x => x.endpoint === p_endpoint);
+      if (!a) { a = { id: novoId(), user_id: usuarioId(), endpoint: p_endpoint, criado_em: agora() }; db.push_aparelhos.push(a); }
+      Object.assign(a, { p256dh: p_p256dh, auth: p_auth, tipos, aparelho: String(p_aparelho || '').trim().slice(0, 60) || a.aparelho || null, atualizado_em: agora() });
+      salvar(); return clone(a);
+    },
+    remover_aparelho_push: ({ p_endpoint }) => {
+      db.push_aparelhos = db.push_aparelhos.filter(a => !(a.endpoint === p_endpoint && a.user_id === usuarioId())); salvar(); return null;
+    },
+    testar_push: ({ p_endpoint }) => {
+      if (!db.push_aparelhos.some(a => a.endpoint === p_endpoint && a.user_id === usuarioId())) throw 'As notificações não estão ligadas neste aparelho.';
+      return 0;   // na demonstração, o app mostra o teste no próprio aparelho
     },
     confirmar_pagamento_topos: ({ p_pagamento_id }) => {
       const eu = (db.produtores_personalizados || []).find(p => p.user_id === usuarioId() && p.ativo);
