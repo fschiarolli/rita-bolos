@@ -5,7 +5,7 @@
  * (tabelas, funções da API, login e fotos). Serve para:
  *   - experimentar o site e o backoffice sem conectar ao Supabase (?demo)
  *   - testes automáticos
- * Os dados ficam no localStorage deste navegador. Nada vai para a internet.
+ * Os dados ficam no localStorage deste navegador (as imagens dos stories, no IndexedDB). Nada vai para a internet.
  */
 import { DADOS_DEMO } from './dados-demo.js';
 
@@ -25,6 +25,13 @@ const r3 = n => Math.round(Number(n) * 1000) / 1000;
 const qtdEstoque = (q, u) => `${String(r3(q)).replace('.', ',')} ${['kg', 'g', 'L', 'ml'].includes(u) ? u : u + (Math.abs(q) === 1 ? '' : 's')}`;
 /** Pedido "gasta" estoque do Confirmado em diante (igual a estoque_consome em sql/estoque.sql). */
 const consomeEstoque = s => !['recebido', 'cancelado'].includes(s || 'recebido');
+/** Stories de exemplo (igual a sql/stories.sql): fotos que já estão no site, em duas pastas. */
+function semearStories(b) {
+  const ex = [['banners/bolos.webp', 'Bolos de festa', 'Cardápio'], ['kits/kit-festa-10-pessoas.webp', 'Kit Festa 10 pessoas', 'Kits'],
+    ['kits/kit-30-pessoas.webp', 'Kit 30 pessoas', 'Kits'], ['kits/kit-individual.webp', 'Kit individual', 'Kits']];
+  b.stories = ex.map(([path, titulo, pasta], i) => ({ id: novoId(), arquivo_path: path, miniatura_path: null, titulo, pasta, largura: null, altura: null, bytes: null,
+    criado_em: new Date(Date.now() - (i + 1) * 36e5).toISOString(), criado_por: USUARIO_DEMO.id }));
+}
 /** Aviso "topo pronto" para a equipe da loja (o mesmo texto do gatilho em sql/topos.sql). */
 function avisoTopoPronto(lista, t) {
   const cod = 'TP-' + String(t.numero).padStart(4, '0'), oque = t.tipo === 'personalizado' ? 'personalizado' : 'topo', qtd = t.quantidade > 1 ? `${t.quantidade}× ` : '';
@@ -105,6 +112,7 @@ export function criarSupabaseDemo(opcoes = {}) {
     }
     b.pedido_entregas = b.pedido_entregas || [];
     b.excessos_peso = b.excessos_peso || [];   // peso final do bolo (igual a sql/peso-final.sql)
+    if (!b.stories) semearStories(b);   // imagens para os stories (igual a sql/stories.sql)
     (b.pedidos || []).forEach(p => { if (p.taxa_entrega == null) p.taxa_entrega = 0; });
     if (cf && !('entrega_origem' in cf)) Object.assign(cf, LOJA_ENTREGA, { entrega_taxa_minima: 8, entrega_km_incluidos: 3, entrega_valor_km: 1.5, entrega_raio_km: 15 });
     // demonstração aberta antes, com a loja num endereço de exemplo em Campinas: a loja e o pedido de exemplo passam para Hortolândia
@@ -354,7 +362,7 @@ export function criarSupabaseDemo(opcoes = {}) {
       limit(n) { q.faixa = [0, n - 1]; return api; },
       single() { q.unico = 'single'; return api; },
       maybeSingle() { q.unico = 'maybe'; return api; },
-      then(ok, falha) { return Promise.resolve().then(() => executar(tabela, q)).then(ok, falha); }
+      then(ok, falha) { return Promise.resolve().then(() => (tabela === 'stories' ? arquivosProntos() : null)).then(() => executar(tabela, q)).then(ok, falha); }
     };
     return api;
   }
@@ -385,6 +393,10 @@ export function criarSupabaseDemo(opcoes = {}) {
       if (q.op === 'select' && !equipe()) return finalizar([], q, 0);
       if (q.op === 'delete' && !adminLoja()) return finalizar([], q, 0);
       if (q.op !== 'select' && q.op !== 'delete') return erro('new row violates row-level security policy for table "excessos_peso"', '42501');
+    }
+    if (tabela === 'stories' && !adminLoja()) {   // a galeria de stories: só a Administração
+      if (q.op === 'insert' || q.op === 'upsert') return erro('new row violates row-level security policy for table "stories"', '42501');
+      return finalizar([], q, 0);
     }
     if (tabela === 'pedido_entregas' && !equipe())   // endereço e telefone de quem recebe: só a equipe da loja
       return q.op === 'select' ? finalizar([], q, 0) : erro('new row violates row-level security policy for table "pedido_entregas"', '42501');
@@ -481,6 +493,7 @@ export function criarSupabaseDemo(opcoes = {}) {
       topos_pedidos: { tipo: 'topo', quantidade: 1, referencias: [], status: 'novo', valor: 0, pago: false, custo_unitario: null, custo_manual: false, pagamento_id: null, criado_por: usuarioId() },
       estoque_itens: { unidade: 'unidade', quantidade: 0, minimo: 0, ativo: true, categoria: null, observacao: null },
       estoque_consumos: { por_kg: false },
+      stories: { miniatura_path: null, titulo: null, pasta: null, largura: null, altura: null, bytes: null, criado_por: usuarioId() },
       pedido_entregas: { taxa: 0, cep: null, complemento: null, bairro: null, cidade: null, recebedor_nome: null, recebedor_telefone: null, distancia_km: null, duracao_min: null }
     }[tabela] || {};
     if (tabela === 'topos_pedidos') extra.numero = db._seqTopo = (db._seqTopo || 0) + 1;
@@ -999,8 +1012,61 @@ export function criarSupabaseDemo(opcoes = {}) {
   };
 
   /* ----------------------- fotos ----------------------- */
+  // As imagens dos stories ficam no IndexedDB deste navegador: no localStorage (onde fica o banco) caberiam poucas.
+  const urlsArquivos = new Map();   // path → endereço (blob:) do arquivo guardado
+  let baseArquivos = null, limpeza = null;
+  function abrirArquivos() {
+    baseArquivos = baseArquivos || new Promise((ok, falha) => {
+      if (typeof indexedDB === 'undefined') { falha(new Error('sem IndexedDB')); return; }
+      const r = indexedDB.open(CHAVE + '.arquivos', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('arquivos');
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => falha(r.error);
+    });
+    return baseArquivos;
+  }
+  async function noArquivos(modo, fn) {
+    const base = await abrirArquivos();
+    return new Promise((ok, falha) => {
+      const tx = base.transaction('arquivos', modo), pedido = fn(tx.objectStore('arquivos'));
+      tx.oncomplete = () => ok(pedido?.result); tx.onerror = () => falha(tx.error); tx.onabort = () => falha(tx.error);
+    });
+  }
+  /** Antes de ler a galeria: traz para a memória os arquivos guardados (inclusive os de outra aba). Na primeira vez, apaga os que nenhum story usa. */
+  async function arquivosProntos() {
+    try {
+      limpeza = limpeza || (async () => {
+        const usados = new Set((db.stories || []).flatMap(st => [st.arquivo_path, st.miniatura_path]).filter(Boolean));
+        // os enviados nesta sessão ficam (o registro pode ainda estar a caminho)
+        const sobrando = (await noArquivos('readonly', st => st.getAllKeys())).filter(k => !usados.has(k) && !urlsArquivos.has(k));
+        if (sobrando.length) await noArquivos('readwrite', st => { sobrando.forEach(k => st.delete(k)); });
+      })();
+      await limpeza;
+      for (const k of await noArquivos('readonly', st => st.getAllKeys())) {
+        if (urlsArquivos.has(k)) continue;
+        const arq = await noArquivos('readonly', st => st.get(k));
+        if (arq) urlsArquivos.set(k, URL.createObjectURL(arq));
+      }
+    } catch (e) { /* sem IndexedDB: as imagens enviadas não aparecem, o resto funciona */ }
+  }
+  const bucketStories = {
+    getPublicUrl: path => ({ data: { publicUrl: urlsArquivos.get(path) || prefixoImagens + path } }),
+    async upload(path, arquivo) {
+      if (!adminLoja()) return { data: null, error: { message: 'new row violates row-level security policy', statusCode: '403' } };
+      try { await noArquivos('readwrite', st => st.put(arquivo, path)); } catch (e) { return { data: null, error: { message: 'Não deu para guardar a imagem neste navegador.', statusCode: '500' } }; }
+      urlsArquivos.set(path, URL.createObjectURL(arquivo));
+      return { data: { path }, error: null };
+    },
+    async remove(paths) {
+      if (!adminLoja()) return { data: [], error: null };
+      await noArquivos('readwrite', st => { paths.forEach(p => st.delete(p)); }).catch(() => {});
+      paths.forEach(p => { const u = urlsArquivos.get(p); if (u) URL.revokeObjectURL(u); urlsArquivos.delete(p); });
+      return { data: [], error: null };
+    }
+  };
   const storage = {
-    from() {
+    from(bucket) {
+      if (bucket === 'stories') return bucketStories;
       return {
         getPublicUrl: path => ({ data: { publicUrl: imagens[path] || db._imagens?.[path] || prefixoImagens + path } }),
         async upload(path, arquivo) {

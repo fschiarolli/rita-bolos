@@ -5,7 +5,7 @@
  * backoffice (cadastros e gestão de pedidos). Fala com o Supabase:
  *   - banco (tabelas, vistas e funções RPC criadas nos scripts SQL)
  *   - autenticação (login da equipe)
- *   - storage (fotos do cardápio, bucket "cardapio")
+ *   - storage (fotos do cardápio, bucket "cardapio"; imagens dos stories, bucket "stories")
  *
  * Uso no navegador:
  *   import { conectar } from './js/rita-api.js';
@@ -515,7 +515,10 @@ export function criarApi(supabase, opcoes = {}) {
   }
 
   /* Entregas (sql/entregas.sql). Enquanto o script não roda, a tabela não existe e os pedidos seguem sem entrega. */
-  let semEntregas = false;
+  let semEntregas = false, semStories = false;
+  const urlStory = path => (path ? supabase.storage.from('stories').getPublicUrl(path).data.publicUrl : null);
+  const comUrls = st => ({ ...st, url: urlStory(st.arquivo_path), miniatura: urlStory(st.miniatura_path || st.arquivo_path) });
+  const extensao = tipo => ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' })[tipo] || 'jpg';
   const faltaNoBanco = e => ['PGRST205', 'PGRST202', '42P01', '42883'].includes(e?.code) || /could not find|does not exist/i.test(e?.message || '');
   /** Entregas de vários pedidos: Map pedido_id → entrega. */
   async function entregasDe(ids) {
@@ -856,6 +859,63 @@ export function criarApi(supabase, opcoes = {}) {
         /** Apaga um lançamento (só a Administração). Se a pesagem estava errada, prefira corrigir o peso final no pedido. */
         async remover(id) {
           conferir(await supabase.from('excessos_peso').delete().eq('id', id), 'excesso de peso');
+          return true;
+        }
+      },
+      /*
+       * Stories (sql/stories.sql): imagens para os stories do Instagram e o status do WhatsApp, separadas em pastas.
+       * Os arquivos ficam no bucket público "stories" (a imagem para postar e uma miniatura para a grade). Só a Administração.
+       */
+      stories: {
+        /** false enquanto o sql/stories.sql não foi rodado */
+        async disponivel() {
+          if (!semStories) {
+            const { error } = await supabase.from('stories').select('id').limit(1);
+            if (error && faltaNoBanco(error)) semStories = true;
+          }
+          return !semStories;
+        },
+        /** Todas, da mais nova para a mais antiga, com url (a imagem) e miniatura. */
+        async listar() {
+          const linhas = conferir(await supabase.from('stories').select('*').order('criado_em', { ascending: false }), 'stories');
+          return linhas.map(comUrls);
+        },
+        /**
+         * Guarda uma imagem já preparada: { arquivo, miniatura (opcional), titulo, pasta, largura, altura }.
+         * Se o registro não entrar, os arquivos enviados são apagados.
+         */
+        async enviar({ arquivo, miniatura = null, titulo = null, pasta = null, largura = null, altura = null }) {
+          const id = novaChave(), base = `${new Date().getFullYear()}/${id}`;
+          const path = `${base}.${extensao(arquivo.type)}`, mini = miniatura ? `${base}-mini.${extensao(miniatura.type)}` : null;
+          const subir = async (p, blob) => {
+            const { error } = await supabase.storage.from('stories').upload(p, blob, { cacheControl: '31536000', upsert: false, contentType: blob.type || 'image/jpeg' });
+            if (error) throw new ErroApi(error, 'imagem');
+          };
+          await subir(path, arquivo);
+          try {
+            if (mini) await subir(mini, miniatura);
+            const linha = conferir(await supabase.from('stories').insert({
+              id, arquivo_path: path, miniatura_path: mini, titulo: (titulo || '').trim().slice(0, 120) || null, pasta: (pasta || '').trim().slice(0, 60) || null,
+              largura: largura || null, altura: altura || null, bytes: arquivo.size ?? null
+            }).select().single(), 'stories');
+            return comUrls(linha);
+          } catch (e) {
+            await supabase.storage.from('stories').remove([path, mini].filter(Boolean)).catch(() => {});
+            throw e;
+          }
+        },
+        /** Muda o título e a pasta. */
+        async atualizar(id, { titulo, pasta }) {
+          const dados = {};
+          if (titulo !== undefined) dados.titulo = (titulo || '').trim().slice(0, 120) || null;
+          if (pasta !== undefined) dados.pasta = (pasta || '').trim().slice(0, 60) || null;
+          return comUrls(conferir(await supabase.from('stories').update(dados).eq('id', id).select().single(), 'stories'));
+        },
+        /** Apaga o registro e os arquivos (a imagem e a miniatura). */
+        async apagar(story) {
+          conferir(await supabase.from('stories').delete().eq('id', story.id), 'stories');
+          const { error } = await supabase.storage.from('stories').remove([story.arquivo_path, story.miniatura_path].filter(Boolean));
+          if (error) console.warn('stories: os arquivos ficaram no Storage', error);
           return true;
         }
       },

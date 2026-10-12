@@ -2,7 +2,8 @@
  * Service worker do backoffice e do quadro da TV: é o que deixa instalar o sistema como app (celular e computador).
  * - Sempre busca na rede primeiro: os dados vêm do Supabase e cada publicação traz arquivos novos, que valem na hora.
  * - Guarda uma cópia dos arquivos das telas: sem internet, o app abre mesmo assim e avisa que está sem conexão.
- * - Só mexe nos arquivos deste site. Chamadas ao Supabase, fontes e bibliotecas de fora passam direto, sem cópia.
+ * - Só mexe nos arquivos deste site. Chamadas ao Supabase, fontes e bibliotecas de fora passam direto, sem cópia,
+ *   e os instaladores da pasta drivers/ (o driver da térmica) também.
  * - Mostra as notificações que chegam com o app fechado (sql/notificacoes-celular.sql) e, no toque, abre a tela certa.
  * Mudou a lista ou a forma de guardar? Troque a VERSAO: a cópia antiga é apagada sozinha.
  */
@@ -25,7 +26,7 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const req = e.request, url = new URL(req.url);
-  if (req.method !== 'GET' || url.origin !== self.location.origin) return;
+  if (req.method !== 'GET' || url.origin !== self.location.origin || url.pathname.includes('/drivers/')) return;
   e.respondWith((async () => {
     try {
       const res = await fetch(req);

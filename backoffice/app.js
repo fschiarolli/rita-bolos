@@ -478,6 +478,7 @@ const NAV = [
   { id: 'prejuizos', rot: 'Prejuízos', ic: 'alerta', admin: true },
   { id: 'estoque', rot: 'Estoque', ic: 'estoque', admin: true },
   { id: 'cardapio', rot: 'Cardápio', ic: 'bolo', admin: true },
+  { id: 'stories', rot: 'Stories', ic: 'stories', admin: true },
   { id: 'ajustes', rot: 'Ajustes', ic: 'config', admin: true }
 ];
 /** Quem vê cada item do menu: Topos para a Administração e quem produz personalizados (que só vê Topos). */
@@ -683,6 +684,7 @@ document.addEventListener('keydown', e => {
 let pedidoInstalar = null;   // o convite do navegador para instalar (só existe no Chrome e no Edge)
 const ehApp = () => matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
 const ehIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const ehWindows = () => /windows/i.test(navigator.userAgent);
 const podeInstalar = () => !ehApp() && (!!pedidoInstalar || ehIOS());
 function atualizarBotaoInstalar() { $$('[data-act="instalar"]').forEach(b => { b.hidden = !podeInstalar(); }); }
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { /* segue como site comum */ });
@@ -716,6 +718,31 @@ function modalComoInstalar() {
       <div class="app-passos">${jeitos.map(j => `<section class="${j.id === deste ? 'este' : ''}"><h3>${j.t}${j.id === deste ? '<small>este aparelho</small>' : ''}</h3>
         <ol>${j.p.map(x => `<li>${x}</li>`).join('')}</ol></section>`).join('')}</div>
       <p class="dica" style="margin:12px 0 0">No iPhone, a etiquetadora Niimbot não funciona: o iPhone não libera o Bluetooth para esse tipo de app. No Android e no computador, funciona.</p>`,
+    rodape: '<button type="button" class="btn primary" data-fechar>Entendi</button>'
+  });
+}
+/* Driver da térmica de 80 mm (POS-80), para Windows: sem ele a térmica não aparece na janela de impressão do Chrome.
+   O arquivo fica em backoffice/drivers/ (outro modelo de térmica: troque o arquivo e o nome aqui). */
+const DRIVER_TERMICA = { url: 'drivers/POS80Setup_20190329.exe', nome: 'POS80Setup', tamanho: '3 MB' };
+const botaoDriver = (classe = 'teal') => `<a class="btn sm ${classe}" href="${DRIVER_TERMICA.url}" download>${ic('baixar')}Baixar o driver da térmica</a>`;
+function modalComoTermica() {
+  abrirModal({
+    titulo: 'Instalar a térmica neste computador', largo: true,
+    corpo: `<p class="dica" style="margin:0 0 12px">O backoffice imprime pela janela de impressão do Chrome, e a térmica só aparece nela depois que o driver dela é instalado no Windows. Faça isto uma vez em cada computador ligado na térmica.</p>
+      <div class="drv-baixar">${botaoDriver()}<span>${DRIVER_TERMICA.nome} · ${DRIVER_TERMICA.tamanho} · para Windows</span></div>
+      <div class="app-passos">
+        <section class="este"><h3>1. Instalar o driver</h3><ol>
+          <li>Ligue a térmica e conecte o cabo USB no computador.</li>
+          <li>Abra o arquivo <b>${DRIVER_TERMICA.nome}</b> que você baixou. Se o Chrome avisar sobre o arquivo, escolha <b>Manter</b>. Se aparecer "O Windows protegeu o computador", clique em <b>Mais informações</b> e em <b>Executar assim mesmo</b> (o aviso aparece porque o driver não tem assinatura digital do fabricante).</li>
+          <li>Siga o instalador até o fim. Se ele pedir a porta, escolha a que começa com <b>USB</b>.</li>
+          <li>Confira em <b>Configurações → Bluetooth e dispositivos → Impressoras e scanners</b>: a térmica aparece na lista. Clique nela e em <b>Imprimir página de teste</b>.</li></ol></section>
+        <section><h3>2. Imprimir no backoffice</h3><ol>
+          <li>Feche todas as janelas do Chrome e abra de novo.</li>
+          <li>Num pedido, toque em <b>Imprimir 80 mm</b>.</li>
+          <li>Na janela de impressão, em <b>Destino</b>, clique em <b>Ver mais…</b> e escolha a térmica. Da próxima vez o Chrome já lembra dela.</li>
+          <li>Saiu com borda ou cortado? Em <b>Mais configurações</b>, coloque <b>Margens: Nenhuma</b>.</li></ol></section>
+      </div>
+      <p class="dica" style="margin:12px 0 0">Para sair direto, sem a janela de impressão: deixe a térmica como impressora padrão do Windows, acrescente <code>--kiosk-printing</code> no fim do campo Destino do atalho do Chrome (botão direito no atalho → Propriedades) e ligue <b>Imprimir sozinho cada pedido confirmado</b> em Minha conta.</p>`,
     rodape: '<button type="button" class="btn primary" data-fechar>Entendi</button>'
   });
 }
@@ -905,6 +932,8 @@ function modalConta() {
         <div class="imp-auto" id="notifBox"><p class="secao-t" style="margin:4px 0 8px">Notificações neste aparelho</p>
           <div class="notif-corpo"><p class="dica">Conferindo…</p></div></div>
         ${ehProdutor() ? '' : `<div class="imp-auto"><p class="secao-t" style="margin:4px 0 8px">Impressora deste aparelho</p>
+          ${ehWindows() ? `<div class="imp-driver"><span><b>Primeira vez neste computador?</b> A térmica só aparece na janela de impressão depois que o driver dela é instalado.</span>
+            <div class="imp-linha">${botaoDriver()}<button type="button" class="btn sm ghost" data-como-termica>Como instalar</button></div></div>` : ''}
           ${inChk('impAuto', 'Imprimir sozinho cada pedido confirmado', impressaoAuto().ligada)}
           <div class="imp-linha"><label class="sr" for="impFormato">O que imprimir</label>
             <select class="sel" id="impFormato"><option value="etiqueta" ${impressaoAuto().formato !== 'pedido' ? 'selected' : ''}>Etiqueta para a caixa</option><option value="pedido" ${impressaoAuto().formato === 'pedido' ? 'selected' : ''}>Pedido completo</option></select>
@@ -934,6 +963,7 @@ function modalConta() {
   m.$('[data-trocar-avatar]').addEventListener('click', () => { m.fechar(); modalAvatar(); });
   m.$('[data-instalar]')?.addEventListener('click', () => { m.fechar(); instalarApp(); });
   m.$('[data-como-instalar]').addEventListener('click', () => { m.fechar(); modalComoInstalar(); });
+  m.$('[data-como-termica]')?.addEventListener('click', () => { m.fechar(); modalComoTermica(); });
   ligarPainelNotif(m.$('#notifBox'), () => { m.fechar(); modalComoInstalar(); });
   painelNotif(m.$('#notifBox'));
   const salvarImp = () => {
@@ -1008,7 +1038,7 @@ function rotear(forcar = false) {
     const el = $('#conteudo');
     document.title = `${NAV.find(n => n.id === tela)?.rot || 'Painel'} — Backoffice Rita Bolos`;
     if (tela !== 'topos') sairTvTopos();
-    ({ painel: telaPainel, hoje: telaHoje, pedidos: telaPedidos, topos: telaTopos, relatorio: telaRelatorio, prejuizos: telaPrejuizos, estoque: telaEstoque, cardapio: telaCardapio, ajustes: telaAjustes })[tela](el, sub);
+    ({ painel: telaPainel, hoje: telaHoje, pedidos: telaPedidos, topos: telaTopos, relatorio: telaRelatorio, prejuizos: telaPrejuizos, estoque: telaEstoque, cardapio: telaCardapio, stories: telaStories, ajustes: telaAjustes })[tela](el, sub);
     window.scrollTo(0, 0);
   }
   if (pedidoId && !ehProdutor()) abrirGaveta(pedidoId); else fecharGaveta(true);
@@ -1628,12 +1658,18 @@ async function modalStories() {
         </div>
       </div>`,
     rodape: `<button type="button" class="btn ghost" data-fechar>Fechar</button>
+      <button type="button" class="btn ghost" data-st-guardar disabled hidden>${ic('stories')}<span>Guardar em Stories</span></button>
       <button type="button" class="btn ${podeCompartilhar ? 'ghost' : 'primary'}" data-st-baixar disabled>${ic('baixar')}Baixar</button>
       ${podeCompartilhar ? `<button type="button" class="btn primary" data-st-compartilhar disabled>${ic('externo')}Compartilhar</button>` : ''}`
   });
   let arquivo = null, url = null, vez = 0;
   const nome = `rita-bolos-sabores-${r.ini}.png`;
-  const botoes = on => m.$$('[data-st-baixar],[data-st-compartilhar]').forEach(b => { b.disabled = !on; });
+  const botoes = on => {
+    m.$$('[data-st-baixar],[data-st-compartilhar]').forEach(b => { b.disabled = !on; });
+    const g = m.$('[data-st-guardar]'); g.disabled = !on; g.querySelector('span').textContent = 'Guardar em Stories';   // imagem nova: dá para guardar de novo
+  };
+  // "Guardar em Stories" só aparece com a galeria no banco (sql/stories.sql)
+  api.admin.stories.disponivel().then(sim => { if (sim && document.contains(m.el)) m.$('[data-st-guardar]').hidden = false; }).catch(() => {});
   const gerar = async () => {
     const minha = ++vez; botoes(false);
     try {
@@ -1655,6 +1691,11 @@ async function modalStories() {
       try { localStorage.setItem(CHAVE_TEMA_STORIES, conf.tema); } catch (err) { /* sem armazenamento */ }
     }
     if (e.target.closest('[data-st-baixar]') && url) { const a = document.createElement('a'); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); }
+    const guardar = e.target.closest('[data-st-guardar]');
+    if (guardar && arquivo) ocupado(guardar, async () => {
+      await guardarEmStories(arquivo, `Sabores mais pedidos · ${periodoTxt(r.ini, r.fim)}`, 'Ranking');
+      guardar.querySelector('span').textContent = 'Guardada em Stories';
+    }).then(() => { if (guardar.querySelector('span').textContent === 'Guardada em Stories') guardar.disabled = true; });
     if (e.target.closest('[data-st-compartilhar]') && arquivo) {
       // a imagem já está pronta: o compartilhar acontece ainda no toque (o celular exige isso)
       navigator.share({ files: [arquivo], title: 'Os sabores mais pedidos da semana' }).catch(err => { if (err?.name !== 'AbortError') erroToast(err); });
@@ -1664,6 +1705,274 @@ async function modalStories() {
   gerar();
 }
 document.addEventListener('click', e => { if (e.target.closest('[data-stories]')) modalStories(); });
+
+/* =========================================================
+   STORIES: imagens para os stories do Instagram e o status do WhatsApp (#stories)
+   Ficam no Supabase (bucket "stories", sql/stories.sql), separadas em pastas. No celular,
+   "Compartilhar" abre o Instagram ou o WhatsApp com a imagem; no computador, "Baixar".
+========================================================= */
+let storiesLista = [], storiesPasta = '';   // a pasta do filtro ('' = todas)
+const SEM_PASTA = '\u0000sem';               // valor do filtro "Sem pasta" (não colide com o nome de uma pasta)
+const pastasDe = lista => [...new Set(lista.map(s => s.pasta).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+/** O nome da imagem a partir do arquivo ("promo-outubro.jpg" → "promo outubro"); nome de câmera ou de print fica sem nome. */
+function tituloDoArquivo(nome) {
+  const t = String(nome || '').replace(/\.[a-z0-9]{2,5}$/i, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return !t || /^(img|dsc|pxl|mvimg|photo|image|imagem|screenshot|captura|whatsapp image)\b/i.test(t) || /^\d[\d\s]*$/.test(t) ? '' : t.slice(0, 120);
+}
+/** O nome do arquivo ao baixar ou compartilhar: "rita-bolos-promocao-de-outubro.jpg". */
+function nomeArquivoStory(s, tipo) {
+  const base = String(s.titulo || 'story').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'story';
+  return `rita-bolos-${base}.${({ 'image/png': 'png', 'image/webp': 'webp' })[tipo] || 'jpg'}`;
+}
+/**
+ * Prepara uma imagem para guardar: a de postar (no máximo 1080 × 1920; JPG ou PNG que já cabem vão como estão,
+ * o resto vira JPG) e a miniatura da grade (640 px).
+ */
+async function prepararStory(arquivo) {
+  let bmp;
+  try { bmp = await createImageBitmap(arquivo, { imageOrientation: 'from-image' }); }
+  catch (e) {
+    try { bmp = await createImageBitmap(arquivo); } catch (e2) { throw new Error('Não deu para abrir esta imagem. Envie em JPG, PNG ou WEBP.'); }
+  }
+  const w = bmp.width, h = bmp.height;
+  const desenhar = k => {
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);   // fundo branco: PNG transparente não fica preto no JPG
+    g.imageSmoothingQuality = 'high'; g.drawImage(bmp, 0, 0, c.width, c.height);
+    return c;
+  };
+  const blob = (c, tipo, q) => new Promise(ok => c.toBlob(ok, tipo, q));
+  const escala = Math.min(1, 1920 / Math.max(w, h), 1080 / Math.min(w, h));
+  let final = arquivo, largura = w, altura = h;
+  if (escala < 1 || !/^image\/(jpeg|png)$/.test(arquivo.type) || arquivo.size > 8 * 1024 * 1024) {
+    const c = desenhar(escala);
+    final = await blob(c, 'image/jpeg', 0.9); largura = c.width; altura = c.height;
+  }
+  const cm = desenhar(Math.min(1, 640 / Math.max(w, h)));
+  let mini = await blob(cm, 'image/webp', 0.8);
+  if (!mini || mini.type !== 'image/webp') mini = await blob(cm, 'image/jpeg', 0.82);
+  bmp.close?.();
+  if (!final) throw new Error('Não deu para preparar esta imagem.');
+  return { arquivo: final, miniatura: mini, largura, altura };
+}
+async function telaStories(el) {
+  el.innerHTML = cabecalho('Stories', `<button type="button" class="btn primary" data-gs-enviar>${ic('mais')}Enviar imagens</button>`,
+    'Imagens para os stories do Instagram e o status do WhatsApp. Toque numa imagem para compartilhar ou baixar.')
+    + `<input type="file" id="stArquivos" accept="image/*" multiple hidden>
+    <div id="stCorpo" aria-live="polite"><div class="gs-grade">${'<div class="gs-card skel"></div>'.repeat(6)}</div></div>`;
+  if (!await api.admin.stories.disponivel()) {
+    if (telaAtual !== 'stories') return;
+    $('[data-gs-enviar]').disabled = true;
+    $('#stCorpo').innerHTML = '<p class="aviso-box">Para guardar as imagens aqui, rode o arquivo <code>sql/stories.sql</code> no Supabase (SQL Editor). Depois, abra esta tela de novo.</p>';
+    return;
+  }
+  try { storiesLista = await api.admin.stories.listar(); }
+  catch (e) {
+    if (telaAtual !== 'stories') return;
+    $('#stCorpo').innerHTML = `<div class="vazio"><h2>Não foi possível carregar</h2><p>${esc(e.message)}</p></div>`;
+    return;
+  }
+  if (telaAtual === 'stories') desenharGaleria();
+}
+/** As imagens na ordem em que aparecem (pastas em ordem alfabética, as sem pasta no fim), já com o filtro. */
+function storiesVisiveis() {
+  const pastas = pastasDe(storiesLista);
+  return [...pastas.map(p => [p, storiesLista.filter(s => s.pasta === p)]), [SEM_PASTA, storiesLista.filter(s => !s.pasta)]]
+    .filter(([p, l]) => l.length && (!storiesPasta || p === storiesPasta));
+}
+function desenharGaleria() {
+  const corpo = $('#stCorpo'); if (!corpo) return;
+  if (!storiesLista.length) {
+    corpo.innerHTML = `<div class="vazio gs-vazio">${ic('stories')}<h2>Nenhuma imagem ainda</h2>
+      <p>Envie as artes e fotos que você usa nos stories. Elas ficam aqui, separadas em pastas, prontas para compartilhar no Instagram ou no WhatsApp.</p>
+      <button type="button" class="btn primary" data-gs-enviar>${ic('mais')}Enviar imagens</button></div>`;
+    return;
+  }
+  const pastas = pastasDe(storiesLista), semPasta = storiesLista.filter(s => !s.pasta).length;
+  if (storiesPasta && !(storiesPasta === SEM_PASTA ? semPasta : pastas.includes(storiesPasta))) storiesPasta = '';
+  const qtd = n => `${n} ${n === 1 ? 'imagem' : 'imagens'}`;
+  const filtro = pastas.length ? `<div class="gs-filtro"><label class="sr" for="stPasta">Pasta</label><select class="sel" id="stPasta">
+      <option value="">Todas as pastas · ${qtd(storiesLista.length)}</option>
+      ${pastas.map(p => `<option value="${esc(p)}" ${p === storiesPasta ? 'selected' : ''}>${esc(p)} · ${storiesLista.filter(s => s.pasta === p).length}</option>`).join('')}
+      ${semPasta ? `<option value="${SEM_PASTA}" ${storiesPasta === SEM_PASTA ? 'selected' : ''}>Sem pasta · ${semPasta}</option>` : ''}
+    </select></div>` : '';
+  const card = s => `<button type="button" class="gs-card" data-story="${esc(s.id)}" aria-label="${esc(s.titulo || 'Imagem sem nome')}">
+      <img src="${esc(s.miniatura)}" alt="" loading="lazy" decoding="async">${s.titulo ? `<span class="gs-tit">${esc(s.titulo)}</span>` : ''}</button>`;
+  corpo.innerHTML = filtro + storiesVisiveis().map(([p, l]) => `<section class="gs-grupo">
+      ${pastas.length ? `<h2 class="gs-pasta">${esc(p === SEM_PASTA ? 'Sem pasta' : p)}<small>${qtd(l.length)}</small></h2>` : ''}
+      <div class="gs-grade">${l.map(card).join('')}</div></section>`).join('');
+}
+/** Enviar várias imagens de uma vez, todas na mesma pasta. */
+function modalEnviarStories(arquivos) {
+  const pastas = pastasDe(storiesLista), n = arquivos.length;
+  const m = abrirModal({
+    titulo: n === 1 ? 'Enviar 1 imagem' : `Enviar ${n} imagens`, largo: true,
+    corpo: `<div class="gs-envio">${arquivos.map((f, i) => `<figure data-gs-i="${i}"><div><img alt=""></div><figcaption>${esc(tituloDoArquivo(f.name) || 'Sem nome')}</figcaption></figure>`).join('')}</div>
+      ${campo('stEnvPasta', 'Pasta <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>',
+        `<input class="in" id="stEnvPasta" list="stPastasLista" maxlength="60" autocomplete="off" placeholder="Ex.: Promoções, Datas especiais" value="${esc(storiesPasta && storiesPasta !== SEM_PASTA ? storiesPasta : '')}">
+        <datalist id="stPastasLista">${pastas.map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist>`,
+        'O nome de cada imagem vem do arquivo; dá para mudar depois. Imagens grandes são reduzidas para o tamanho dos stories (1080 × 1920).')}
+      <div class="lote-prog" id="stProg" hidden><div class="lote-trilho"><i></i></div><span aria-live="polite"></span></div>
+      <div id="stEnvErro"></div>`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>${ic('ok')}<span>${n === 1 ? 'Enviar' : `Enviar ${n} imagens`}</span></button>`
+  });
+  arquivos.forEach((f, i) => {
+    const img = m.$(`[data-gs-i="${i}"] img`), url = URL.createObjectURL(f);
+    img.onload = img.onerror = () => URL.revokeObjectURL(url);
+    img.src = url;
+  });
+  const feitos = new Set();
+  m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    const pasta = valDe(m, 'stEnvPasta'), erros = [], prog = m.$('#stProg');
+    prog.hidden = false; m.$('#stEnvErro').innerHTML = '';
+    for (const [i, f] of arquivos.entries()) {
+      if (feitos.has(i)) continue;   // tentar de novo: só as que falharam
+      prog.querySelector('i').style.width = `${Math.round(i / n * 100)}%`;
+      prog.querySelector('span').textContent = n === 1 ? 'Enviando…' : `Enviando ${i + 1} de ${n}…`;
+      const fig = m.$(`[data-gs-i="${i}"]`);
+      try {
+        const pronta = await prepararStory(f);
+        const nova = await api.admin.stories.enviar({ ...pronta, titulo: tituloDoArquivo(f.name), pasta });
+        storiesLista = [nova, ...storiesLista];
+        feitos.add(i); fig.classList.remove('erro'); fig.classList.add('feito');
+      } catch (e) { erros.push(`${f.name}: ${e?.message || 'erro'}`); fig.classList.add('erro'); }
+    }
+    prog.querySelector('i').style.width = '100%';
+    if (storiesPasta && storiesPasta !== (pasta || SEM_PASTA)) storiesPasta = '';   // o filtro era outra pasta: mostra tudo
+    if (telaAtual === 'stories') desenharGaleria();
+    if (erros.length) {
+      prog.querySelector('span').textContent = `${feitos.size} de ${n} ${n === 1 ? 'enviada' : 'enviadas'}.`;
+      m.$('#stEnvErro').innerHTML = `<p class="aviso-box" style="margin:12px 0 0"><b>Não foram:</b><br>${erros.map(esc).join('<br>')}</p>`;
+      m.$('[data-ok] span').textContent = 'Tentar de novo';
+      return;
+    }
+    m.fechar();
+    toast(n === 1 ? 'Imagem guardada em Stories.' : `${n} imagens guardadas em Stories.`);
+  }));
+}
+/** Abre a imagem: grande, com Compartilhar, Baixar, Editar e Apagar, e setas para as outras da lista. */
+function abrirStory(id) {
+  const lista = storiesVisiveis().flatMap(([, l]) => l);
+  let i = lista.findIndex(s => s.id === id); if (i < 0) return;
+  let podeCompartilhar = false;
+  try { podeCompartilhar = !!navigator.canShare?.({ files: [new File(['x'], 'teste.jpg', { type: 'image/jpeg' })] }); } catch (e) { podeCompartilhar = false; }
+  const m = abrirModal({
+    titulo: 'Imagem', largo: true,
+    corpo: `<div class="sv">
+        <div class="sv-img" tabindex="-1" autofocus><img alt=""><button type="button" class="btn icon sv-ant" data-sv-ir="-1" aria-label="Imagem anterior">${ic('voltar')}</button>
+          <button type="button" class="btn icon sv-prox" data-sv-ir="1" aria-label="Próxima imagem">${ic('seta')}</button></div>
+        <div class="sv-info">
+          <p class="sv-meta" id="svMeta"></p>
+          <div class="sv-mais"><button type="button" class="btn sm ghost" data-sv-editar>${ic('editar')}Editar nome e pasta</button>
+            <button type="button" class="btn sm ghost" data-sv-apagar>${ic('lixo')}Apagar</button></div>
+          <p class="dica">${podeCompartilhar ? 'Toque em <b>Compartilhar</b> e escolha o Instagram (Stories) ou o WhatsApp (Status): a imagem já vai junto.'
+            : 'Baixe a imagem e poste pelo celular, ou use o Stories pelo celular: lá o botão Compartilhar manda direto para o Instagram ou o WhatsApp.'}</p>
+          <p class="sv-pos" id="svPos"></p>
+        </div></div>`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Fechar</button>
+      <button type="button" class="btn ${podeCompartilhar ? 'ghost' : 'primary'}" data-sv-baixar disabled>${ic('baixar')}Baixar</button>
+      ${podeCompartilhar ? `<button type="button" class="btn primary" data-sv-compartilhar disabled>${ic('externo')}Compartilhar</button>` : ''}`
+  });
+  let arquivo = null, url = null, busca = null;
+  const botoes = on => m.$$('[data-sv-baixar],[data-sv-compartilhar]').forEach(b => { b.disabled = !on; });
+  const mostrar = async () => {
+    const s = lista[i];
+    m.$('.modal h2').textContent = s.titulo || 'Imagem sem nome';
+    m.$('.sv-img img').alt = s.titulo || 'Imagem sem nome';
+    m.$('.sv-img img').src = s.url;
+    m.$('#svMeta').textContent = [s.pasta, dataHora(s.criado_em), s.largura && s.altura ? `${s.largura} × ${s.altura}` : ''].filter(Boolean).join(' · ');
+    m.$('#svPos').textContent = lista.length > 1 ? `${i + 1} de ${lista.length}` : '';
+    m.$$('[data-sv-ir]').forEach(b => { b.hidden = lista.length < 2; });
+    // o arquivo já fica pronto: no celular, compartilhar precisa acontecer no próprio toque
+    arquivo = null; botoes(false); busca?.abort(); busca = new AbortController();
+    try {
+      const r = await fetch(s.url, { signal: busca.signal });
+      if (!r.ok) throw new Error('Não deu para abrir a imagem.');
+      const b = await r.blob();
+      if (lista[i] !== s) return;
+      arquivo = new File([b], nomeArquivoStory(s, b.type), { type: b.type || 'image/jpeg' });
+      if (url) URL.revokeObjectURL(url);
+      url = URL.createObjectURL(b);
+      botoes(true);
+    } catch (e) { if (e?.name !== 'AbortError') erroToast(e); }
+  };
+  const ir = passo => { i = (i + passo + lista.length) % lista.length; mostrar(); };
+  m.el.addEventListener('click', e => {
+    const b = e.target.closest('[data-sv-ir]'); if (b) { ir(Number(b.dataset.svIr)); return; }
+    if (e.target.closest('[data-sv-baixar]') && arquivo) {
+      const a = document.createElement('a'); a.href = url; a.download = arquivo.name; document.body.appendChild(a); a.click(); a.remove();
+    }
+    if (e.target.closest('[data-sv-compartilhar]') && arquivo)
+      navigator.share({ files: [arquivo] }).catch(err => { if (err?.name !== 'AbortError') erroToast(err); });
+    if (e.target.closest('[data-sv-editar]')) modalEditarStory(lista[i], () => mostrar());
+    if (e.target.closest('[data-sv-apagar]')) apagarStory(lista[i], () => {
+      lista.splice(i, 1);
+      if (!lista.length) { m.fechar(); return; }
+      i = Math.min(i, lista.length - 1); mostrar();
+    });
+  });
+  m.el.addEventListener('keydown', e => {
+    if (pilhaModais[pilhaModais.length - 1] !== m || e.target.matches('input, textarea, select')) return;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); ir(e.key === 'ArrowLeft' ? -1 : 1); }
+  });
+  const fechar = m.fechar;
+  m.fechar = () => { busca?.abort(); if (url) URL.revokeObjectURL(url); fechar(); };
+  mostrar();
+}
+function modalEditarStory(s, depois) {
+  const m = abrirModal({
+    titulo: 'Editar imagem',
+    corpo: `${inTxt('stEdTit', 'Nome', s.titulo || '', { attrs: 'maxlength="120" autocomplete="off"' })}
+      ${campo('stEdPasta', 'Pasta', `<input class="in" id="stEdPasta" list="stEdPastas" maxlength="60" autocomplete="off" placeholder="Sem pasta" value="${esc(s.pasta || '')}">
+        <datalist id="stEdPastas">${pastasDe(storiesLista).map(p => `<option value="${esc(p)}"></option>`).join('')}</datalist>`, 'Escolha uma pasta que já existe ou escreva o nome de uma nova. Vazio: sem pasta.')}`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>${ic('ok')}Salvar</button>`
+  });
+  m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    const novo = await api.admin.stories.atualizar(s.id, { titulo: valDe(m, 'stEdTit'), pasta: valDe(m, 'stEdPasta') });
+    Object.assign(s, novo);
+    storiesLista = storiesLista.map(x => (x.id === s.id ? s : x));
+    m.fechar();
+    if (telaAtual === 'stories') desenharGaleria();
+    depois?.(s);
+  }));
+}
+async function apagarStory(s, depois) {
+  if (!await confirmar('Apagar esta imagem?', `"${s.titulo || 'Imagem sem nome'}" sai de Stories e o link dela para de funcionar.`, { botao: 'Apagar', perigo: true })) return;
+  try { await api.admin.stories.apagar(s); } catch (e) { erroToast(e); return; }
+  storiesLista = storiesLista.filter(x => x.id !== s.id);
+  if (telaAtual === 'stories') desenharGaleria();
+  toast('Imagem apagada.');
+  depois?.();
+}
+/** Guarda uma imagem gerada pelo sistema (ex.: o ranking da semana) em Stories. */
+async function guardarEmStories(arquivo, titulo, pasta) {
+  const pronta = await prepararStory(arquivo);
+  const nova = await api.admin.stories.enviar({ ...pronta, titulo, pasta });
+  storiesLista = [nova, ...storiesLista.filter(x => x.id !== nova.id)];
+  toast(`Guardada em Stories, na pasta ${pasta}.`, { acao: { rotulo: 'Ver', fn: () => { location.hash = '#stories'; } }, tempo: 7000 });
+  return nova;
+}
+// Stories: enviar (botão, ou soltar os arquivos na tela, no computador), filtro de pasta e abrir uma imagem
+document.addEventListener('click', e => {
+  if (telaAtual !== 'stories' || !perfil) return;
+  if (e.target.closest('[data-gs-enviar]')) { $('#stArquivos')?.click(); return; }
+  const c = e.target.closest('[data-story]'); if (c) abrirStory(c.dataset.story);
+});
+document.addEventListener('change', e => {
+  if (e.target.id === 'stArquivos') { const l = [...e.target.files]; e.target.value = ''; if (l.length) modalEnviarStories(l); }
+  if (e.target.id === 'stPasta') { storiesPasta = e.target.value; desenharGaleria(); }
+});
+const soltandoImagens = e => telaAtual === 'stories' && !pilhaModais.length && [...(e.dataTransfer?.types || [])].includes('Files');
+document.addEventListener('dragover', e => { if (!soltandoImagens(e)) return; e.preventDefault(); $('#stCorpo')?.classList.add('soltar'); });
+document.addEventListener('dragleave', e => { if (!e.relatedTarget || !document.contains(e.relatedTarget)) $('#stCorpo')?.classList.remove('soltar'); });
+document.addEventListener('drop', e => {
+  if (!soltandoImagens(e)) return;
+  e.preventDefault(); $('#stCorpo')?.classList.remove('soltar');
+  const l = [...e.dataTransfer.files].filter(f => /^image\//.test(f.type));
+  if (l.length) modalEnviarStories(l); else toast('Solte só imagens (JPG, PNG ou WEBP).');
+});
 
 /* =========================================================
    PREJUÍZOS: itens refeitos ou perdidos (sabor errado, item trocado, queda...)
@@ -2642,6 +2951,7 @@ function imprimirTermica(p) { return imprimirCupons([p]); }
 /** Uma impressão de cada vez (as automáticas podem chegar juntas). Resolve quando a impressão foi enviada. */
 let filaTermica = Promise.resolve();
 function mandarParaTermica(html) {
+  avisoPrimeiraImpressao();
   const vez = filaTermica.then(() => new Promise(fim => {
     $('#impTermica')?.remove();
     const f = document.createElement('iframe');
@@ -2656,6 +2966,13 @@ function mandarParaTermica(html) {
   }));
   filaTermica = vez.catch(() => {});
   return vez;
+}
+
+/** Na primeira impressão de cada computador (Windows): se a térmica não aparecer na lista, falta o driver. */
+function avisoPrimeiraImpressao() {
+  if (!ehWindows()) return;
+  try { if (localStorage.getItem('ritabolos.termica.dica')) return; localStorage.setItem('ritabolos.termica.dica', '1'); } catch (e) { return; }
+  toast('Primeira impressão neste computador: se a térmica não aparecer na lista, instale o driver dela.', { acao: { rotulo: 'Como instalar', fn: modalComoTermica }, tempo: 15000 });
 }
 
 /* ---- Etiqueta do pedido (80 mm): para colar na caixa. Código e nome grandes, retirada e itens ---- */
@@ -3200,6 +3517,7 @@ async function modalImprimirLote(linhas, titulo = 'Imprimir pedidos') {
       <div data-so-etiqueta><p class="secao-t">Prévia da primeira etiqueta</p><div class="nb-previa" id="lotePrevia"></div>
         ${naNiimbot ? '' : '<p class="ajuste-dica" style="margin:8px 0 0">Sem a Niimbot ligada neste aparelho (Minha conta), as etiquetas saem na térmica de 80 mm, uma por página.</p>'}</div>
       <p class="ajuste-dica" data-so-cupom style="margin:12px 0 0">Sai o cupom de cada pedido, igual ao do botão Imprimir 80 mm, na ordem da lista e numa impressão só. Cada pedido começa numa página nova: se a térmica estiver configurada para cortar a cada página, ela corta entre um e outro.</p>
+      ${ehWindows() ? '<p class="ajuste-dica" data-dica-termica style="margin:8px 0 0">A térmica não aparece na janela de impressão? <button type="button" class="link" data-como-termica>Veja como instalar o driver</button>.</p>' : ''}
       <div class="lote-prog" id="loteProg" hidden><div class="lote-trilho"><i></i></div><span aria-live="polite"></span></div>`,
     rodape: `<button type="button" class="btn ghost" data-fechar>Fechar</button><button type="button" class="btn primary" data-ok>${ic('imprimir')}<span>Imprimir</span></button>`
   });
@@ -3209,6 +3527,7 @@ async function modalImprimirLote(linhas, titulo = 'Imprimir pedidos') {
   const atualizar = () => {
     const cupom = ehCupom();
     m.$('[data-so-etiqueta]').hidden = cupom; m.$('[data-so-cupom]').hidden = !cupom;
+    if (m.$('[data-dica-termica]')) m.$('[data-dica-termica]').hidden = !cupom && naNiimbot;   // na Niimbot não passa pela térmica
     pedidos.forEach(p => {
       const em = m.$(`[data-lote-n="${CSS.escape(p.id)}"]`); if (!em) return;
       if (cupom) { const n = p.itens.length; em.textContent = `${n} ${n === 1 ? 'item' : 'itens'}`; return; }
@@ -3240,6 +3559,7 @@ async function modalImprimirLote(linhas, titulo = 'Imprimir pedidos') {
   });
   m.$('[data-lote-todos]').addEventListener('click', () => { pedidos.forEach(p => marcados.add(p.id)); m.$$('[data-lote]').forEach(c => { c.checked = true; }); atualizar(); });
   m.$('[data-lote-nenhum]').addEventListener('click', () => { marcados.clear(); m.$$('[data-lote]').forEach(c => { c.checked = false; }); atualizar(); });
+  m.$('[data-como-termica]')?.addEventListener('click', () => modalComoTermica());
   atualizar();
   const prog = m.$('#loteProg'), barra = prog.querySelector('i'), txt = prog.querySelector('span');
   const avancar = (feitas, total) => { barra.style.width = `${Math.round(feitas / total * 100)}%`; txt.textContent = `Impressa${feitas === 1 ? '' : 's'} ${feitas} de ${total}`; };
