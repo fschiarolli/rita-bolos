@@ -1761,7 +1761,7 @@ async function telaStories(el) {
   el.innerHTML = cabecalho('Stories', `<button type="button" class="btn primary" data-gs-enviar>${ic('mais')}Enviar imagens</button>`,
     'Imagens para os stories do Instagram e o status do WhatsApp. Toque numa imagem para compartilhar ou baixar.')
     + `<input type="file" id="stArquivos" accept="image/*" multiple hidden>
-    <div id="stCorpo" aria-live="polite"><div class="gs-grade">${'<div class="gs-card skel"></div>'.repeat(6)}</div></div>`;
+    <div id="stCorpo"><div class="gs-grade">${'<div class="gs-card skel"></div>'.repeat(6)}</div></div>`;
   if (!await api.admin.stories.disponivel()) {
     if (telaAtual !== 'stories') return;
     $('[data-gs-enviar]').disabled = true;

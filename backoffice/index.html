@@ -737,7 +737,7 @@ a.chip { text-decoration: none; }
 .gs-envio .feito > div::after { content: '✓'; position: absolute; inset: auto 6px 6px auto; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--teal); color: var(--on-teal); font-size: 13px; font-weight: 800; }
 .gs-envio .erro > div { border-color: var(--error, #c0392b); box-shadow: 0 0 0 2px var(--error, #c0392b); }
 .sv { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 22px; align-items: start; }
-.sv-img { position: relative; aspect-ratio: 9 / 16; border-radius: 16px; overflow: hidden; background: #1b1411; outline: none; }
+.sv-img { position: relative; aspect-ratio: 9 / 16; border-radius: 16px; overflow: hidden; background: #1b1411; border: 1px solid var(--line-2); outline: none; }   /* a moldura dos stories: mostra como a imagem fica no 9:16 */
 .sv-img img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .sv-img .btn { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255, 255, 255, .88); color: #2a1a14; border: 0; box-shadow: var(--shadow-sm, none); }
 .sv-ant { left: 8px; } .sv-prox { right: 8px; }
