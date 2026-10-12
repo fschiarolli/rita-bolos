@@ -2201,7 +2201,8 @@ setInterval(() => { if (telaAtual === 'hoje' && hojeDia && hojeISO() !== hojeDia
    diaSemana: '' ou 0 (domingo) a 6 (sábado); pagamento: '' | sinal_pendente | sinal_pago | com_saldo | pago */
 const FILTRO_PADRAO = { busca: '', status: 'abertos', periodo: 'proximas', dia: '', de: '', ate: '', diaSemana: '', origem: '', pagamento: '', ordem: '', extra: null };
 const filtro = { ...FILTRO_PADRAO };
-const PERIODOS = [['proximas', 'Hoje em diante'], ['semana', 'Próximos 7 dias'], ['dia', 'Um dia…'], ['entre', 'Entre datas…'], ['atrasadas', 'Retirada já passou'], ['todas', 'Todas as datas']];
+// "Um dia" não está no menu: o dia se escolhe nos botões (hoje, amanhã, depois de amanhã) ou no calendário; opcoesPeriodo mostra o escolhido.
+const PERIODOS = [['proximas', 'Hoje em diante'], ['semana', 'Próximos 7 dias'], ['entre', 'Entre datas…'], ['atrasadas', 'Retirada já passou'], ['todas', 'Todas as datas']];
 const FILTRO_DIAS_SEMANA = [['', 'Qualquer dia'], ['0', 'Domingos'], ['1', 'Segundas'], ['2', 'Terças'], ['3', 'Quartas'], ['4', 'Quintas'], ['5', 'Sextas'], ['6', 'Sábados']];
 const PAGAMENTOS_FILTRO = [['', 'Qualquer situação'], ['sinal_pendente', 'Sinal pendente'], ['sinal_pago', 'Sinal pago, falta o resto'], ['com_saldo', 'Com saldo a receber'], ['pago', 'Tudo pago']];
 const ORDENS = [['', 'Automática'], ['retirada', 'Retirada mais cedo primeiro'], ['retirada_desc', 'Retirada mais tarde primeiro'], ['criado', 'Feitos por último primeiro']];
@@ -2232,28 +2233,39 @@ function filtrosComuns() {
 /** Quantos filtros de "Mais filtros" estão ligados. */
 const filtrosExtrasAtivos = () => [filtro.diaSemana !== '' && filtro.periodo !== 'dia', filtro.origem, filtro.pagamento, filtro.ordem].filter(Boolean).length;
 const filtroMudou = () => !!(filtro.busca.trim() || filtro.status !== FILTRO_PADRAO.status || filtro.periodo !== FILTRO_PADRAO.periodo || filtrosExtrasAtivos() || filtro.extra);
+/** As opções do menu de período; com um dia escolhido, ele aparece no alto e marcado ("Dia: amanhã"). */
+const opcoesPeriodo = () => (filtro.periodo === 'dia' ? [['dia', `Dia: ${nomeDia(filtro.dia || hojeISO())}`]] : []).concat(PERIODOS)
+  .map(([v, t]) => `<option value="${v}" ${v === filtro.periodo ? 'selected' : ''}>${esc(t)}</option>`).join('');
+/** As opções do menu de status: em aberto, cada status (com a cor) e todos. */
+function opcoesStatus() {
+  const ops = [['abertos', 'Em aberto'], ...STATUS.filter(s => s.ativo).sort((a, b) => a.ordem - b.ordem).map(s => [s.codigo, s.nome, s.cor]), ['todos', 'Todos os status']];
+  // um status desligado que veio de um atalho do painel continua aparecendo
+  const s = !ops.some(([v]) => v === filtro.status) && STATUS.find(x => x.codigo === filtro.status);
+  if (s) ops.splice(ops.length - 1, 0, [s.codigo, s.nome, s.cor]);
+  return ops;
+}
 
 function telaPedidos(el) {
-  const chips = [['abertos', 'Em aberto'], ...STATUS.filter(s => s.ativo).sort((a, b) => a.ordem - b.ordem).map(s => [s.codigo, s.nome, s.cor]), ['todos', 'Todos']];
+  const status = opcoesStatus(), corDe = v => status.find(([c]) => c === v)?.[2] || '';
   const sel = (id, rot, ops, val) => campo(id, rot, `<select class="sel" id="${id}">${ops.map(([v, t]) => `<option value="${esc(v)}" ${String(v) === String(val) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`);
   const extras = filtrosExtrasAtivos();
   el.innerHTML = cabecalho('Pedidos', `<button type="button" class="btn ghost" data-lote-pedidos title="Imprimir os pedidos desta lista: cupom de 80 mm ou etiquetas">${ic('imprimir')}Imprimir</button><button type="button" class="btn primary" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`,
       'Pedidos do site, do WhatsApp e do balcão. Toque em um pedido para ver tudo.') + `
     <div class="filtros">
-      <div class="linha">
+      <div class="f-topo">
         <div class="busca">${ic('busca')}<label class="sr" for="fBusca">Buscar pedido</label>
           <input class="in" id="fBusca" type="search" placeholder="Nome, telefone, código ou item (ex.: kit)" value="${esc(filtro.busca)}" autocomplete="off"></div>
-        <label class="sr" for="fPeriodo">Data de retirada</label>
-        <select class="sel" id="fPeriodo" style="width:auto;flex:0 1 200px">${PERIODOS.map(([v, t]) => `<option value="${v}" ${v === filtro.periodo ? 'selected' : ''}>${t}</option>`).join('')}</select>
-        <button type="button" class="btn ghost" id="fMaisBt" aria-expanded="${extras ? 'true' : 'false'}" aria-controls="fMais">${ic('config')}Mais filtros<span class="f-cont" id="fCont" ${extras ? '' : 'hidden'}>${extras}</span></button>
+        <div class="f-per"><label class="sr" for="fPeriodo">Data de retirada</label><select class="sel" id="fPeriodo">${opcoesPeriodo()}</select></div>
+        <div class="f-st ${corDe(filtro.status) ? 'com-cor' : ''}" style="--cor:${esc(corDe(filtro.status))}"><label class="sr" for="fStatus">Status do pedido</label>
+          <select class="sel" id="fStatus">${status.map(([v, t]) => `<option value="${esc(v)}" ${v === filtro.status ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>
+        <button type="button" class="btn ghost" id="fMaisBt" aria-expanded="${extras ? 'true' : 'false'}" aria-controls="fMais">${ic('filtro')}<span class="f-mais-txt">Mais filtros</span><span class="f-cont" id="fCont" ${extras ? '' : 'hidden'}>${extras}</span></button>
       </div>
-      <div class="linha f-datas" id="fDatas"></div>
-      <div class="dias-ret" id="fDias" role="group" aria-label="Retirada nos próximos dias"></div>
       <div class="f-mais" id="fMais" ${extras ? '' : 'hidden'}>
         ${sel('fSemana', 'Dia da semana', FILTRO_DIAS_SEMANA, filtro.diaSemana)}${sel('fOrigem', 'Origem', [['', 'Qualquer origem'], ...Object.entries(ORIGENS)], filtro.origem)}
         ${sel('fPagto', 'Pagamento', PAGAMENTOS_FILTRO, filtro.pagamento)}${sel('fOrdem', 'Ordem', ORDENS, filtro.ordem)}
       </div>
-      <div class="chips" role="group" aria-label="Filtrar por status">${chips.map(([v, t, cor]) => `<button type="button" class="chip" data-fst="${esc(v)}" aria-pressed="${v === filtro.status}">${cor ? `<span class="dot" style="background:${esc(cor)}"></span>` : ''}${esc(t)}</button>`).join('')}</div>
+      <div class="linha f-datas" id="fDatas"></div>
+      <div class="dias-ret" id="fDias" role="group" aria-label="Dia da retirada"></div>
       ${filtro.extra ? `<div class="linha"><button type="button" class="chip" data-limpar-extra aria-pressed="true">${esc(EXTRAS[filtro.extra])} ${ic('x')}</button></div>` : ''}
     </div>
     <section class="card tabela" aria-label="Lista de pedidos">
@@ -2265,37 +2277,34 @@ function telaPedidos(el) {
   $('#fBusca').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => { filtro.busca = e.target.value; carregarPedidos(); }, 300); });
   $('#fPeriodo').addEventListener('change', e => {
     filtro.periodo = e.target.value;
-    if (filtro.periodo === 'dia' && !filtro.dia) filtro.dia = hojeISO();
     if (filtro.periodo === 'entre' && !filtro.de && !filtro.ate) { filtro.de = hojeISO(); filtro.ate = hojeISO(6); }
     atualizarFiltrosData(); carregarPedidos();
-    if (filtro.periodo === 'dia' || filtro.periodo === 'entre') $('#fDatas .dt-btn')?.focus();
+    if (filtro.periodo === 'entre') $('#fDatas .dt-btn')?.focus();
+  });
+  $('#fStatus').addEventListener('change', e => {
+    filtro.status = e.target.value;
+    const cor = corDe(filtro.status), caixa = e.target.closest('.f-st');
+    caixa.classList.toggle('com-cor', !!cor); caixa.style.setProperty('--cor', cor);
+    carregarPedidos(); contarDias();
   });
   $('#fMaisBt').addEventListener('click', e => { const p = $('#fMais'); p.hidden = !p.hidden; e.currentTarget.setAttribute('aria-expanded', String(!p.hidden)); });
   [['fSemana', 'diaSemana'], ['fOrigem', 'origem'], ['fPagto', 'pagamento'], ['fOrdem', 'ordem']].forEach(([id, k]) => $('#' + id).addEventListener('change', e => {
     filtro[k] = e.target.value; atualizarFiltrosData(); carregarPedidos(); if (k !== 'ordem') contarDias();
   }));
-  // dia escolhido, entre datas, e os botões dos próximos dias
+  // entre datas, e os botões dos dias
   $('#fDatas').addEventListener('change', e => {
     const id = e.target.id;
-    if (id === 'fDia' && e.target.value) filtro.dia = e.target.value;
     if (id === 'fDe') { filtro.de = e.target.value; if (filtro.ate && filtro.ate < filtro.de) filtro.ate = ''; }   // o fim antes do começo: fica em aberto
     if (id === 'fAte') filtro.ate = e.target.value;
     atualizarFiltrosData(); carregarPedidos();
-  });
-  $('#fDatas').addEventListener('click', e => {
-    const b = e.target.closest('[data-passo]'); if (!b) return;
-    filtro.dia = somarDiasIso(filtro.dia || hojeISO(), Number(b.dataset.passo)); atualizarFiltrosData(); carregarPedidos();
   });
   $('#fDias').addEventListener('click', e => {
     const b = e.target.closest('[data-fdia]'); if (!b) return;
     if (b.dataset.fdia === 'outro') {
       if (calAberto?.ancora === b) { fecharCalendario(); return; }
-      // com um dia no filtro, o calendário é o do campo do dia; sem ele, a lista só muda quando a pessoa escolher
-      let input = $('#fDia');
-      if (!input) {
-        input = Object.assign(document.createElement('input'), { type: 'hidden' });
-        input.addEventListener('change', () => { if (!input.value) return; filtro.periodo = 'dia'; filtro.dia = input.value; atualizarFiltrosData(); carregarPedidos(); });
-      }
+      // o calendário abre no dia do filtro (se houver); a lista só muda quando a pessoa escolher
+      const input = Object.assign(document.createElement('input'), { type: 'hidden', value: filtro.periodo === 'dia' ? filtro.dia : '' });
+      input.addEventListener('change', () => { if (!input.value) return; filtro.periodo = 'dia'; filtro.dia = input.value; atualizarFiltrosData(); carregarPedidos(); });
       abrirCalendario(input, b);
       return;
     }
@@ -2303,37 +2312,26 @@ function telaPedidos(el) {
     filtro.periodo = mesmo ? 'proximas' : 'dia'; if (!mesmo) filtro.dia = b.dataset.fdia;   // tocar de novo no dia desmarca
     atualizarFiltrosData(); carregarPedidos();
   });
-  el.querySelector('.chips').addEventListener('click', e => {
-    const b = e.target.closest('[data-fst]'); if (!b) return;
-    filtro.status = b.dataset.fst;
-    $$('[data-fst]', el).forEach(x => x.setAttribute('aria-pressed', String(x === b)));
-    carregarPedidos(); contarDias();
-  });
   el.querySelector('[data-limpar-extra]')?.addEventListener('click', () => { filtro.extra = null; telaPedidos(el); });
   atualizarFiltrosData();
   carregarPedidos();
   contarDias();
 }
-/** Troca o conteúdo de box sem perder o foco: quem o tinha (pelo id, data-passo ou data-fdia) continua com ele. */
+/** Troca o conteúdo de box sem perder o foco: quem o tinha (pelo id ou data-fdia) continua com ele. */
 function redesenharComFoco(box, html) {
   const a = document.activeElement, dentro = a && a !== document.body && box.contains(a);
-  const sel = !dentro ? null : a.id ? '#' + a.id : a.dataset.passo ? `[data-passo="${a.dataset.passo}"]` : a.dataset.fdia ? `[data-fdia="${a.dataset.fdia}"]` : null;
+  const sel = !dentro ? null : a.id ? '#' + a.id : a.dataset.fdia ? `[data-fdia="${a.dataset.fdia}"]` : null;
   box.innerHTML = html;
   if (sel) box.querySelector(sel)?.focus();
 }
-/** Campos de data (um dia ou entre datas), os botões dos próximos dias e o contador de "Mais filtros". */
+/** O menu de período (com o dia escolhido), os campos de "Entre datas", os botões dos dias e o contador de "Mais filtros". */
 function atualizarFiltrosData() {
   const box = $('#fDatas'); if (!box) return;
-  $('#fPeriodo').value = filtro.periodo;
-  const html = filtro.periodo === 'dia'
-    ? `<button type="button" class="btn icon ghost" data-passo="-1" aria-label="Dia anterior" title="Dia anterior">${ic('voltar')}</button>
-      ${inData('fDia', filtro.dia, { rotulo: 'Dia da retirada' })}
-      <button type="button" class="btn icon ghost f-prox" data-passo="1" aria-label="Próximo dia" title="Próximo dia">${ic('voltar')}</button>
-      <span class="f-dia-nome">${esc(nomeDia(filtro.dia))}</span>`
-    : filtro.periodo === 'entre'
+  $('#fPeriodo').innerHTML = opcoesPeriodo();
+  const html = filtro.periodo === 'entre'
       ? `<span class="f-de">De ${inData('fDe', filtro.de, { vazio: 'escolher', rotulo: 'Retirada a partir de' })}</span>
       <span class="f-de">até ${inData('fAte', filtro.ate, { min: filtro.de, vazio: 'escolher', rotulo: 'Retirada até' })}</span>`
-      : '';
+    : '';
   redesenharComFoco(box, html);
   box.hidden = !html;
   // "Dia da semana" não faz sentido com um dia só
@@ -2341,18 +2339,18 @@ function atualizarFiltrosData() {
   const n = filtrosExtrasAtivos(), cont = $('#fCont'); if (cont) { cont.textContent = n; cont.hidden = !n; }
   desenharDias();
 }
-/* Próximos 14 dias, com quantos pedidos tem em cada um (respeita status, origem e pagamento) */
+/* Hoje, amanhã e depois de amanhã, com quantos pedidos tem em cada um (respeita status, origem e pagamento) */
 let contagemDias = {};
 async function contarDias() {
   const h = hojeISO();
-  try { contagemDias = await api.admin.pedidos.contarPorDia({ ...filtrosComuns(), de: h, ate: hojeISO(13) }); } catch (e) { contagemDias = {}; }
+  try { contagemDias = await api.admin.pedidos.contarPorDia({ ...filtrosComuns(), de: h, ate: hojeISO(2) }); } catch (e) { contagemDias = {}; }
   desenharDias();
 }
 function desenharDias() {
   const box = $('#fDias'); if (!box) return;
-  const dias = Array.from({ length: 14 }, (_, i) => hojeISO(i));
+  const dias = Array.from({ length: 3 }, (_, i) => hojeISO(i));
   const forDaFaixa = filtro.periodo === 'dia' && filtro.dia && !dias.includes(filtro.dia);
-  // "Escolher dia" vem primeiro: fica sempre à vista, sem rolar a fileira
+  // "Escolher dia" (o calendário) vem primeiro; com outro dia escolhido, ele mostra qual
   redesenharComFoco(box, `<button type="button" class="dia-ret outro" data-fdia="outro" aria-pressed="${forDaFaixa}" aria-haspopup="dialog">${ic('hoje')}<span class="dr-n">${forDaFaixa ? esc(nomeDia(filtro.dia)) : 'Escolher dia'}</span></button>`
     + dias.map((iso, i) => {
       const n = contagemDias[iso] || 0, on = filtro.periodo === 'dia' && filtro.dia === iso, dow = diaDaSemanaIso(iso);

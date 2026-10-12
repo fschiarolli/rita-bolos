@@ -599,8 +599,6 @@ a.chip { text-decoration: none; }
 .f-datas { gap: 8px; }
 .f-datas .in { width: auto; min-height: 40px; }
 .f-datas .dt-btn { min-width: 170px; }
-.f-prox .ic { transform: rotate(180deg); }
-.f-dia-nome { font-weight: 600; color: var(--ink-2); }
 .f-de { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
 .dias-ret { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; scrollbar-width: thin; }
 .dia-ret { flex: none; display: grid; justify-items: center; align-content: center; gap: 1px; min-width: 70px; padding: 7px 8px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--surface); color: var(--ink-2); cursor: pointer; font: inherit; transition: background .14s, border-color .14s; }
@@ -613,6 +611,26 @@ a.chip { text-decoration: none; }
 .dia-ret.outro .ic { width: 18px; height: 18px; }
 .dia-ret[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); box-shadow: var(--glow); }
 .dia-ret[aria-pressed="true"] b, .dia-ret[aria-pressed="true"] .dr-n, .dia-ret[aria-pressed="true"] .dr-sem { color: inherit; }
+/* busca, período, status e "Mais filtros" numa linha; no celular: busca + filtros, e os dois menus lado a lado */
+.f-topo { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.f-per { flex: 0 1 190px; }
+.f-st { position: relative; flex: 0 1 220px; }
+.f-st.com-cor::before { content: ''; position: absolute; left: 14px; top: 50%; width: 9px; height: 9px; margin-top: -4.5px; border-radius: 50%; background: var(--cor); filter: var(--dot-filter); pointer-events: none; }
+.f-st.com-cor .sel { padding-left: 31px; }
+.f-topo .sel { text-overflow: ellipsis; }
+@media (pointer: coarse) { .f-topo .in, .f-topo .sel { min-height: 44px; } }   /* no toque, da altura dos botões */
+@media (max-width: 760px) {
+  /* os dois menus meio a meio; o botão de filtros (só o ícone, com o número no canto) ao lado da busca */
+  .f-topo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .f-topo .busca { grid-column: 1 / -1; grid-row: 1; margin-right: 54px; }
+  .f-topo #fMaisBt { grid-column: 2; grid-row: 1; justify-self: end; position: relative; width: 44px; padding: 0; }
+  .f-topo #fMaisBt .f-cont { position: absolute; top: -7px; right: -7px; margin: 0; }
+  .f-per { grid-column: 1; grid-row: 2; }
+  .f-st { grid-column: 2; grid-row: 2; }
+  .f-mais-txt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .dias-ret { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: visible; }
+  .dia-ret, .dia-ret.outro { min-width: 0; }
+}
 .f-mais { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
 .f-mais .field { margin: 0; }
 .f-mais .sel:disabled { opacity: .55; }
@@ -1289,6 +1307,7 @@ span.gt-l-v:hover { background: none; }
     <symbol id="i-config" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
     <symbol id="i-sair" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></symbol>
     <symbol id="i-busca" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+    <symbol id="i-filtro" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
     <symbol id="i-mais" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-ok" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
