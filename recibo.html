@@ -213,6 +213,7 @@ function estado(titulo, texto) {
 
 function render(p, { urlLogo, interno, mostrarInterno, pix, kits }) {
   const pct = Number(p.percentual_sinal ?? 50).toLocaleString('pt-BR');
+  const totalItens = (p.itens || []).reduce((total, item) => total + Number(item.quantidade || 0), 0);
   // pedido com entrega: endereço e taxa (a taxa entra no total; o sinal é sobre os produtos)
   const e = p.entrega || null, taxa = Number(e?.taxa) || 0;
   const recebe = e && (e.recebedor_nome || (interno && e.recebedor_telefone))
@@ -261,6 +262,7 @@ function render(p, { urlLogo, interno, mostrarInterno, pix, kits }) {
     <h2>Itens do pedido</h2>
     ${itens}
     <section class="totais">
+      <div class="t"><span>Total de itens</span><strong>${totalItens.toLocaleString('pt-BR')}</strong></div>
       <div class="t"><span>Subtotal</span><strong>${R(p.subtotal)}</strong></div>
       ${Number(p.desconto) > 0 ? `<div class="t"><span>Desconto</span><strong>− ${R(p.desconto)}</strong></div>` : ''}
       ${e ? `<div class="t"><span>Entrega</span><strong>${taxa > 0 ? '+ ' + R(taxa) : 'grátis'}</strong></div>` : ''}

@@ -1026,6 +1026,7 @@ a { color: var(--teal); }
       <h2 class="receipt-section-title">Itens do pedido</h2>
       <div id="receiptItems"></div>
       <div class="receipt-totals">
+        <div class="receipt-total-row"><span>Total de itens</span><strong id="receiptItemCount">—</strong></div>
         <div class="receipt-total-row"><span>Subtotal</span><strong id="receiptSubtotal">—</strong></div>
         <div class="receipt-total-row final"><span>Total</span><strong id="receiptTotal">—</strong></div>
         <div class="receipt-total-row deposit"><span>Sinal mínimo (50%)</span><strong id="receiptDeposit">—</strong></div>
@@ -2651,6 +2652,7 @@ function showOrderView(o) {
     if (it.notes && it.notes.trim()) det += `<div class="receipt-item-detail"><strong>Observações:</strong> ${esc(it.notes.trim())}</div>`;
     return `<div class="receipt-item"><div class="receipt-item-header"><span class="item-name">${i + 1}. ${esc(w ? `${it.name} (${w})` : it.name)}</span><span class="item-total">${fmt(it.qty * it.price)}</span></div>${det}</div>`;
   }).join('');
+  $('#receiptItemCount').textContent = items.reduce((total, it) => total + Number(it.qty || 0), 0).toLocaleString('pt-BR');
   $('#receiptSubtotal').textContent = fmt(sub); $('#receiptTotal').textContent = fmt(sub); $('#receiptDeposit').textContent = fmt(sub / 2);
   $('#orderView').classList.add('open');
 }

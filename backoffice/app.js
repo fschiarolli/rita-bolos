@@ -2902,6 +2902,7 @@ const CSS_CUPOM = `
 /** O cupom de um pedido completo (como o da gaveta, com as anotações): igual para um pedido ou vários. Carregue mapaKitsLoja() antes. */
 function cupomTermica(p, loja, pix) {
   const pct = Number(p.percentual_sinal ?? 50).toLocaleString('pt-BR');
+  const totalItens = (p.itens || []).reduce((total, item) => total + Number(item.quantidade || 0), 0);
   const falta = Math.max(0, Number(p.saldo ?? (p.total - p.valor_pago)));
   const l = (a, b, cls = '') => `<div class="l ${cls}"><span>${a}</span><span>${b}</span></div>`;
   const itens = p.itens.map(i => {
@@ -2932,6 +2933,7 @@ function cupomTermica(p, loja, pix) {
     ${entrega}
     <div class="t">ITENS</div>${itens}
     <div class="sep forte"></div>
+    ${l('Total de itens', totalItens.toLocaleString('pt-BR'))}
     ${l('Subtotal', R(p.subtotal))}${Number(p.desconto) > 0 ? l('Desconto', '- ' + R(p.desconto)) : ''}${e ? l('Entrega', Number(e.taxa) > 0 ? '+ ' + R(e.taxa) : 'grátis') : ''}
     ${l('TOTAL', R(p.total), 'tot')}
     ${l(`Sinal (${pct}%)`, R(p.valor_sinal))}${l('Pago', R(p.valor_pago))}
