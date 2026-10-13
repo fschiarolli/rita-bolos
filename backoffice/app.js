@@ -4262,8 +4262,7 @@ async function modalEditarPedido(p) {
         ${campo('edM' + k, 'Massa', `<select class="sel" id="edM${k}" data-np="massa">${sel(c.bolo.massas.map(mm => [mm.slug, mm.nome]), massaSlug(it?.massa))}</select>`)}
         ${(c.bolo.formatos || []).length ? campo('edF' + k, 'Formato', `<select class="sel" id="edF${k}" data-np="formato">${sel([...(it && !it.formato ? [['', 'Não informado']] : []), ...c.bolo.formatos.map(ff => [ff.slug, ff.nome])], formatoSlug(it?.formato))}</select>`) : ''}
         ${campo('edS' + k, '2º recheio', `<select class="sel" id="edS${k}" data-np="seg"><option value="">Sem 2º recheio</option>${sel(bolos.map(b => [b.slug, `${b.rotulo || b.nome} — ${R(b.preco)}/kg`]), segSlug(it?.segundo_recheio))}</select>`)}
-        ${!it && finalizacoes.length ? campo('edFin' + k, 'Finalização', `<select class="sel" id="edFin${k}" data-np="fin"><option value="">Tradicional (sem taxa)</option>${finalizacoes.map(f =>
-          `<option value="${esc(f.slug)}">${esc(rotuloFinalizacao(f))} (+${esc(R(f.preco))})</option>`).join('')}</select>`) : ''}
+        ${!it && finalizacoes.length ? campoFinalizacoes('edFin' + k, finalizacoes) : ''}
       </div>
       <div class="obs-l">${campo('edO' + k, 'Observação do item', `<input class="in" id="edO${k}" data-np="obs" maxlength="1000" value="${esc(ref.texto)}" placeholder="Sabores, escrita no bolo, tema…">`)}
         ${ref.imagem ? `<div class="ed-ref"><img src="${esc(ref.imagem)}" alt=""><span>Imagem de referência anexada</span><button type="button" class="btn sm ghost" data-np="tirar-ref">Remover imagem</button></div>` : ''}</div>
@@ -4303,10 +4302,10 @@ async function modalEditarPedido(p) {
       const prod = prods[campoDe(box, 'prod').value];
       box.querySelector('.bolo').hidden = !(prod && prod.tipo === 'bolo');
       const q = Math.max(1, parseInt(campoDe(box, 'qtd').value, 10) || 1), v = lerValor(campoDe(box, 'preco').value) || 0;
-      const fin = prods[campoDe(box, 'fin')?.value];
-      const linhaTot = q * v + (fin ? q * Number(fin.preco) : 0);
+      const fins = finalizacoesMarcadas(box, prods), valorFins = fins.reduce((total, f) => total + Number(f.preco), 0);
+      const linhaTot = q * (v + valorFins);
       const vazio = !prod && !box.dataset.id;
-      box.querySelector('[data-np="sub"]').innerHTML = vazio ? '' : `${q} × ${R(v)}${fin ? ` + finalização ${R(q * Number(fin.preco))}` : ''} = <strong>${R(linhaTot)}</strong>`;
+      box.querySelector('[data-np="sub"]').innerHTML = vazio ? '' : `${q} × ${R(v)}${fins.length ? ` + finalizações ${R(q * valorFins)}` : ''} = <strong>${R(linhaTot)}</strong>`;
       if (!vazio) sub += linhaTot;
     });
     const desc = Math.max(0, lerValor(valDe(m, 'edDesc')) || 0);
@@ -4368,8 +4367,7 @@ async function modalEditarPedido(p) {
         }
       }
       linhas.push({ id, d });
-      const fin = prods[campoDe(box, 'fin')?.value];
-      if (fin && prod) linhas.push({ id: null, d: { quantidade, preco_unitario: Number(fin.preco), observacao: `Bolo: ${prod.nome} ${formatarPeso(d.peso_kg)}`,
+      for (const fin of finalizacoesMarcadas(box, prods)) linhas.push({ id: null, d: { quantidade, preco_unitario: Number(fin.preco), observacao: `Bolo: ${prod.nome} ${formatarPeso(d.peso_kg)}`,
         produto_id: fin.id, categoria: fin.categoria, nome: fin.nome, peso_kg: null, preco_kg: null, massa: null, formato: null,
         segundo_recheio_id: null, segundo_recheio: null, faixa_preco: null } });
     });
@@ -4408,6 +4406,18 @@ let cardapioAtivo = null;
 const ehFinalizacao = p => /^finalizacao-/.test(p?.slug || '')
   || /^finaliza/.test(String(p?.grupo || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim());
 const rotuloFinalizacao = p => p.rotulo || String(p.nome).replace(/^finaliza[çc][ãa]o\s*/i, '').replace(/^./, c => c.toUpperCase());
+function campoFinalizacoes(id, finalizacoes) {
+  return `<fieldset class="field np-finalizacoes"><legend>Finalização</legend>
+    <div class="fin-opcoes">${finalizacoes.map(f => `<label class="chk" for="${esc(id + '-' + f.slug)}">
+      <input type="checkbox" id="${esc(id + '-' + f.slug)}" data-np="fin" value="${esc(f.slug)}">
+      ${esc(rotuloFinalizacao(f))} (+${esc(R(f.preco))})</label>`).join('')}</div>
+    <p class="dica">Pode escolher mais de uma opção. Sem marcar, a finalização é tradicional, sem taxa.</p></fieldset>`;
+}
+function finalizacoesMarcadas(box, prods) {
+  const produto = prods[box.querySelector('[data-np="prod"]')?.value];
+  if (produto?.tipo !== 'bolo') return [];
+  return [...box.querySelectorAll('input[data-np="fin"]:checked')].map(el => prods[el.value]).filter(f => f && ehFinalizacao(f));
+}
 /** Produtos do cardápio para montar itens de pedido (Novo pedido e Editar pedido). */
 function catalogoPedido(c) {
   const prods = {};
@@ -4459,8 +4469,7 @@ async function modalNovoPedido() {
         ${campo('npM' + k, 'Massa', `<select class="sel" id="npM${k}" data-np="massa">${c.bolo.massas.map(mm => `<option value="${esc(mm.slug)}">${esc(mm.nome)}</option>`).join('')}</select>`)}
         ${(c.bolo.formatos || []).length ? campo('npF' + k, 'Formato', `<select class="sel" id="npF${k}" data-np="formato">${c.bolo.formatos.map(ff => `<option value="${esc(ff.slug)}">${esc(ff.nome)}</option>`).join('')}</select>`) : ''}
         ${campo('npS' + k, '2º recheio', `<select class="sel" id="npS${k}" data-np="seg"><option value="">Sem 2º recheio</option>${bolos.map(b => `<option value="${esc(b.slug)}">${esc(b.rotulo)} — ${esc(R(b.preco))}/kg</option>`).join('')}</select>`)}
-        ${finalizacoes.length ? campo('npFin' + k, 'Finalização', `<select class="sel" id="npFin${k}" data-np="fin"><option value="">Tradicional (sem taxa)</option>${finalizacoes.map(f =>
-          `<option value="${esc(f.slug)}">${esc(rotuloFinalizacao(f))} (+${esc(R(f.preco))})</option>`).join('')}</select>`) : ''}
+        ${finalizacoes.length ? campoFinalizacoes('npFin' + k, finalizacoes) : ''}
       </div>
       <div class="obs-l">${campo('npO' + k, 'Observação do item', `<input class="in" id="npO${k}" data-np="obs" maxlength="1000" placeholder="Sabores, escrita no bolo, tema…">`)}</div>
       <div class="sub" data-np="sub"></div>
@@ -4492,8 +4501,8 @@ async function modalNovoPedido() {
     if (p.tipo === 'bolo') {
       const seg = prods[box.querySelector('[data-np="seg"]').value];
       const kg = Math.max(p.preco, seg ? seg.preco : 0);
-      const fin = prods[box.querySelector('[data-np="fin"]')?.value];
-      return (Math.round(kg * Number(box.querySelector('[data-np="peso"]').value) * 100) / 100 + (fin ? Number(fin.preco) : 0)) * q;
+      const valorFins = finalizacoesMarcadas(box, prods).reduce((total, f) => total + Number(f.preco), 0);
+      return (Math.round(kg * Number(box.querySelector('[data-np="peso"]').value) * 100) / 100 + valorFins) * q;
     }
     const f = (p.faixas_preco || []).filter(x => q >= x.quantidade_minima && (x.quantidade_maxima == null || q <= x.quantidade_maxima)).sort((a, b) => b.quantidade_minima - a.quantidade_minima)[0];
     return (f ? f.preco : p.preco) * q;
@@ -4546,9 +4555,9 @@ async function modalNovoPedido() {
       it.peso_kg = Number(box.querySelector('[data-np="peso"]').value); it.massa = box.querySelector('[data-np="massa"]').value;
       const f = box.querySelector('[data-np="formato"]'); if (f) it.formato = f.value;
       const s = box.querySelector('[data-np="seg"]').value; if (s) it.segundo_recheio_slug = s;
-      // a finalização entra como item logo abaixo do bolo, na mesma quantidade
-      const fin = prods[box.querySelector('[data-np="fin"]')?.value];
-      return fin ? [it, { produto_slug: fin.slug, quantidade: it.quantidade, observacao: `Bolo: ${p.nome} ${formatarPeso(it.peso_kg)}`, nome: fin.nome }] : [it];
+      // Cada finalização entra como item abaixo do bolo, na mesma quantidade.
+      return [it, ...finalizacoesMarcadas(box, prods).map(f => ({ produto_slug: f.slug, quantidade: it.quantidade,
+        observacao: `Bolo: ${p.nome} ${formatarPeso(it.peso_kg)}`, nome: f.nome }))];
     });
     if (!itens.length) throw new Error('Adicione pelo menos um item.');
     const data = valDe(m, 'npData'), horaRet = valDe(m, 'npHora');

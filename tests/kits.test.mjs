@@ -19,7 +19,8 @@ function contexto() {
     [p.slug, { id: p.slug, name: p.nome, desc: p.descricao, isKit: true }]));
   ITEMS.completo = { id: 'completo', name: 'Kit completo', desc: 'Bolo, salgados fritos, pastéis e docinhos.', isKit: true };
   const ctx = vm.createContext({ ITEMS, norm: s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(),
-    cart: [], cartChanged() {}, esc });
+    cart: [], FINALIZACOES: [], cartChanged() {}, esc });
+  vm.runInContext(trecho(fonte, 'const finDe =', '/* Topper (topo de bolo)'), ctx);
   vm.runInContext(trecho(fonte, 'const ehTopperItem =', 'const CAT_ALIAS ='), ctx);
   vm.runInContext(trecho(fonte, 'function addLine(', 'function cartChanged('), ctx);
   vm.runInContext(trecho(fonte, 'function camposKitHTML(', 'function lerEscolhasKit('), ctx);

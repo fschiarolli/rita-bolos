@@ -1,11 +1,11 @@
--- Finalização do bolo: colorido ou com glitter, taxa de R$ 15,00 por bolo
+-- Finalização do bolo: colorido e/ou com glitter, taxa de R$ 15,00 por opção e por bolo
 -- Rode no Supabase: SQL Editor > New query > cole tudo > Run. Pode rodar mais de uma vez.
 --
 -- Cria dois produtos na categoria "Adicionais". O site e o backoffice reconhecem os produtos do
 -- grupo "Finalização" (ou com endereço/slug começando por "finalizacao-") e mostram como opção
 -- "Finalização" ao montar um bolo; eles também aparecem em Adicionais, junto com velas e
--- descartáveis. Ao escolher no bolo, o pedido ganha uma linha "Finalização colorida" (ou
--- "com glitter") logo abaixo do bolo, com o valor somado ao total.
+-- descartáveis. É possível marcar mais de uma opção; cada uma ganha sua própria linha
+-- ("Finalização colorida", "Finalização com glitter"...) abaixo do bolo, somada ao total.
 --
 -- Para mudar o valor depois: backoffice > Cardápio > Adicionais > edite o preço.
 -- Para criar outra finalização (ex.: "Finalização metalizada"), cadastre um produto com
