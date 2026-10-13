@@ -131,8 +131,11 @@ test('pedido salvo e consultado mantém todas as escolhas e referência no Whats
   const texto = separarReferencia(obs).texto;
   assert.ok(texto.includes('Topo do bolo: Sim'));
   for (const valor of Object.values(linha.kit)) assert.ok(texto.includes(valor), valor);
-  assert.ok(montarMensagemWhatsApp(salvo).includes(texto));
-  assert.ok(montarMensagemWhatsApp(salvo).includes(linha.ref));
+  const mensagem = montarMensagemWhatsApp(salvo);
+  for (const valor of Object.values(linha.kit)) assert.ok(mensagem.includes(valor), valor);
+  assert.ok(mensagem.includes('*Topo do bolo:* Sim'));
+  assert.ok(mensagem.includes(linha.notes));
+  assert.ok(mensagem.includes(linha.ref));
 
   const impressao = vm.createContext({ esc, separarReferencia, kitDoItem: () => 'Bolo, salgados, pastéis e docinhos',
     R: formatarPreco, formatarPeso, formatarData, formatarTel: s => s, dataHora: s => s, dataCurta: s => s,

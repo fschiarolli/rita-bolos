@@ -6,7 +6,7 @@
  * Modo demonstração, sem banco: abra com ?demo
  */
 import { criarApi, conectar, formatarPreco as R, formatarPeso, formatarData, linkRecibo, linkWhatsApp, abrirWhatsApp, linkCompartilhavel, montarMensagemStatus, prepararAba,
-  separarReferencia, juntarReferencia, ehTopper, pixDe, textoPix, mapaKits, achatarCardapio, conteudoKit,
+  separarReferencia, juntarReferencia, ehTopper, pixDe, textoPix, itensWhatsApp, mapaKits, achatarCardapio, conteudoKit,
   formatarCep, textoEndereco, linkWaze, linkMapa, quemRecebe, buscarCep, calcularTaxaEntrega, localizarEndereco, origemEntrega, temRegraEntrega, taxaPelaDistancia, excessoDePeso } from '../js/rita-api.js';
 import { AVATARES, avatarSVG, temAvatar } from './avatares.js';
 import { montarCalendario } from '../js/calendario.js';
@@ -3828,7 +3828,7 @@ async function campoAvisoWa(p, status) {
   const nome = String(quem.nome || '').trim().split(/\s+/)[0] || 'o cliente';
   const msg = montarMensagemStatus(p, status, await urlReciboCliente(p), await configLoja());
   return `<div style="margin-top:14px">${inChk('avWa', `Avisar ${esc(nome)} no WhatsApp`, true)}
-    <div id="avWaBox" style="margin-top:6px">${inTa('avWaMsg', 'Mensagem <span style="font-weight:400;color:var(--ink-3)">(pode editar antes de enviar)</span>', msg, { attrs: 'maxlength="2000" style="min-height:170px"' })}</div></div>`;
+    <div id="avWaBox" style="margin-top:6px">${inTa('avWaMsg', 'Mensagem <span style="font-weight:400;color:var(--ink-3)">(pode editar antes de enviar)</span>', msg, { attrs: 'style="min-height:170px"' })}</div></div>`;
 }
 function ligarAvisoWa(m, rotulo) {
   const chk = m.$('#avWa'), bt = m.$('[data-ok]'); if (!chk || !bt) return;
@@ -3865,10 +3865,13 @@ function modelosMensagem(p, urlRecibo, pix) {
   const quando = `${dia}${p.hora_retirada ? ' às ' + hora(p.hora_retirada) : ''}`;
   const saldo = Math.max(0, Number(p.saldo) || 0);
   const faltaSinal = Math.max(0, Math.round((Number(p.valor_sinal) - Number(p.valor_pago)) * 100) / 100);
-  const itens = (p.itens || []).map(i => `• ${i.quantidade}× ${i.nome}${i.peso_kg ? ' ' + formatarPeso(i.peso_kg) : ''}`).join('\n');
+  const itens = itensWhatsApp(p.itens);
+  const observacao = p.observacao_cliente ? `\n\n*Observação:* ${p.observacao_cliente}` : '';
   const st = statusDe(p.status), e = p.entrega;
+  const resumo = `${ola}\n\n*Dados do pedido ${p.codigo}*\n*${e ? 'Entrega' : 'Retirada'}:* ${formatarData(d)}${p.hora_retirada ? ' às ' + hora(p.hora_retirada) : ''}${e ? `\n*Endereço:* ${textoEndereco(e)}` : ''}\n\n*Itens do pedido:*\n${itens}${observacao}\n\n*Total:* ${v(p.total)}\n*Pago:* ${v(p.valor_pago)}\n*Saldo a pagar:* ${v(saldo)}`;
   const modelos = [
     { id: 'oi', rot: 'Saudação', txt: `${ola}\n\nEstou falando sobre o seu pedido ${ped}.` },
+    { id: 'pedido', rot: 'Dados do pedido', txt: `${resumo}${urlRecibo ? `\n\n*Recibo:* ${urlRecibo}` : ''}` },
     faltaSinal > 0 && !st.finalizado && { id: 'sinal', rot: 'Lembrar do sinal', txt: `${ola}\n\nPara confirmar o seu pedido ${ped}, falta o sinal de *${v(faltaSinal)}*. Pode mandar o comprovante por aqui mesmo.${comPix}\n\nAgradecemos!` },
     !st.finalizado && (e
       ? { id: 'retirada', rot: 'Lembrar da entrega', txt: `${ola}\n\nPassando para lembrar: a entrega do seu pedido ${ped} é ${quando}.\n*Endereço:* ${textoEndereco(e)}\n\n${itens}${saldo > 0 ? `\n\nNa entrega, falta pagar *${v(saldo)}*.` : ''}` }
@@ -3878,7 +3881,7 @@ function modelosMensagem(p, urlRecibo, pix) {
       ? { id: 'pronto', rot: 'Pedido pronto', txt: `${ola}\n\nSeu pedido ${ped} está *pronto* e logo sai para entrega!${saldo > 0 ? `\n\nNa entrega, falta pagar *${v(saldo)}*.` : '\n\nEstá tudo pago.'}` }
       : { id: 'pronto', rot: 'Pedido pronto', txt: `${ola}\n\nSeu pedido ${ped} está *pronto para retirada*!${p.hora_retirada || d ? ` Combinamos ${quando}.` : ''}${saldo > 0 ? `\n\nFalta pagar *${v(saldo)}*: pode ser na retirada.` : '\n\nEstá tudo pago, é só vir buscar.'}` }),
     saldo > 0 && faltaSinal <= 0 && { id: 'saldo', rot: 'Saldo a pagar', txt: `${ola}\n\nO restante do seu pedido ${ped} é *${v(saldo)}*. Pode pagar ${e ? 'na entrega' : 'na retirada'} ou mandar o comprovante por aqui.${comPix}` },
-    urlRecibo && { id: 'recibo', rot: 'Enviar recibo', txt: `${ola}\n\nAqui está o recibo do seu pedido ${ped}, com os itens e os valores:\n${urlRecibo}` },
+    urlRecibo && { id: 'recibo', rot: 'Enviar recibo', txt: `${resumo}\n\n*Recibo:* ${urlRecibo}` },
     { id: 'livre', rot: 'Escrever do zero', txt: `${ola}\n\n` }
   ].filter(Boolean);
   // Começa pelo que mais faz sentido agora
@@ -3894,7 +3897,7 @@ async function modalMensagem(p) {
     titulo: `Mensagem para ${nome}`,
     corpo: `<p class="dica" style="margin:0 0 12px;color:var(--ink-3)">${esc(p.cliente_nome)} · <span style="white-space:nowrap">${esc(formatarTel(p.cliente_telefone) || p.cliente_telefone)}</span> · <span style="white-space:nowrap">pedido ${esc(p.codigo)}</span></p>
       <div class="modelos" role="group" aria-label="Mensagens prontas">${modelos.map(x => `<button type="button" class="chip" data-modelo="${x.id}" aria-pressed="${x.id === sugerido}">${esc(x.rot)}</button>`).join('')}</div>
-      ${inTa('msgTxt', 'Mensagem <span style="font-weight:400;color:var(--ink-3)">(pode editar antes de enviar)</span>', modelos.find(x => x.id === sugerido).txt, { attrs: 'maxlength="2000" style="min-height:200px"' })}
+      ${inTa('msgTxt', 'Mensagem <span style="font-weight:400;color:var(--ink-3)">(pode editar antes de enviar)</span>', modelos.find(x => x.id === sugerido).txt, { attrs: 'style="min-height:200px"' })}
       <p class="dica" style="margin:-4px 0 0">O WhatsApp abre na conversa de ${esc(nome)} com o texto pronto. É só conferir e tocar em Enviar.</p>`,
     rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn wa" data-ok>${ic('wa')}Abrir no WhatsApp</button>`
   });

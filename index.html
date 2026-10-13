@@ -2435,9 +2435,8 @@ function sendDirect() {
     m += `\n${i + 1}. *${it.name}${l.peso ? ` (${kg(l.peso)})` : ''}*\n`;
     if (meta && it.kind === 'cake') m += `   _${meta.replace(/^[^,]+,\s*/, '')}_\n`;
     m += `   Qtd: ${l.qty} x ${fmt(p)} = ${fmt(l.qty * p)}\n`;
-    const obs = observacaoLinha(l), ref = referenciaLinha(l);
-    if (obs) m += `   _Obs:_ ${obs}\n`;
-    if (ref) m += `   _Imagem de referência:_ ${/^https?:/i.test(ref) ? ref : '(imagem anexada no pedido)'}\n`;
+    const detalhes = U.detalhesItemWhatsApp({ observacao: comReferencia(observacaoLinha(l), referenciaLinha(l)) });
+    if (detalhes) m += detalhes + '\n';
   });
   m += `\n----------------------------\n*Total:* ${fmt(total)}\n*Sinal mínimo (${pctTxt()}):* ${fmt(sinalDe(total))}`;
   const px = pix();

@@ -158,6 +158,43 @@ export const alvoWhatsApp = url => /^whatsapp:/i.test(url) ? '' : 'target="_blan
 /** Link da imagem que pode ir numa mensagem (no modo demonstração a imagem é um "data:" enorme, que quebra o link). */
 export const linkCompartilhavel = url => /^https?:\/\//i.test(String(url || '')) ? url : '(imagem anexada no pedido)';
 
+/** Escolhas do item, inclusive os campos dos kits gravados na observação pelo cardápio. */
+export function detalhesItemWhatsApp(item) {
+  const linhas = [];
+  if (item.massa) linhas.push(`_Massa:_ ${item.massa}`);
+  if (item.formato) linhas.push(`_Formato:_ ${item.formato}`);
+  if (item.segundo_recheio) linhas.push(`_2º recheio:_ ${item.segundo_recheio}`);
+  const { texto, imagem } = separarReferencia(item.observacao);
+  const campos = [], notas = [];
+  let atual = null, terminouKit = false;
+  for (const linha of texto.split(/\r?\n/)) {
+    const campo = !terminouKit && linha.match(/^(Sabor do bolo|Formato do bolo|Massa do bolo|Sabores dos salgados fritos|Sabores dos pastéis|Sabores dos docinhos|Topo do bolo):\s*(.*)$/i);
+    if (campo) {
+      atual = { rotulo: campo[1], valor: campo[2] };
+      campos.push(atual);
+      // O topo é o último campo salvo pelo cardápio; as linhas seguintes são notas livres.
+      if (/^Topo do bolo$/i.test(campo[1])) { terminouKit = true; atual = null; }
+    } else if (atual) {
+      atual.valor += '\n' + linha;
+    } else {
+      notas.push(linha);
+    }
+  }
+  for (const campo of campos) linhas.push(`*${campo.rotulo}:* ${campo.valor.trim()}`);
+  const obs = notas.join('\n').trim();
+  if (obs) linhas.push(`_Obs:_ ${obs}`);
+  if (imagem) linhas.push(`_Imagem de referência:_ ${linkCompartilhavel(imagem)}`);
+  return linhas.join('\n');
+}
+
+/** Lista para as mensagens ao cliente, com as escolhas abaixo do respectivo item. */
+export function itensWhatsApp(itens) {
+  return (itens || []).map(i => [
+    `• ${i.quantidade}× ${i.nome}${i.peso_kg ? ' ' + formatarPeso(i.peso_kg) : ''}`,
+    detalhesItemWhatsApp(i)
+  ].filter(Boolean).join('\n')).join('\n\n');
+}
+
 /** Endereço do recibo imprimível (recibo.html na raiz do site). */
 export function linkRecibo(token, baseSite) {
   const base = (baseSite || (typeof location !== 'undefined' ? location.href : '')).replace(/[#?].*$/, '').replace(/[^/]*$/, '');
@@ -180,13 +217,9 @@ export function montarMensagemWhatsApp(pedido, urlRecibo, cfg) {
   ];
   (p.itens || []).forEach((i, n) => {
     l.push('', `${n + 1}. *${i.nome}${i.peso_kg ? ` (${formatarPeso(i.peso_kg)})` : ''}*`);
-    if (i.massa) l.push(`   _Massa:_ ${i.massa}`);
-    if (i.formato) l.push(`   _Formato:_ ${i.formato}`);
-    if (i.segundo_recheio) l.push(`   _2º recheio:_ ${i.segundo_recheio}`);
     l.push(`   Qtd: ${i.quantidade} x ${formatarPreco(i.preco_unitario)} = ${formatarPreco(i.subtotal)}`);
-    const { texto, imagem } = separarReferencia(i.observacao);
-    if (texto) l.push(`   _Obs:_ ${texto}`);
-    if (imagem) l.push(`   _Imagem de referência:_ ${linkCompartilhavel(imagem)}`);
+    const detalhes = detalhesItemWhatsApp(i);
+    if (detalhes) l.push(detalhes);
   });
   if (p.observacao_cliente) l.push('', `*Observação:* ${p.observacao_cliente}`);
   l.push('', '----------------------------',
@@ -233,6 +266,11 @@ export function montarMensagemStatus(pedido, status, urlRecibo, cfg) {
   };
   const corpo = textos[s.codigo] || [`Seu pedido ${ped} mudou para *${s.nome || s.codigo}*.`, s.descricao, s.finalizado ? '' : retirada];
   const l = [`Ol\u00e1${nome ? ', ' + nome : ''}! Aqui \u00e9 da ${p.loja?.nome || 'Rita Bolos'}.`, '', ...corpo.filter(Boolean)];
+  if (['recebido', 'confirmado'].includes(s.codigo)) {
+    const itens = itensWhatsApp(p.itens);
+    if (itens) l.push('', '*Itens do pedido:*', itens);
+    if (p.observacao_cliente) l.push('', `*Observação:* ${p.observacao_cliente}`);
+  }
   if (urlRecibo && !paraOutro && !['retirado', 'entregue', 'cancelado'].includes(s.codigo)) l.push('', `Acompanhe o pedido: ${urlRecibo}`);
   return l.join('\n').replace(/\u00a0/g, ' ');
 }
@@ -1121,7 +1159,7 @@ export function criarApi(supabase, opcoes = {}) {
       }
     },
 
-    util: { formatarPreco, formatarPeso, formatarData, novaChave, linkWhatsApp, abrirWhatsApp, alvoWhatsApp, linkCompartilhavel, linkRecibo, montarMensagemWhatsApp, montarMensagemStatus, prepararAba, separarReferencia, juntarReferencia, ehTopper, PIX, pixDe, textoPix,
+    util: { formatarPreco, formatarPeso, formatarData, novaChave, linkWhatsApp, abrirWhatsApp, alvoWhatsApp, linkCompartilhavel, detalhesItemWhatsApp, itensWhatsApp, linkRecibo, montarMensagemWhatsApp, montarMensagemStatus, prepararAba, separarReferencia, juntarReferencia, ehTopper, PIX, pixDe, textoPix,
       formatarCep, textoEndereco, linkWaze, linkMapa, quemRecebe, buscarCep, localizarEndereco, distanciaDeCarro, taxaPelaDistancia, calcularTaxaEntrega, origemEntrega, temRegraEntrega, excessoDePeso }
   };
 }
