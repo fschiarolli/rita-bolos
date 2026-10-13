@@ -430,6 +430,8 @@ a { color: var(--teal); }
 .kit-foot { display: flex; align-items: center; justify-content: space-between; margin-top: auto; }
 .kit-price { font-weight: 900; font-size: 15.5px; }
 .kit-flag { position: absolute; top: 8px; left: 8px; background: var(--rose-600); color: var(--on-rose); font-size: 11.5px; font-weight: 900; padding: 4px 9px; border-radius: 999px; }
+.kit-escolhas { white-space: pre-line; overflow-wrap: anywhere; font-size: 13px; line-height: 1.55; margin-top: 12px; }
+.kit-editar { margin-top: 8px; }
 .disclaimer { font-size: 12px; color: var(--ink-3); font-weight: 600; padding: 0 18px; margin-top: 12px; }
 
 /* ---------- Sacola ---------- */
@@ -1083,6 +1085,37 @@ const finDe = slug => (slug && FINALIZACOES.find(f => f.slug === slug)) || null;
 /* Topper (topo de bolo): o cliente precisa enviar uma imagem de referência; o link vai na observação do item */
 const ehTopperItem = it => !!it && /topper|^topos?\b|topo de bolo|topos de bolo/i.test(norm(`${it.id} ${it.name} ${it.group || ''}`));
 const comReferencia = (obs, url) => [String(obs || '').trim(), url ? `Referência: ${url}` : ''].filter(Boolean).join('\n') || null;
+/* As escolhas do kit ficam separadas na sacola e seguem na observação do pedido,
+   que já é preservada pelo banco, pelo WhatsApp e pelas impressões. */
+const KIT_CAMPOS = [
+  { key: 'bolo', label: 'Sabor do bolo', placeholder: 'Ex.: ninho com morango' },
+  { key: 'formato', label: 'Formato do bolo', options: ['Redondo', 'Quadrado'] },
+  { key: 'massa', label: 'Massa do bolo', options: ['Branca', 'Preta'] },
+  { key: 'salgados', label: 'Sabores dos salgados fritos', placeholder: 'Ex.: 20 coxinhas e 10 bolinhas de queijo' },
+  { key: 'pasteis', label: 'Sabores dos pastéis', placeholder: 'Ex.: metade carne e metade queijo' },
+  { key: 'docinhos', label: 'Sabores dos docinhos', placeholder: 'Ex.: 10 brigadeiros e 10 beijinhos' }
+];
+function camposKit(it) {
+  const texto = norm(`${it.name || ''} ${it.desc || ''}`);
+  const inclui = { bolo: /\bbolos?\b/.test(texto), salgados: /\bsalgad(?:os?|inhos?)\b/.test(texto),
+    pasteis: /\bpast(?:el|eis)\b/.test(texto), docinhos: /\bdoc(?:es?|inhos?)\b|brigadeiros?|beijinhos?/.test(texto) };
+  return KIT_CAMPOS.filter(c => inclui[['formato', 'massa'].includes(c.key) ? 'bolo' : c.key]);
+}
+// O topo faz parte da composição do kit; não é um adicional escolhido pelo cliente.
+const kitIncluiTopo = it => !!it?.isKit && /\b(?:topos?|toppers?)\b/.test(norm(`${it.name || ''} ${it.desc || ''}`));
+function escolhasKit(l) {
+  const it = ITEMS[l.id] || {};
+  return [...camposKit(it).map(c => l.kit?.[c.key] ? `${c.label}: ${l.kit[c.key]}` : ''),
+    `Topo do bolo: ${kitIncluiTopo(it) ? 'Sim' : 'Não'}`].filter(Boolean).join('\n');
+}
+const observacaoLinha = l => [ITEMS[l.id]?.isKit ? escolhasKit(l) : '', String(l.notes || '').trim()].filter(Boolean).join('\n');
+const precisaReferencia = it => it?.isKit ? kitIncluiTopo(it) : ehTopperItem(it);
+const referenciaLinha = l => ITEMS[l.id]?.isKit && !precisaReferencia(ITEMS[l.id]) ? null : l.ref;
+function kitIncompleto(l) {
+  const it = ITEMS[l.id];
+  return !!it?.isKit && (camposKit(it).some(c => c.options ? !c.options.includes(l.kit?.[c.key]) : !String(l.kit?.[c.key] || '').trim())
+    || (precisaReferencia(it) && (!l.ref || !!l.refEnviando)));
+}
 const CAT_ALIAS = { pote: 'bolo-no-pote' };   // links antigos
 
 /* Carrega a API (ou o banco de demonstração) */
@@ -1303,17 +1336,17 @@ function quantidadeMinima(p) {
 }
 function register(item) { if (ITEMS[item.id]) console.warn('Produto repetido no cardápio:', item.id); ITEMS[item.id] = item; return item; }
 function itemDe(p, cat, g) {
-  const isKit = cat.layout === 'grade';
-  const kind = p.tipo === 'bolo' ? 'cake' : p.tipo === 'personalizavel' ? 'config' : 'simple';
+  const isKit = cat.layout === 'grade' || p.unidade_preco === 'kit';
+  const kind = isKit ? 'config' : p.tipo === 'bolo' ? 'cake' : p.tipo === 'personalizavel' ? 'config' : 'simple';
   const it = {
     id: p.slug, dbId: p.id, cat: cat.slug, catLabel: cat.nome, group: g.title || '', label: p.rotulo || p.nome, name: p.nome,
     price: Number(p.preco), kind, unidade: p.unidade_preco, perKg: p.unidade_preco === 'kg' && kind !== 'cake',
     sub: p.descricao || '', desc: p.descricao || '', flavors: g.flavors || null,
     sizeInfo: (p.unidade_preco === 'cento' || p.unidade_preco === 'meio_cento') ? (g.info || (p.quantidade_por_unidade ? p.quantidade_por_unidade + ' unidades' : '')) : '',
     notesLabel: p.rotulo_observacao || 'Observações', notesPh: p.exemplo_observacao || '',
-    notesRequired: !!p.observacao_obrigatoria,
+    notesRequired: !isKit && !!p.observacao_obrigatoria,
     // aviso de "faltam os sabores": obrigatório ou campo que pede sabores
-    needsNotes: !!p.observacao_obrigatoria || (kind === 'config' && /sabor/i.test(p.rotulo_observacao || '')),
+    needsNotes: !isKit && (!!p.observacao_obrigatoria || (kind === 'config' && /sabor/i.test(p.rotulo_observacao || ''))),
     tag: isKit ? null : (p.selo || null), tagClass: p.selo_estilo === 'dourado' ? 'gold' : '',
     flag: isKit ? (p.selo || null) : null, isKit,
     // bolo no pote usa sempre o desenho padrão (o mesmo para todos os sabores), mesmo que o cadastro tenha foto
@@ -1392,7 +1425,7 @@ function migrarSacolaAntiga() {
     saveCart();
   } catch (e) { /* sacola antiga ilegível: começa vazia */ }
 }
-function saveCart() { store(STORAGE_KEY, JSON.stringify(cart)); }
+function saveCart() { store(STORAGE_KEY, JSON.stringify(cart, (k, v) => k === 'refEnviando' ? undefined : v)); }
 function snapshot() { lastSnapshot = JSON.stringify(cart); }
 function qtyOf(id) { return cart.filter(l => l.id === id).reduce((s, l) => s + l.qty, 0); }
 function precoLinha(l) {
@@ -1442,6 +1475,7 @@ function syncCart() {
 
 function addSimple(id) {
   const it = ITEMS[id]; if (!it) return;
+  if (it.isKit) { openConfig(it); return; }
   const line = cart.find(l => l.key === id);
   if (line) line.qty += it.passo || 1; else cart.push({ key: id, id, qty: it.min || 1, notes: '' });
   cartChanged(true);
@@ -1455,7 +1489,8 @@ function decSimple(id) {
 function addLine(line) {
   // Itens iguais (mesmas escolhas e observação) são somados
   const same = cart.find(l => l.id === line.id && (l.peso || 0) === (line.peso || 0) && (l.massa || '') === (line.massa || '') && (l.formato || '') === (line.formato || '') &&
-    (l.segundo || '') === (line.segundo || '') && (l.fin || '') === (line.fin || '') && (l.ref || '') === (line.ref || '') && (l.notes || '') === (line.notes || ''));
+    (l.segundo || '') === (line.segundo || '') && (l.fin || '') === (line.fin || '') && (l.ref || '') === (line.ref || '') && (l.notes || '') === (line.notes || '') &&
+    KIT_CAMPOS.every(c => (l.kit?.[c.key] || '') === (line.kit?.[c.key] || '')));
   if (same) same.qty += line.qty; else cart.push(line);
   cartChanged(true);
 }
@@ -1734,10 +1769,13 @@ function renderCart() {
         <div class="line-top">${thumbHTML(it)}
           <div class="line-main"><div class="line-name">${esc(it.name)}</div>${meta ? `<div class="line-meta">${esc(meta)}</div>` : ''}
             <div class="line-unit">${fmt(price)} cada</div></div></div>
+        ${it.isKit ? `<div class="kit-escolhas">${esc(escolhasKit(l))}</div>
+          ${kitIncompleto(l) ? '<p class="line-warn req">Complete as escolhas obrigatórias do kit antes de continuar.</p>' : ''}
+          <button type="button" class="link-btn kit-editar" data-kit-edit="${i}">${kitIncompleto(l) ? 'Completar escolhas do kit' : 'Editar escolhas do kit'}</button>` : ''}
         <label class="sr-only" for="ln-${i}">Observação para ${esc(it.name)}</label>
         <textarea class="line-notes" id="ln-${i}" rows="1" data-notes="${i}" maxlength="1000" placeholder="${esc(it.needsNotes ? (it.notesPh || 'Informe os sabores') : 'Observação (opcional)')}">${esc(l.notes || '')}</textarea>
         ${missing ? `<div class="line-warn${it.notesRequired ? ' req' : ''}" id="lw-${i}">${icon('info')}${esc(it.notesLabel || 'Informe os sabores')}${it.notesRequired ? ' (obrigatório)' : ''}</div>` : ''}
-        ${ehTopperItem(it) ? `<div class="line-ref" id="lref-${i}">${l.ref
+        ${precisaReferencia(it) ? `<div class="line-ref" id="lref-${i}">${l.ref
           ? `<div class="ref-ok"><img src="${esc(l.ref)}" alt="Imagem de referência"><span>Imagem de referência</span><label class="link-btn" for="lr-${i}">Trocar</label></div>`
           : `<label class="line-warn req ref-falta" for="lr-${i}">${icon('image')}Enviar imagem de referência (obrigatório)</label>`}</div>
           <input type="file" accept="image/*" id="lr-${i}" data-ref-linha="${i}" class="sr-only" tabindex="-1">` : ''}
@@ -1905,16 +1943,19 @@ const refBoxHTML = ({ url, enviando } = {}, idInput) => enviando
   : `<label class="ref-escolher" for="${idInput}">${icon('image')}<span><strong>Escolher imagem</strong><small>Foto da galeria ou print da tela</small></span></label>`;
 async function refNoSheet(arquivo) {
   const s = sheetState, box = () => $('#refBox');
+  if (s.refEnviando) return;
   s.refEnviando = true; box().innerHTML = refBoxHTML({ enviando: true }); $('#eRef').classList.remove('show');
   try { s.ref = await enviarReferencia(arquivo); }
-  catch (e) { console.error(e); if ($('#eRef')) { $('#eRef').textContent = e.message || 'Não deu para enviar a imagem. Tente de novo.'; $('#eRef').classList.add('show'); } }
+  catch (e) { console.error(e); if (sheetState === s && $('#eRef')) { $('#eRef').textContent = e.message || 'Não deu para enviar a imagem. Tente de novo.'; $('#eRef').classList.add('show'); } }
   finally { s.refEnviando = false; if (sheetState === s && box()) box().innerHTML = refBoxHTML({ url: s.ref }, 'cfgRef'); }
 }
 async function refNaLinha(i, arquivo) {
-  const l = cart[i]; if (!l) return;
+  const l = cart[i]; if (!l || l.refEnviando) return;
+  l.refEnviando = true;
   const w = document.getElementById('lref-' + i); if (w) w.innerHTML = refBoxHTML({ enviando: true });
   try { l.ref = await enviarReferencia(arquivo); saveCart(); toast('Imagem de referência enviada'); }
   catch (e) { console.error(e); toast(e.message || 'Não deu para enviar a imagem. Tente de novo.'); }
+  finally { delete l.refEnviando; saveCart(); }
   renderCart();
 }
 document.addEventListener('change', e => {
@@ -1924,9 +1965,33 @@ document.addEventListener('change', e => {
 });
 
 /* ---- Item com observação (salgados, toppers, kits) ---- */
-function openConfig(it, opener) {
-  sheetState = { type: 'config', item: it, qty: 1, ref: null };
-  const topper = ehTopperItem(it);
+function camposKitHTML(it, kit = {}) {
+  return `<p class="hint">Preencha as escolhas dos produtos incluídos neste kit. Todos os campos abaixo são obrigatórios.</p>${camposKit(it).map(c => {
+    const id = 'kit-' + c.key;
+    return `<div class="field"><label class="lbl" for="${id}">${esc(c.label)} <span class="opt">(obrigatório)</span></label>
+      ${c.options ? `<select class="select" id="${id}" data-kit-campo="${c.key}" required aria-describedby="e-${id}">
+        <option value="">Selecione uma opção</option>${c.options.map(o => `<option value="${esc(o)}" ${kit[c.key] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`
+        : `<textarea class="textarea" id="${id}" data-kit-campo="${c.key}" required maxlength="300" rows="2" placeholder="${esc(c.placeholder)}" aria-describedby="e-${id}">${esc(kit[c.key] || '')}</textarea>`}
+      <p class="err" id="e-${id}" role="alert">${c.options ? 'Selecione uma opção.' : 'Descreva os sabores desejados.'}</p></div>`;
+  }).join('')}`;
+}
+function lerEscolhasKit() {
+  return Object.fromEntries($$('[data-kit-campo]', $('#sheet')).map(el => [el.dataset.kitCampo, el.value.trim()]));
+}
+function validarEscolhasKit() {
+  let primeiro = null;
+  $$('[data-kit-campo]', $('#sheet')).forEach(el => {
+    const c = KIT_CAMPOS.find(c => c.key === el.dataset.kitCampo);
+    const ok = c.options ? c.options.includes(el.value) : !!el.value.trim();
+    marcarCampo(el, $('#e-' + el.id), ok ? '' : c.options ? 'Selecione uma opção.' : 'Descreva os sabores desejados.');
+    if (!ok && !primeiro) primeiro = el;
+  });
+  if (primeiro) { primeiro.focus(); primeiro.scrollIntoView({ block: 'center', behavior: reduceMotion() ? 'auto' : 'smooth' }); }
+  return !primeiro;
+}
+function openConfig(it, opener, linha = null) {
+  sheetState = { type: 'config', item: it, qty: linha?.qty || 1, ref: linha?.ref || null, kit: { ...linha?.kit }, linha };
+  const topper = precisaReferencia(it);
   const hero = it.isKit && it.img ? `<div class="sheet-hero" style="margin:0 0 14px"><img src="${esc(it.img)}" alt="${esc(it.name)}"></div>` : '';
   const thumb = it.isKit && it.img ? '' : thumbHTML(it);
   const meta = (it.perKg ? `${fmt(it.price)} o kg` : fmt(it.price)) + (!it.isKit && it.sub && it.unidade !== 'unidade' && it.unidade !== 'kg' && /unidades/.test(it.sub) ? ` (${esc(it.sub.toLowerCase())})` : '');
@@ -1935,16 +2000,18 @@ function openConfig(it, opener) {
   const opt = it.notesRequired ? '<span class="opt">(obrigatório)</span>' : it.needsNotes ? '' : '<span class="opt">(opcional)</span>';
   openSheet(`${sheetHead(it.name, meta, thumb)}
     <div class="sheet-body">${hero}${desc}
-      <div class="field"><label class="lbl" for="cfgNotes">${esc(it.notesLabel || 'Observações')} ${opt}</label>
-        <textarea class="textarea" id="cfgNotes" maxlength="1000" placeholder="${esc(it.notesPh || '')}"></textarea>
+      ${it.isKit ? camposKitHTML(it, sheetState.kit) : ''}
+      <div class="field"><label class="lbl" for="cfgNotes">${esc(it.isKit ? 'Outras observações' : it.notesLabel || 'Observações')} ${opt}</label>
+        <textarea class="textarea" id="cfgNotes" maxlength="1000" placeholder="${esc(it.isKit ? topper ? 'Ex.: nome e idade para o topo, tema da festa' : 'Ex.: tema da festa ou outras preferências' : it.notesPh || '')}">${esc(linha?.notes || '')}</textarea>
         ${it.needsNotes ? `<p class="hint">${it.notesRequired ? 'Precisa ser preenchido antes de enviar o pedido. ' : ''}Se preferir, você pode completar depois, na sacola.</p>` : ''}</div>
       ${topper ? `<div class="field" id="refField"><span class="lbl">Imagem de referência <span class="opt">(obrigatório)</span></span>
-        <p class="hint" style="margin:0 0 8px">Mande a foto ou o print do topo que você quer. A Rita usa como modelo.</p>
-        <div id="refBox">${refBoxHTML({}, 'cfgRef')}</div>
+        <p class="hint" style="margin:0 0 8px">${it.isKit ? 'Este kit inclui topo. ' : ''}Mande a foto ou o print do topo que você quer. A Rita usa como modelo.</p>
+        <div id="refBox">${refBoxHTML({ url: sheetState.ref }, 'cfgRef')}</div>
         <input type="file" id="cfgRef" accept="image/*" class="sr-only" tabindex="-1">
         <p class="err" id="eRef" role="alert">Envie a imagem de referência do topo.</p></div>` : ''}
     </div>
-    <div class="sheet-foot">${qtyStepper('qv')}<button type="button" class="btn btn-primary btn-split" data-act="cfg-add"><span>Adicionar</span><span id="cfgTotal">${fmt(it.price)}</span></button></div>`, opener);
+    <div class="sheet-foot">${qtyStepper('qv')}<button type="button" class="btn btn-primary btn-split" data-act="cfg-add"><span>${linha ? 'Salvar escolhas' : 'Adicionar'}</span><span id="cfgTotal">${fmt(it.price * sheetState.qty)}</span></button></div>`, opener);
+  $('#qv').textContent = sheetState.qty;
 }
 
 /* ---- Quantidade com mínimo (ex.: docinhos a partir de 20): escolha rápida ---- */
@@ -2113,7 +2180,8 @@ function openCheckout(opener) {
   const total = cartTotal();
   const faltando = cart.filter(l => ITEMS[l.id]?.needsNotes && !ITEMS[l.id]?.notesRequired && !(l.notes || '').trim());
   const obrig = cart.filter(l => ITEMS[l.id]?.notesRequired && !(l.notes || '').trim());
-  const semRef = cart.filter(l => ehTopperItem(ITEMS[l.id]) && !l.ref);
+  const semRef = cart.filter(l => precisaReferencia(ITEMS[l.id]) && (!l.ref || l.refEnviando));
+  const kitsPendentes = cart.filter(kitIncompleto);
   const ant = antecedenciaSacola(), minD = todayISO(ant);
   sheetState = { type: 'checkout', chave: U?.novaChave ? U.novaChave() : String(Date.now()), minDate: minD, ant };
   if (!CFG.aceitando_pedidos) {
@@ -2126,6 +2194,7 @@ function openCheckout(opener) {
   openSheet(`${sheetHead('Finalizar pedido', `${cartCount()} ${cartCount() === 1 ? 'item' : 'itens'}, total de ${fmt(total)}`)}
     <div class="sheet-body">
       <div id="sendErr"></div>
+      ${kitsPendentes.length ? `<div class="notice rose" style="margin:0 0 6px">${icon('info')}<span>Volte à sacola e complete as escolhas de: ${esc(kitsPendentes.map(l => ITEMS[l.id].name).join(', '))}.</span></div>` : ''}
       ${obrig.length ? `<div class="notice rose" style="margin:0 0 6px">${icon('info')}<span>Preencha na sacola antes de enviar: ${esc(obrig.map(l => `${ITEMS[l.id].name} (${ITEMS[l.id].notesLabel})`).join(', '))}.</span></div>` : ''}
       ${semRef.length ? `<div class="notice rose" style="margin:0 0 6px">${icon('image')}<span>Envie na sacola a imagem de referência de: ${esc(semRef.map(l => ITEMS[l.id].name).join(', '))}.</span></div>` : ''}
       ${faltando.length ? `<div class="notice rose" style="margin:0 0 6px">${icon('info')}<span>Faltam os sabores de: ${esc(faltando.map(l => ITEMS[l.id].name).join(', '))}. Você pode voltar à sacola ou combinar com a Rita no WhatsApp.</span></div>` : ''}
@@ -2143,7 +2212,7 @@ function openCheckout(opener) {
         <p class="hint" style="margin-top:8px">Ao confirmar, o pedido fica registrado e abrimos a mensagem pronta para o WhatsApp da Rita. Ele só é confirmado após o envio do comprovante de pelo menos ${pctTxt()} do valor.</p>
       </div>
     </div>
-    <div class="sheet-foot"><button type="button" class="btn btn-wa btn-block" data-act="send" ${obrig.length || semRef.length ? 'disabled' : ''}>${icon('send')}<span>Confirmar pedido</span></button></div>`, opener);
+    <div class="sheet-foot"><button type="button" class="btn btn-wa btn-block" data-act="send" ${obrig.length || semRef.length || kitsPendentes.length ? 'disabled' : ''}>${icon('send')}<span>Confirmar pedido</span></button></div>`, opener);
   montarCalendarioRetirada();
 }
 /* ---- Telefone com máscara: (DD) 9999-9999 ou (DD) 99999-9999 (a mesma do backoffice) ---- */
@@ -2228,6 +2297,11 @@ document.addEventListener('focusout', e => {
   if (t.id === 'cPhone' && t.value.trim()) { corrigirNoveDigito(t); marcarCampo(t, $('#ePhone'), erroCelular(t.value)); }
 });
 function validateCheckout() {
+  if (cart.some(l => kitIncompleto(l) || (precisaReferencia(ITEMS[l.id]) && (!l.ref || l.refEnviando))
+      || (ITEMS[l.id]?.notesRequired && !String(l.notes || '').trim()))) {
+    toast('Complete as escolhas obrigatórias e as referências dos itens na sacola.');
+    return false;
+  }
   const name = $('#cName'), d = $('#cDate'), t = $('#cTime'), minD = sheetState.minDate || todayISO();
   let ok = true, first = null;
   if (!marcarCampo(name, $('#eName'), erroNome(name.value))) { ok = false; first = first || name; }
@@ -2263,7 +2337,7 @@ async function sendOrder() {
   const payload = {
     chave_idempotencia: sheetState.chave, cliente_nome: name, cliente_telefone: phone || null, data_retirada: pd, hora_retirada: pt,
     itens: cart.flatMap(l => {
-      const it = ITEMS[l.id], o = { produto_slug: l.id, quantidade: l.qty, observacao: comReferencia(l.notes, l.ref), nome: it?.name };
+      const it = ITEMS[l.id], o = { produto_slug: l.id, quantidade: l.qty, observacao: comReferencia(observacaoLinha(l), referenciaLinha(l)), nome: it?.name };
       if (it?.kind !== 'cake') return [o];
       o.peso_kg = l.peso; o.massa = l.massa; if (l.formato) o.formato = l.formato; if (l.segundo) o.segundo_recheio_slug = l.segundo;
       // finalização (colorido, glitter…) vai como item logo abaixo do bolo: o preço é conferido no servidor
@@ -2346,6 +2420,7 @@ document.addEventListener('click', async e => {
 });
 /* Plano B: se o servidor estiver fora do ar, a mensagem segue direto pelo WhatsApp */
 function sendDirect() {
+  if (!validateCheckout()) return;
   const name = limparNome($('#cName').value), pd = $('#cDate').value, pt = $('#cTime').value;
   const total = cartTotal();
   let m = `*NOVO PEDIDO — ${(CFG.nome_loja || 'Rita Bolos').toUpperCase()}*\n_(não registrado no sistema)_\n\n*Cliente:* ${name}\n*Retirada:* ${formatPickupDate(pd, pt)}\n\n*Itens do pedido:*\n`;
@@ -2354,8 +2429,9 @@ function sendDirect() {
     m += `\n${i + 1}. *${it.name}${l.peso ? ` (${kg(l.peso)})` : ''}*\n`;
     if (meta && it.kind === 'cake') m += `   _${meta.replace(/^[^,]+,\s*/, '')}_\n`;
     m += `   Qtd: ${l.qty} x ${fmt(p)} = ${fmt(l.qty * p)}\n`;
-    if (l.notes && l.notes.trim()) m += `   _Obs:_ ${l.notes.trim()}\n`;
-    if (l.ref) m += `   _Imagem de referência:_ ${/^https?:/i.test(l.ref) ? l.ref : '(imagem anexada no pedido)'}\n`;
+    const obs = observacaoLinha(l), ref = referenciaLinha(l);
+    if (obs) m += `   _Obs:_ ${obs}\n`;
+    if (ref) m += `   _Imagem de referência:_ ${/^https?:/i.test(ref) ? ref : '(imagem anexada no pedido)'}\n`;
   });
   m += `\n----------------------------\n*Total:* ${fmt(total)}\n*Sinal mínimo (${pctTxt()}):* ${fmt(sinalDe(total))}`;
   const px = pix();
@@ -2414,9 +2490,10 @@ function showView(v) {
    EVENTOS
 ========================================================= */
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-add],[data-dec],[data-open],[data-cat],[data-sub],[data-act],[data-linc],[data-ldec],[data-q],[data-qtd],[data-qset]');
+  const t = e.target.closest('[data-add],[data-dec],[data-open],[data-cat],[data-sub],[data-act],[data-linc],[data-ldec],[data-q],[data-qtd],[data-qset],[data-kit-edit]');
   if (!t) return;
   const d = t.dataset;
+  if (d.kitEdit !== undefined) { const l = cart[Number(d.kitEdit)]; if (l && ITEMS[l.id]?.isKit) openConfig(ITEMS[l.id], t, l); return; }
   if (d.qtd) { e.stopPropagation(); openQtd(ITEMS[d.qtd], t); return; }
   if (d.qset) {
     const s = sheetState; if (s?.type !== 'qtd') return;
@@ -2456,13 +2533,20 @@ document.addEventListener('click', e => {
     }
     case 'cfg-add': {
       const s = sheetState;
-      if (ehTopperItem(s.item) && !s.ref) {   // topper: a imagem de referência é obrigatória
+      if (s.item.isKit) {
+        s.kit = lerEscolhasKit();
+        if (!validarEscolhasKit()) break;
+      }
+      if (precisaReferencia(s.item) && (!s.ref || s.refEnviando)) {
         $('#eRef').textContent = s.refEnviando ? 'Espere a imagem terminar de enviar.' : 'Envie a imagem de referência do topo.';
         $('#eRef').classList.add('show'); $('#refField').scrollIntoView({ block: 'center', behavior: reduceMotion() ? 'auto' : 'smooth' });
         break;
       }
-      addLine({ key: s.item.id + '-' + Date.now(), id: s.item.id, qty: s.qty, notes: $('#cfgNotes').value.trim(), ref: s.ref || null });
-      requestCloseSheet(); toast(`Adicionado: ${s.item.name}`, 'Ver sacola', () => { location.hash = '#sacola'; });
+      const line = { key: s.linha?.key || s.item.id + '-' + Date.now(), id: s.item.id, qty: s.qty, notes: $('#cfgNotes').value.trim(),
+        ref: precisaReferencia(s.item) ? s.ref : null, ...(s.item.isKit ? { kit: s.kit } : {}) };
+      if (s.linha && cart.includes(s.linha)) { Object.assign(s.linha, line); cartChanged(); }
+      else addLine(line);
+      requestCloseSheet(); toast(`${s.linha ? 'Atualizado' : 'Adicionado'}: ${s.item.name}`, 'Ver sacola', () => { location.hash = '#sacola'; });
       break;
     }
     case 'checkout': openCheckout(t); break;
@@ -2479,6 +2563,10 @@ $('#clearCart').addEventListener('click', e => openClearConfirm(e.currentTarget)
 
 document.addEventListener('change', e => {
   const t = e.target, s = sheetState;
+  if (s.type === 'config' && s.item.isKit && t.dataset.kitCampo) {
+    s.kit = lerEscolhasKit();
+    if (t.value.trim()) marcarCampo(t, $('#e-' + t.id), '');
+  }
   if (s.type === 'cake') {
     if (t.name === 'w') escolherPeso(t);
     if (t.id === 'wMais') { s.weight = Number(t.value); refreshCake(); }
@@ -2491,6 +2579,7 @@ document.addEventListener('change', e => {
 });
 document.addEventListener('input', e => {
   const t = e.target;
+  if (t.dataset.kitCampo && t.value.trim()) marcarCampo(t, $('#e-' + t.id), '');
   if (t.dataset.notes !== undefined) {
     const l = cart[Number(t.dataset.notes)]; if (!l) return;
     l.notes = t.value; saveCart(); autoGrow(t);

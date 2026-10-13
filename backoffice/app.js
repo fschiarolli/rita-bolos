@@ -2892,6 +2892,9 @@ const CSS_CUPOM = `
     .l { display: flex; justify-content: space-between; gap: 8px; } .l > span:last-child { white-space: nowrap; text-align: right; }
     .t { font-size: 15px; font-weight: 900; letter-spacing: 1px; margin: 2px 0 4px; }
     .it .n { font-size: 15px; font-weight: 900; } .it .d { font-size: 13px; margin-left: 10px; } .it .ob, .it .kit { font-weight: 900; }
+    .it .ob { white-space: pre-line; overflow-wrap: anywhere; }
+    .it .ref { break-inside: avoid; margin-top: 5px; }
+    .it .ref img { display: block; width: 40mm; max-width: 100%; height: auto; max-height: 50mm; object-fit: contain; margin-top: 3px; }
     .tot { font-size: 18px; font-weight: 900; } .falta { font-size: 17px; font-weight: 900; }
     .box { border: 2px solid #000; padding: 4px 6px; margin: 6px 0; font-size: 13px; } .box b { display: block; }
     .pix .k { display: block; font-size: 19px; font-weight: 900; letter-spacing: .5px; }
@@ -2909,7 +2912,7 @@ function cupomTermica(p, loja, pix) {
       ${det.map(d => `<div class="d">${esc(d)}</div>`).join('')}
       ${kit ? `<div class="d kit"><b>Vem no kit:</b> ${esc(kit)}</div>` : ''}
       ${i.quantidade > 1 ? `<div class="d">${i.quantidade} x ${R(i.preco_unitario)}</div>` : ''}
-      ${texto ? `<div class="d ob">Obs: ${esc(texto)}</div>` : ''}${imagem ? '<div class="d ob">* Imagem de referência anexada (ver no sistema)</div>' : ''}</div>`;
+      ${texto ? `<div class="d ob">Obs:\n${esc(texto)}</div>` : ''}${imagem ? `<div class="d ref"><b>Imagem de referência:</b><img src="${esc(imagem)}" alt="Referência anexada ao pedido (ver no sistema)"></div>` : ''}</div>`;
   }).join('<div class="sep fino"></div>');
   const fixadas = (p.observacoes || []).filter(o => o.fixada);
   const e = p.entrega, rec = e ? quemRecebe(p) : null;
@@ -2994,7 +2997,7 @@ async function imprimirEtiqueta(p) {
     .ret small { display: block; font-size: 13px; letter-spacing: 1px; }
     .ret b { display: block; font-size: 22px; line-height: 1.15; }
     ul { list-style: none; border-top: 2px solid #000; padding-top: 5px; }
-    li { padding: 3px 0; } li b { font-size: 15px; } li span { display: block; font-size: 13px; margin-left: 10px; } li .ob { font-weight: 900; }
+    li { padding: 3px 0; } li b { font-size: 15px; } li span { display: block; font-size: 13px; margin-left: 10px; } li .ob { font-weight: 900; white-space: pre-line; overflow-wrap: anywhere; }
     .pg { margin-top: 6px; border-top: 3px solid #000; padding-top: 5px; text-align: center; font-size: 19px; font-weight: 900; }
     .obs { margin-top: 6px; border: 2px solid #000; padding: 4px 6px; font-size: 13px; }
   </style></head><body>

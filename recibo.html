@@ -79,6 +79,7 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 20px; margin
 .item-l .v { font-weight: 900; color: var(--teal); white-space: nowrap; }
 .det { font-size: 13.5px; color: var(--ink-2); margin: 3px 0 0 18px; line-height: 1.5; }
 .det strong { color: var(--ink); }
+.det.obs { white-space: pre-line; overflow-wrap: anywhere; }
 
 .totais { margin-top: 18px; padding-top: 12px; border-top: 2px solid var(--ink); }
 .t { display: flex; justify-content: space-between; padding: 4px 0; font-size: 15px; }
@@ -141,9 +142,9 @@ body.cupom .bloco.aviso { border: 1px dashed #000; padding: 6px; }
   body.cupom .meta .retirada { border-top: 2px solid #000; border-bottom: 2px solid #000; }
   body.cupom .bloco.aviso { border: 2px solid #000; }
 }
-.det.ref img { display: block; width: 110px; height: 110px; object-fit: cover; border-radius: 10px; margin-top: 6px; border: 1px solid rgba(0,0,0,.1); }
+.det.ref img { display: block; max-width: 100%; width: 160px; height: auto; max-height: 200px; object-fit: contain; border-radius: 10px; margin-top: 6px; border: 1px solid rgba(0,0,0,.1); }
 .bloco.pix b { font-size: 1.15em; letter-spacing: .03em; }
-@media print { .det.ref img { width: 90px; height: 90px; } body.cupom .det.ref img { display: none; } }
+@media print { .det.ref { break-inside: avoid; } .det.ref img { width: 40mm; max-height: 50mm; border-radius: 0; } }
 
 @media print {
   @page { size: A4; margin: 14mm; }
@@ -229,7 +230,7 @@ function render(p, { urlLogo, interno, mostrarInterno, pix, kits }) {
     if (i.faixa_preco) det.push(`<div class="det"><strong>Faixa de preço:</strong> ${esc(i.faixa_preco)}</div>`);
     det.push(`<div class="det">Quantidade: ${i.quantidade} × ${R(i.preco_unitario)}</div>`);
     const obs = separarReferencia(i.observacao);
-    if (obs.texto) det.push(`<div class="det"><strong>Observações:</strong> ${esc(obs.texto)}</div>`);
+    if (obs.texto) det.push(`<div class="det obs"><strong>Observações:</strong>\n${esc(obs.texto)}</div>`);
     if (obs.imagem) det.push(`<div class="det ref"><strong>Imagem de referência:</strong> <a href="${esc(obs.imagem)}" target="_blank" rel="noopener"><img src="${esc(obs.imagem)}" alt="Imagem de referência"></a></div>`);
     return `<div class="item"><div class="item-l"><b>${n + 1}. ${esc(i.nome)}</b><span class="v">${R(i.subtotal)}</span></div>${det.join('')}</div>`;
   }).join('');
@@ -297,7 +298,14 @@ function configurarBarra(p, opts) {
     document.getElementById('chkInternoWrap').hidden = false;
     document.getElementById('chkInterno').addEventListener('change', e => render(p, { ...opts, mostrarInterno: e.target.checked }));
   }
-  document.getElementById('btnImprimir').addEventListener('click', () => window.print());
+  document.getElementById('btnImprimir').addEventListener('click', imprimirRecibo);
+}
+
+async function imprimirRecibo() {
+  // O pedido pode abrir e imprimir antes de a referência terminar de carregar.
+  const imagens = [...area.querySelectorAll('img')];
+  await Promise.all(imagens.map(img => img.decode().catch(() => {})));
+  window.print();
 }
 
 async function iniciar() {
@@ -346,7 +354,7 @@ async function iniciar() {
     if (!pedido) { estado('Pedido não encontrado', 'Confira se o link está completo ou fale com a Rita pelo WhatsApp.'); return; }
     const opts = { urlLogo: api.urlImagem(pedido.loja?.logo_path), interno, mostrarInterno: false, pix: pixDe(cfg), kits };
     render(pedido, opts); configurarBarra(pedido, opts);
-    if (qs.has('imprimir')) setTimeout(() => window.print(), 400);
+    if (qs.has('imprimir')) setTimeout(imprimirRecibo, 400);
   } catch (e) {
     estado('Não foi possível abrir o recibo', e.message || 'Tente novamente em instantes.');
   }
