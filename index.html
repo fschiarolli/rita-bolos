@@ -2212,11 +2212,12 @@ function openCheckout(opener) {
         <input class="input" id="cPhone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="(19) 99999-9999" value="${esc(formatarTel(store(PHONE_KEY)))}" aria-describedby="hPhone ePhone">
         <p class="hint" id="hPhone">É por ele que avisamos cada etapa do pedido.</p>
         <p class="err" id="ePhone">Informe seu WhatsApp com DDD, por exemplo (19) 99999-9999.</p></div>
+      ${CFG.whatsapp_api_ativa ? '<label class="hint" style="display:flex;gap:10px;align-items:flex-start;margin:8px 0 16px"><input type="checkbox" id="cWaAuto">Quero receber a confirmação e as atualizações deste pedido pelo WhatsApp da Rita Bolos.</label>' : ''}
       ${campoRetirada(minD, ant)}
       <div class="confirm-box">
         <div class="sum-row total" style="border:0;margin:0;padding-top:0"><span>Total</span><strong>${fmt(total)}</strong></div>
         <div class="sum-row sinal"><span>Sinal mínimo (${pctTxt()})</span><strong>${fmt(sinalDe(total))}</strong></div>
-        <p class="hint" style="margin-top:8px">Ao confirmar, o pedido fica registrado e abrimos a mensagem pronta para o WhatsApp da Rita. Ele só é confirmado após o envio do comprovante de pelo menos ${pctTxt()} do valor.</p>
+        <p class="hint" style="margin-top:8px">${CFG.whatsapp_api_ativa ? 'Ao confirmar, o pedido fica registrado. Se você autorizar, os avisos serão enviados ao seu WhatsApp.' : 'Ao confirmar, o pedido fica registrado e abrimos a mensagem pronta para o WhatsApp da Rita.'} Ele só é confirmado após o envio do comprovante de pelo menos ${pctTxt()} do valor.</p>
       </div>
     </div>
     <div class="sheet-foot"><button type="button" class="btn btn-wa btn-block" data-act="send" ${obrig.length || semRef.length || kitsPendentes.length ? 'disabled' : ''}>${icon('send')}<span>Confirmar pedido</span></button></div>`, opener);
@@ -2343,6 +2344,7 @@ async function sendOrder() {
   store(NAME_KEY, name); store(PHONE_KEY, phone);
   const payload = {
     chave_idempotencia: sheetState.chave, cliente_nome: name, cliente_telefone: phone || null, data_retirada: pd, hora_retirada: pt,
+    ...(CFG.whatsapp_api_ativa ? { whatsapp_autorizado: !!$('#cWaAuto')?.checked } : {}),
     itens: cart.flatMap(l => {
       const it = ITEMS[l.id], o = { produto_slug: l.id, quantidade: l.qty, observacao: comReferencia(observacaoLinha(l), referenciaLinha(l)), nome: it?.name };
       if (it?.kind !== 'cake') return [o];
@@ -2352,7 +2354,7 @@ async function sendOrder() {
     })
   };
   const btn = $('[data-act="send"]'); enviando = true;
-  const aba = U?.prepararAba ? U.prepararAba() : null;   // aberta ainda no clique; recebe o WhatsApp depois de gravar
+  const aba = !CFG.whatsapp_api_ativa && U?.prepararAba ? U.prepararAba() : null;
   btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.querySelector('span').textContent = 'Registrando pedido…';
   $('#sendErr').innerHTML = '';
   try {
@@ -2382,11 +2384,11 @@ function pedidoRegistrado(pedido, ctx, aba) {
     <div class="sheet-body" style="padding-top:16px"><div class="done">
       <span class="done-ic">${icon('check')}</span>
       <h2 class="sheet-title" id="sheetTitle" tabindex="-1">Pedido ${esc(pedido.codigo)} registrado!</h2>
-      <p>${abriu ? 'Abrimos o WhatsApp com a mensagem pronta: é só tocar em <strong>Enviar</strong> para a Rita receber o pedido.' : 'Agora envie a mensagem para a Rita pelo WhatsApp.'} Ela responde para combinar o sinal de ${fmt(pedido.valor_sinal)}.</p>
+      <p>${CFG.whatsapp_api_ativa ? 'Seu pedido já chegou à Rita. Se você autorizou os avisos, receberá as atualizações no seu WhatsApp.' : abriu ? 'Abrimos o WhatsApp com a mensagem pronta: é só tocar em <strong>Enviar</strong> para a Rita receber o pedido.' : 'Agora envie a mensagem para a Rita pelo WhatsApp.'} O sinal para confirmar é de ${fmt(pedido.valor_sinal)}.</p>
       <div class="done-sum"><span>Total</span><strong>${fmt(pedido.total)}</strong><span>Retirada</span><strong>${esc(formatPickupDate(pedido.data_retirada, pedido.hora_retirada || ctx.pt))}</strong></div>
       ${pixHTML(pedido.valor_sinal)}
       <div class="stack">
-        <a class="btn btn-wa btn-block" href="${esc(waUrl)}" ${waAlvo(waUrl)}>${icon('wa')}${abriu ? 'Abrir o WhatsApp de novo' : 'Enviar pelo WhatsApp'}</a>
+        <a class="btn btn-wa btn-block" href="${esc(waUrl)}" ${waAlvo(waUrl)}>${icon('wa')}${CFG.whatsapp_api_ativa ? 'Falar com a Rita / enviar comprovante' : abriu ? 'Abrir o WhatsApp de novo' : 'Enviar pelo WhatsApp'}</a>
         <a class="btn btn-ghost btn-block" href="${esc(urlRecibo)}" target="_blank" rel="noopener">Ver recibo do pedido</a>
         <button type="button" class="btn btn-ghost btn-block" data-act="new-order">Voltar ao início</button>
       </div></div></div>`;

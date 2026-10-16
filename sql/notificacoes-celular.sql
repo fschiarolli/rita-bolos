@@ -100,6 +100,20 @@ returns text language sql stable as $$
   end
 $$;
 
+/** "sáb, 12/10 às 14:00" (sem hora: só o dia) */
+create or replace function push_quando(d date, h time)
+returns text language sql stable as $$
+  select push_dia(d) || coalesce(' às ' || left(h::text, 5), '')
+$$;
+
+/* No celular, a notificação fechada mostra só o título e a primeira linha do texto (o resto, ao abrir).
+   Por isso: título curto com o principal (o que é e quando), uma informação por linha, a mais importante primeiro. */
+/** "2× Topo de papel: Pedro, 30 anos" */
+create or replace function push_topo_oque(t topos_pedidos)
+returns text language sql immutable as $$
+  select case when t.quantidade > 1 then t.quantidade || '× ' else '' end || t.titulo || coalesce(': ' || nullif(btrim(t.texto), ''), '')
+$$;
+
 -- ---------------------------------------------------------------- envio
 /** Apaga os aparelhos recusados pelo serviço de entrega (404 ou 410) e os parados há 90 dias. */
 create or replace function push_limpar()
@@ -267,11 +281,8 @@ begin
     exception when others then
       v_itens := null;
     end;
-    perform push_enviar('pedido_novo', 'Novo pedido do site',
-      concat_ws(' · ', p.cliente_nome,
-                'retirada ' || push_dia(p.data_retirada) || coalesce(' às ' || left(p.hora_retirada::text, 5), ''),
-                push_reais(p.total), p.codigo)
-        || coalesce(E'\n' || nullif(v_itens, ''), ''),
+    perform push_enviar('pedido_novo', 'Novo pedido · ' || push_quando(p.data_retirada, p.hora_retirada),
+      concat_ws(E'\n', concat_ws(' · ', p.cliente_nome, push_reais(p.total)), nullif(v_itens, ''), p.codigo || ' · pelo site'),
       './#pedidos@' || p.id, 'pedido-' || p.id);
   exception when others then
     raise warning 'notificações (pedido %): %', new.id, sqlerrm;   -- o pedido segue normalmente
@@ -286,10 +297,20 @@ create constraint trigger push_pedido_novo after insert on pedidos
 -- avisos do sino da loja: topo pronto (equipe) e estoque acabando (Administração)
 create or replace function push_aviso_loja()
 returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  t topos_pedidos;
 begin
   begin
     if new.tipo = 'topo_pronto' then
-      perform push_enviar('topo_pronto', new.titulo, coalesce(new.texto, ''),
+      select * into t from topos_pedidos where id = (to_jsonb(new) ->> 'topo_id')::uuid;
+      perform push_enviar('topo_pronto',
+        case when t.id is null then new.titulo
+             else (case when t.tipo = 'personalizado' then 'Personalizado pronto' else 'Topo pronto' end)
+                  || coalesce(' · ' || coalesce(nullif(btrim(t.cliente_nome), ''), t.pedido_codigo), '') end,
+        case when t.id is null then coalesce(new.texto, '')
+             else concat_ws(E'\n', push_topo_oque(t),
+                            concat_ws(' · ', t.pedido_codigo, 'TP-' || lpad(t.numero::text, 4, '0'),
+                                      'entrega ' || push_quando(t.data_entrega, t.hora_entrega))) end,
         case when new.pedido_id is not null then './#pedidos@' || new.pedido_id else './#topos' end, 'aviso-' || new.id);
     elsif new.tipo like 'estoque%' then
       perform push_enviar('estoque', new.titulo, coalesce(new.texto, ''), './#estoque',
@@ -307,11 +328,10 @@ create or replace function push_topo_novo()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
   begin
-    perform push_enviar('topo_novo', case when new.tipo = 'personalizado' then 'Novo personalizado' else 'Novo pedido de topo' end,
-      concat_ws(' · ', 'TP-' || lpad(new.numero::text, 4, '0'),
-                case when new.quantidade > 1 then new.quantidade || '× ' else '' end || new.titulo,
-                'entrega ' || push_dia(new.data_entrega) || coalesce(' às ' || left(new.hora_entrega::text, 5), ''),
-                nullif(new.tema, '')),
+    perform push_enviar('topo_novo',
+      (case when new.tipo = 'personalizado' then 'Novo personalizado' else 'Novo topo' end) || ' · ' || push_quando(new.data_entrega, new.hora_entrega),
+      concat_ws(E'\n', push_topo_oque(new), 'Tema: ' || nullif(btrim(new.tema), ''),
+                concat_ws(' · ', 'TP-' || lpad(new.numero::text, 4, '0'), nullif(btrim(new.cliente_nome), ''))),
       './#topos', 'topo-' || new.id, new.criado_por);
   exception when others then
     raise warning 'notificações (topo %): %', new.id, sqlerrm;
@@ -325,11 +345,11 @@ create or replace function push_pagamento_topos()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
   begin
-    perform push_enviar('pagamento_topos', 'Você recebeu um pagamento',
-      concat_ws(' · ', push_reais(new.valor),
-                coalesce((jsonb_build_object('pix', 'Pix', 'dinheiro', 'Dinheiro', 'transferencia', 'Transferência', 'outro', 'Outro')) ->> new.forma, new.forma),
-                new.qtd_topos || case when new.qtd_topos = 1 then ' topo' else ' topos' end,
-                nullif(new.observacao, '')),
+    perform push_enviar('pagamento_topos', 'Pagamento recebido · ' || push_reais(new.valor),
+      concat_ws(E'\n',
+                concat_ws(' · ', coalesce((jsonb_build_object('pix', 'Pix', 'dinheiro', 'Dinheiro', 'transferencia', 'Transferência', 'outro', 'Outro')) ->> new.forma, new.forma),
+                          new.qtd_topos || case when new.qtd_topos = 1 then ' topo' else ' topos' end),
+                nullif(btrim(new.observacao), '')),
       './#topos/financeiro', 'pagamento-' || new.id);
   exception when others then
     raise warning 'notificações (pagamento %): %', new.id, sqlerrm;

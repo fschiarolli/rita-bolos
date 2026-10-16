@@ -371,15 +371,6 @@ async function vezDoMapa() {
   ultimaBuscaMapa = vez;
   if (vez > Date.now()) await new Promise(r => setTimeout(r, vez - Date.now()));
 }
-/** Ponto do CEP pela BrasilAPI (nem todo CEP tem). */
-async function pontoDoCep(cep) {
-  try {
-    const r = await buscarComPrazo(`https://brasilapi.com.br/api/cep/v2/${cep}`);
-    const c = r.ok ? (await r.json())?.location?.coordinates : null;
-    const lat = Number(c?.latitude), lng = Number(c?.longitude);
-    return Number.isFinite(lat) && Number.isFinite(lng) && (lat || lng) ? { lat, lng, nivel: 'cep', nome: `CEP ${formatarCep(cep)}` } : null;
-  } catch (e) { return null; }
-}
 const RAIO_BUSCA = 0.6;   // graus em volta da loja (uns 60 km): uma rua com o mesmo nome em outra cidade não serve
 const pertoDe = (a, b) => Math.abs(a.lat - b.lat) <= RAIO_BUSCA && Math.abs(a.lng - b.lng) <= RAIO_BUSCA;
 /** Precisão do que o mapa achou (place_rank do OpenStreetMap): o número da casa, só a rua ou só o bairro. */
@@ -400,9 +391,27 @@ function tirarNumero(rua) {
   return m && !TIPO_RUA.test(resto) ? resto : rua;
 }
 /**
+ * Busca no Photon (OpenStreetMap, komoot), perto da loja: { ponto, address } da rua ou do número, ou null.
+ * address imita o do Nominatim, para conferir a cidade do mesmo jeito.
+ */
+async function buscarPhoton(q, perto) {
+  const qs = new URLSearchParams({ q, limit: '1', lang: 'default' });
+  if (perto) { qs.set('lat', perto.lat); qs.set('lon', perto.lng); }
+  let f;
+  try {
+    const r = await buscarComPrazo(`https://photon.komoot.io/api/?${qs}`);
+    f = r.ok ? (await r.json())?.features?.[0] : null;
+  } catch (e) { return null; }
+  const p = f?.properties || {}, [lng, lat] = f?.geometry?.coordinates || [];
+  const nivel = p.type === 'house' && p.housenumber ? 'numero' : p.type === 'street' ? 'rua' : null;
+  if (!nivel || p.countrycode !== 'BR' || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const ponto = { lat, lng, nivel, nome: [p.name, p.housenumber, p.district, p.city, p.state].filter(Boolean).join(', ') };
+  return perto && !pertoDe(ponto, perto) ? null : { ponto, address: { city: p.city, town: p.county } };
+}
+/**
  * Ponto no mapa de um endereço: { lat, lng, nivel, nome } ou null (não achou).
- * nivel: 'exato' (coordenadas coladas), 'numero', 'rua', 'cep' ou 'bairro' (os dois últimos, aproximados).
- * e: { endereco, bairro, cidade, cep } ou o endereço numa linha; também aceita coordenadas coladas do
+ * nivel: 'exato' (coordenadas coladas), 'numero', 'rua' ou 'bairro' (aproximado).
+ * e: { endereco, bairro, cidade } ou o endereço numa linha; também aceita coordenadas coladas do
  * Google Maps ("-22.9056, -47.0583"). perto: { lat, lng } da loja (só procura em volta dela).
  */
 export async function localizarEndereco(e, { perto } = {}) {
@@ -411,7 +420,7 @@ export async function localizarEndereco(e, { perto } = {}) {
   if (coord) return { lat: Number(coord[1]), lng: Number(coord[2]), nivel: 'exato', nome: linha };
   const end = typeof e === 'string' ? separarEndereco(linha) : (e || {});
   const limpo = x => String(x ?? '').trim();
-  const rua = limpo(end.endereco), bairro = limpo(end.bairro), cidade = limpo(end.cidade), cep = limpo(end.cep).replace(/\D/g, '');
+  const rua = limpo(end.endereco), bairro = limpo(end.bairro), cidade = limpo(end.cidade);
   // a cidade digitada (sem o "- SP") tem de bater com a do resultado: "Avenida Paulista, São Paulo" não pode virar a de Americana
   const norm = x => String(x ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
   const cidadeDigitada = norm(cidade.replace(/\s*[-/,]\s*[a-z]{2}\s*$/i, ''));
@@ -420,13 +429,17 @@ export async function localizarEndereco(e, { perto } = {}) {
     return cidadeDigitada.length < 3 || !cidades.length || cidades.some(c => c === cidadeDigitada || c.includes(cidadeDigitada) || cidadeDigitada.includes(c));
   };
   const juntar = (...l) => l.filter(Boolean).join(', '), onde = cidade || bairro;
-  // do mais completo para o mais simples: o mapa pode não conhecer o bairro (ex.: "Jardim Santo André") nem o número da casa
-  const tentativas = [linha, juntar(rua, bairro, cidade), cep.length === 8 && 'cep', juntar(rua, onde), juntar(tirarNumero(rua), onde),
+  // do mais completo para o mais simples: o mapa pode não conhecer o bairro (ex.: "Jardim Santo André") nem o número da casa.
+  // O ponto do CEP (BrasilAPI) não entra: em Hortolândia ele é o mesmo para a cidade inteira (centro da cidade),
+  // e um endereço a 1,5 km da loja dava 4,9 km. Quando o Nominatim não acha a rua, o Photon tenta (entende abreviações
+  // e outras grafias: "Rua Salvador G. de Souza", "Cassemiro"/"Casemiro"). Só o bairro fica por último.
+  const tentativas = [linha, juntar(rua, bairro, cidade), juntar(rua, onde), juntar(tirarNumero(rua), onde),
+    rua && { photon: juntar(rua, cidade.replace(/\s*[-/,]\s*[a-z]{2}\s*$/i, '') || bairro) },
     bairro && cidade && juntar(bairro, cidade)];
   for (const t of [...new Set(tentativas.filter(Boolean))]) {
-    if (t === 'cep') {
-      const ponto = await pontoDoCep(cep);
-      if (ponto && (!perto || pertoDe(ponto, perto))) return ponto;
+    if (t.photon) {
+      const achado = await buscarPhoton(t.photon, perto);
+      if (achado && mesmaCidade(achado)) return achado.ponto;
       continue;
     }
     await vezDoMapa();
@@ -544,6 +557,15 @@ export function criarApi(supabase, opcoes = {}) {
 
   async function rpc(nome, args) {
     return conferir(await supabase.rpc(nome, args), nome);
+  }
+  async function chamarWhatsApp(dados) {
+    if (!supabase.functions) throw new Error('A conexão com a Meta não está disponível no modo demonstração.');
+    const { data, error } = await supabase.functions.invoke('whatsapp', { body: dados });
+    if (error) {
+      const detalhe = await error.context?.json?.().catch(() => null);
+      throw new Error(detalhe?.erro || 'Não foi possível acessar a integração com a Meta. Confira a configuração no Supabase.');
+    }
+    return data;
   }
 
   function urlImagem(path) {
@@ -667,7 +689,7 @@ export function criarApi(supabase, opcoes = {}) {
        * Grava o pedido do site. Os preços são recalculados no servidor.
        * Devolve o pedido gravado (com codigo, total, valor_sinal, itens e token).
        */
-      criar: (pedido) => rpc('criar_pedido', {
+      criar: (pedido) => rpc('whatsapp_autorizado' in pedido ? 'criar_pedido_com_whatsapp' : 'criar_pedido', {
         p_pedido: { chave_idempotencia: pedido.chave_idempotencia || novaChave(), ...pedido }
       }),
       /** Recibo pelo token enviado no WhatsApp (versão do cliente), com a entrega (endereço e taxa) quando houver. */
@@ -758,7 +780,7 @@ export function criarApi(supabase, opcoes = {}) {
         /** Pedido completo: itens, pagamentos, observações, histórico e a entrega (também usado no recibo). */
         obter: async (id) => completar(await rpc('recibo_pedido', { p_pedido_id: id })),
         /** Lançar pedido pela equipe (WhatsApp, balcão...). Mesmo formato do site. */
-        criar: (pedido) => rpc('criar_pedido', { p_pedido: { origem: 'backoffice', chave_idempotencia: novaChave(), ...pedido } }),
+        criar: (pedido) => rpc('whatsapp_autorizado' in pedido ? 'criar_pedido_com_whatsapp' : 'criar_pedido', { p_pedido: { origem: 'backoffice', chave_idempotencia: novaChave(), ...pedido } }),
         alterarStatus: async (id, status, comentario) =>
           completar(await rpc('alterar_status_pedido', { p_pedido_id: id, p_status: status, p_comentario: comentario ?? null })),
         /** Corrige dados do pedido (cliente, origem, retirada, desconto). Itens: admin.pedidos.itens. Status: use alterarStatus. */
@@ -1121,6 +1143,23 @@ export function criarApi(supabase, opcoes = {}) {
         salvar: ({ email, nome, papel = 'atendente', ativo = true }) =>
           rpc('salvar_membro_equipe', { p_email: email, p_nome: nome, p_papel: papel, p_ativo: ativo }),
         remover: (userId) => rpc('remover_membro_equipe', { p_user_id: userId })
+      },
+
+      whatsapp: {
+        conexao: () => chamarWhatsApp({ acao: 'conexao' }),
+        enviar: (pedidoId, texto, chave) => chamarWhatsApp({ acao: 'enviar', pedido_id: pedidoId, texto, chave, destinatario: 'cliente', autorizado: true }),
+        async historico(id) {
+          const [envios, eventos] = await Promise.all([
+            supabase.from('whatsapp_envios').select('id,estado,erro,criado_em,whatsapp_partes(parte,tipo,estado,erro)').eq('pedido_id', id).order('criado_em', { ascending: false }).limit(20),
+            supabase.from('whatsapp_automacoes').select('id,tentativas,criado_em').eq('pedido_id', id).is('processado_em', null).order('criado_em', { ascending: false }).limit(20)
+          ]);
+          const lista = conferir(envios, 'histórico do WhatsApp'), ids = new Set(lista.map(e => e.id));
+          for (const e of conferir(eventos, 'fila do WhatsApp')) if (!ids.has(e.id)) lista.push({ ...e, estado: e.tentativas >= 5 ? 'falhou' : 'fila',
+            erro: e.tentativas >= 5 ? 'Não foi possível processar o aviso. Confira a integração no Supabase.' : null });
+          return lista.sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em))).slice(0, 20);
+        },
+        autorizacao: async id => conferir(await supabase.from('pedidos').select('whatsapp_autorizado').eq('id', id).single(), 'autorização do WhatsApp'),
+        autorizar: (id, autorizado) => rpc('definir_whatsapp_pedido', { p_pedido_id: id, p_autorizado: autorizado })
       },
 
       configuracoes: {

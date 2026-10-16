@@ -173,6 +173,11 @@ img { display: block; max-width: 100%; }
 .sab-preco { font-weight: 900; font-size: 15px; margin-top: auto; padding-top: 6px; }
 .sab-preco small { font-weight: 700; color: var(--ink-3); font-size: 12px; }
 .sab-acao { margin-top: 10px; }
+/* depois dos potes: os kits (salgados assados), largos para caber o campo dos sabores */
+.sab-sec { grid-column: 1 / -1; margin-top: 14px; font-size: 18px; font-weight: 900; }
+.sab.extra { grid-column: span 2; }
+.sab-obs { display: grid; gap: 4px; margin-top: 8px; font-size: 13px; font-weight: 800; }
+.sab-obs textarea { min-height: 64px; font-size: 15px; }
 .add { width: 100%; height: 44px; border-radius: 999px; background: var(--surface-2); font-weight: 800; font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background .15s; }
 .add:hover { background: color-mix(in srgb, var(--flav) 26%, var(--surface-2)); }
 .add .ic { width: 19px; height: 19px; }
@@ -444,6 +449,7 @@ textarea.input { height: auto; min-height: 76px; padding: 12px 15px; resize: ver
 ========================================================= */
 const DEMO = new URLSearchParams(location.search).has('demo');
 const CARRINHO_KEY = 'ritabolos.pote.v1';
+const OBS_KEY = 'ritabolos.pote.obs.v1';      // o que o cliente escreveu em cada item (ex.: sabores dos salgados do kit)
 const NAME_KEY = 'ritabolos.nome';           // mesmas chaves do site: nome e telefone já vêm preenchidos
 const PHONE_KEY = 'ritabolos.telefone';
 const ULTIMO_KEY = 'ritabolos.ultimo-pedido';
@@ -459,7 +465,7 @@ const TARDE_DESDE = '12:00';
 const CFG_PADRAO = { nome_loja: 'Rita Bolos', whatsapp_numero: '551938451550', whatsapp_exibicao: '(19) 3845-1550',
   percentual_sinal: 50, antecedencia_minima_dias: 0, aceitando_pedidos: true, mensagem_pausa: null, url_site: null };
 let API = null, U = null, CFG = { ...CFG_PADRAO }, CAT = null, ITENS = [];
-let qtd = lerCarrinho();
+let qtd = lerCarrinho(), obsItem = lerObs();
 const ret = { dia: '', hora: '' };
 let chave = null, enviando = false, minData = '', retMontada = '';
 
@@ -472,9 +478,15 @@ const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').re
 const icon = id => `<svg class="ic" aria-hidden="true"><use href="#i-${id}"/></svg>`;
 function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
 function lerCarrinho() { try { const o = JSON.parse(store(CARRINHO_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
+function lerObs() { try { const o = JSON.parse(store(OBS_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } }
 const pct = () => Number(CFG.percentual_sinal ?? 50);
 const sinalDe = v => Math.round(v * pct()) / 100;
 const potes = n => `${n} ${n === 1 ? 'pote' : 'potes'}`;
+/** "30 potes + 1 kit" */
+function contagem(ls) {
+  const soma = f => ls.filter(f).reduce((s, l) => s + l.q, 0), p = soma(l => l.it.pote), k = soma(l => !l.it.pote);
+  return [p && potes(p), k && `${k} ${k === 1 ? 'kit' : 'kits'}`].filter(Boolean).join(' + ') || potes(0);
+}
 /* Telefone com máscara: (DD) 9999-9999 ou (DD) 99999-9999 (a mesma do site e do backoffice) */
 function digitosTel(v) {   // só os dígitos, sem o 55 do Brasil (no máximo DDD + 9 dígitos)
   let d = String(v || '').replace(/\D/g, '');
@@ -608,6 +620,14 @@ function artPote(name, cls = 'art') {
      <rect x="13.5" y="12" width="37" height="5" rx="2.5" fill="#FFFFFF" stroke="${OUT}" stroke-width="1"/>
      <rect x="21" y="41" width="22" height="9" rx="4.5" fill="#BFE3D6" opacity=".9"/></svg>`;
 }
+/** Salgados assados (esfirras) num prato: o desenho dos kits */
+function artSalgado(name, cls = 'art') {
+  const esf = (x, y, r) => `<path d="M${x} ${y - r}Q${x + r * .2} ${y - r * .2} ${x + r} ${y + r * .55}Q${x} ${y + r * .85} ${x - r} ${y + r * .55}Q${x - r * .2} ${y - r * .2} ${x} ${y - r}z" fill="#E2A75A" stroke="${OUT}" stroke-width="1" stroke-linejoin="round"/>
+    <circle cx="${x}" cy="${y + r * .22}" r="${r * .26}" fill="#B9603A"/>`;
+  return `<svg viewBox="0 0 64 64" class="${cls}" aria-hidden="true" focusable="false"><ellipse cx="32" cy="50" rx="26" ry="6.5" fill="var(--plate)"/>` +
+    esf(19, 40, 10) + esf(45, 40, 10) + esf(32, 31, 11.5) + `</svg>`;
+}
+const arteDe = (it, cls) => (it.pote ? artPote(it.rotulo, cls) : artSalgado(it.rotulo, cls));
 /** Cor de fundo do cartão: a cor principal do sabor (clara demais vira dourado suave) */
 function corSabor(name) {
   const c = palette(name)[0];
@@ -656,10 +676,14 @@ function aplicarDados(d) {
   ITENS = prods.map(p => ({
     slug: p.slug, nome: p.nome, rotulo: p.rotulo || p.nome.replace(/^bolo no pote\s*/i, '') || p.nome,
     desc: p.descricao || '', preco: Number(p.preco), faixas: p.faixas_preco || [], selo: p.selo || null,
-    antecedencia: p.antecedencia_minima_dias || 0, ...minimoDe(p)
-  }));
+    antecedencia: p.antecedencia_minima_dias || 0, ...minimoDe(p),
+    // kit de salgados (ver sql/kit-salgados-assados-atacado.sql): vem depois dos potes, com o campo dos sabores
+    pote: p.unidade_preco !== 'kit' && !/salgad/i.test(p.nome), pedeObs: !!p.pede_observacao, obsObrig: !!p.observacao_obrigatoria,
+    rotuloObs: p.rotulo_observacao || 'Observação', exemploObs: p.exemplo_observacao || ''
+  })).sort((a, b) => b.pote - a.pote);
   // tira do carrinho o que saiu do cardápio
   for (const s of Object.keys(qtd)) if (!ITENS.some(it => it.slug === s)) delete qtd[s];
+  for (const s of Object.keys(obsItem)) if (!ITENS.some(it => it.slug === s && it.pedeObs)) delete obsItem[s];
   salvar();
   render();
 }
@@ -675,7 +699,8 @@ function render() {
   $('#passoSinal').textContent = `O pedido chega no WhatsApp da Rita e é confirmado com o sinal de ${pct().toLocaleString('pt-BR')}%.`;
 
   if (CAT?.introducao) $('#intro').textContent = CAT.introducao;
-  const precos = ITENS.map(it => Math.min(it.preco, ...it.faixas.map(f => Number(f.preco))));
+  const POTES = ITENS.filter(it => it.pote);
+  const precos = POTES.map(it => Math.min(it.preco, ...it.faixas.map(f => Number(f.preco))));
   if (precos.length) {
     const min = Math.min(...precos), igual = precos.every(p => p === min);
     $('#precoRot').textContent = igual ? 'cada pote' : 'a partir de';
@@ -683,11 +708,11 @@ function render() {
     $('#precoChip').hidden = false;
   }
   // três potes de sabores diferentes na abertura
-  const tres = [ITENS[0], ITENS[2] || ITENS[1], ITENS[1]].filter(Boolean).map(it => it.rotulo);
+  const tres = [POTES[0], POTES[2] || POTES[1], POTES[1]].filter(Boolean).map(it => it.rotulo);
   while (tres.length < 3) tres.push(['Ninho e Maracujá', 'Red velvet com geleia de morango', 'Brigadeiro'][tres.length]);
   $$('#heroArte .pote').forEach(e => e.remove());
   $('#heroArte').insertAdjacentHTML('beforeend', tres.map((n, i) => artPote(n, `art pote p${i + 1}`)).join('') +
-    (precos.length ? `<span class="etiqueta">${ITENS.length} sabores · <b>${esc($('#precoVal').textContent)}</b></span>` : ''));
+    (precos.length ? `<span class="etiqueta">${POTES.length} sabores · <b>${esc($('#precoVal').textContent)}</b></span>` : ''));
 
   const pausado = !CFG.aceitando_pedidos || CAT?.aceita_pedido_online === false;
   $('#pausa').hidden = !pausado;
@@ -700,20 +725,23 @@ function render() {
       <a class="btn btn-wa" href="${esc(waLink(CFG.whatsapp_numero))}" ${waAlvo(waLink(CFG.whatsapp_numero))}>${icon('wa')}Falar com a Rita</a></div>`;
   } else {
     $('#listaSabores').className = 'sabores';
-    $('#listaSabores').innerHTML = ITENS.map(cartao).join('');
+    const extras = ITENS.filter(it => !it.pote);
+    $('#listaSabores').innerHTML = POTES.map(cartao).join('') + (extras.length ? `<h3 class="sab-sec">Salgados para acompanhar</h3>${extras.map(cartao).join('')}` : '');
   }
   atualizar();
 }
 function cartao(it) {
   const q = qtd[it.slug] || 0;
   const unit = precoUnit(it, Math.max(q, it.min));
-  return `<article class="sab${q ? ' tem' : ''}" data-sab="${esc(it.slug)}" style="--flav:${corSabor(it.rotulo)}">
-    <div class="sab-arte">${artPote(it.rotulo)}${it.selo ? `<span class="sab-selo">${esc(it.selo)}</span>` : ''}
+  return `<article class="sab${q ? ' tem' : ''}${it.pote ? '' : ' extra'}" data-sab="${esc(it.slug)}" style="--flav:${it.pote ? corSabor(it.rotulo) : '#E2A75A'}">
+    <div class="sab-arte">${arteDe(it)}${it.selo ? `<span class="sab-selo">${esc(it.selo)}</span>` : ''}
       ${q ? `<span class="sab-qtd" aria-hidden="true">${q}</span>` : ''}</div>
     <div class="sab-corpo">
       <h3>${esc(it.rotulo)}</h3>
       ${it.desc ? `<p>${esc(it.desc)}</p>` : ''}
       <div class="sab-preco">${fmt(unit)} <small>${it.min > 1 ? `· mín. ${it.min}` : 'cada'}</small></div>
+      ${q && it.pedeObs ? `<label class="sab-obs"><span>${esc(it.rotuloObs)}${it.obsObrig ? ' *' : ''}</span>
+        <textarea class="input" data-obs="${esc(it.slug)}" maxlength="500" placeholder="${esc(it.exemploObs)}">${esc(obsItem[it.slug] || '')}</textarea></label>` : ''}
       <div class="sab-acao">${q
         ? `<div class="passo" role="group" aria-label="Quantidade de ${esc(it.rotulo)}">
             <button type="button" data-menos="${esc(it.slug)}" aria-label="Tirar um ${esc(it.rotulo)}">${icon('minus')}</button>
@@ -739,18 +767,24 @@ function mudar(slug, dir) {
   }
   atualizar();
 }
-function salvar() { store(CARRINHO_KEY, JSON.stringify(qtd)); }
+function salvar() { store(CARRINHO_KEY, JSON.stringify(qtd)); store(OBS_KEY, JSON.stringify(obsItem)); }
+document.addEventListener('input', e => {
+  const t = e.target.closest('[data-obs]'); if (!t) return;
+  obsItem[t.dataset.obs] = t.value; salvar();
+  if (t.value.trim()) t.removeAttribute('aria-invalid');
+});
 
 function atualizar() {
-  const ls = linhas(), n = totalPotes(), tot = totalValor();
+  const ls = linhas(), tot = totalValor();
   $('#resumo').innerHTML = ls.length
-    ? ls.map(l => `<div class="res-lin">${artPote(l.it.rotulo)}<span><strong>${esc(l.it.rotulo)}</strong><small>${l.q} × ${fmt(l.unit)}</small></span><b>${fmt(l.q * l.unit)}</b></div>`).join('') +
-      `<div class="res-tot"><span>Total · ${potes(n)}</span><strong>${fmt(tot)}</strong></div>
+    ? ls.map(l => `<div class="res-lin">${arteDe(l.it)}<span><strong>${esc(l.it.rotulo)}</strong><small>${l.q} × ${fmt(l.unit)}</small></span><b>${fmt(l.q * l.unit)}</b></div>`).join('') +
+      `<div class="res-tot"><span>Total · ${contagem(ls)}</span><strong>${fmt(tot)}</strong></div>
        <div class="res-sinal"><span>Sinal para confirmar (${pct().toLocaleString('pt-BR')}%)</span><strong>${fmt(sinalDe(tot))}</strong></div>
        <p class="res-nota">O pedido só é confirmado depois do envio do comprovante do sinal. O restante você paga na retirada.</p>`
     : `<div class="resumo-vazio">${artPote('Ninho')}<span>Nenhum pote ainda. <a class="lnk-btn" href="#sabores">Escolha os sabores</a> e eles aparecem aqui.</span></div>`;
-  $('#barraQtd').textContent = potes(n);
-  $('#barraTot').textContent = `${fmt(tot)} · ${ls.length} ${ls.length === 1 ? 'sabor' : 'sabores'}`;
+  $('#barraQtd').textContent = contagem(ls);
+  const soPotes = ls.every(l => l.it.pote);
+  $('#barraTot').textContent = `${fmt(tot)} · ${ls.length} ${soPotes ? (ls.length === 1 ? 'sabor' : 'sabores') : (ls.length === 1 ? 'item' : 'itens')}`;
   montarRetirada();
   barraVisivel();
   const pausado = !CFG.aceitando_pedidos || CAT?.aceita_pedido_online === false;
@@ -915,6 +949,13 @@ async function enviar() {
     $('#sabores').scrollIntoView({ behavior: 'smooth' });
     return;
   }
+  const semObs = linhas().find(l => l.it.obsObrig && !String(obsItem[l.it.slug] || '').trim());
+  if (semObs) {
+    const t = $(`[data-obs="${CSS.escape(semObs.it.slug)}"]`);
+    $('#envioErro').innerHTML = `<div class="aviso" role="alert">${icon('info')}<span>Preencha “${esc(semObs.it.rotuloObs)}” no ${esc(semObs.it.rotulo)}.</span></div>`;
+    if (t) { t.setAttribute('aria-invalid', 'true'); t.scrollIntoView({ block: 'center', behavior: 'smooth' }); t.focus({ preventScroll: true }); }
+    return;
+  }
   if (!validar()) return;
   const nome = limparNome($('#cNome').value), fone = formatarTel($('#cFone').value), obs = $('#cObs').value.trim();
   store(NAME_KEY, nome); store(PHONE_KEY, fone);
@@ -922,7 +963,7 @@ async function enviar() {
   const payload = {
     chave_idempotencia: chave, cliente_nome: nome, cliente_telefone: fone, data_retirada: ret.dia, hora_retirada: ret.hora,
     observacao: obs || null,
-    itens: linhas().map(l => ({ produto_slug: l.it.slug, quantidade: l.q, observacao: null, nome: l.it.nome }))
+    itens: linhas().map(l => ({ produto_slug: l.it.slug, quantidade: l.q, observacao: (l.it.pedeObs && String(obsItem[l.it.slug] || '').trim()) || null, nome: l.it.nome }))
   };
   const btn = $('#btnEnviar'); enviando = true;
   const aba = U?.prepararAba ? U.prepararAba() : null;   // aberta ainda no clique; recebe o WhatsApp depois de gravar
@@ -950,7 +991,7 @@ function registrado(pedido, aba) {
   const abriu = !!aba?.ir(waUrl);
   const hora = String(pedido.hora_retirada || ret.hora).slice(0, 5);
   store(ULTIMO_KEY, JSON.stringify({ codigo: pedido.codigo, token: pedido.token, waUrl, recibo, total: pedido.total, data: pedido.data_retirada, hora, em: Date.now() }));
-  qtd = {}; salvar(); chave = null;
+  qtd = {}; obsItem = {}; salvar(); chave = null;
   $$('[data-sab]').forEach(el => { const it = ITENS.find(i => i.slug === el.dataset.sab); if (it) el.outerHTML = cartao(it); });
   $('#pedidoCorpo').innerHTML = `<div class="card feito">
     <div class="feito-ic">${icon('check')}</div>
@@ -975,8 +1016,11 @@ function registrado(pedido, aba) {
 /* Plano B: servidor fora do ar, a mensagem segue direto pelo WhatsApp */
 function enviarDireto() {
   const nome = limparNome($('#cNome').value), obs = $('#cObs').value.trim(), tot = totalValor();
-  let m = `*NOVO PEDIDO — ${(CFG.nome_loja || 'Rita Bolos').toUpperCase()}*\n_(não registrado no sistema)_\n\n*Cliente:* ${nome}\n*Retirada:* ${ret.dia.split('-').reverse().join('/')} às ${ret.hora}\n\n*Bolo no pote:*\n`;
-  linhas().forEach((l, i) => { m += `\n${i + 1}. *${l.it.nome}*\n   Qtd: ${l.q} x ${fmt(l.unit)} = ${fmt(l.q * l.unit)}\n`; });
+  let m = `*NOVO PEDIDO — ${(CFG.nome_loja || 'Rita Bolos').toUpperCase()}*\n_(não registrado no sistema)_\n\n*Cliente:* ${nome}\n*Retirada:* ${ret.dia.split('-').reverse().join('/')} às ${ret.hora}\n\n*${linhas().every(l => l.it.pote) ? 'Bolo no pote' : 'Itens'}:*\n`;
+  linhas().forEach((l, i) => {
+    const o = l.it.pedeObs && String(obsItem[l.it.slug] || '').trim();
+    m += `\n${i + 1}. *${l.it.nome}*\n   Qtd: ${l.q} x ${fmt(l.unit)} = ${fmt(l.q * l.unit)}\n${o ? `   ${l.it.rotuloObs}: ${o}\n` : ''}`;
+  });
   if (obs) m += `\n*Observação:* ${obs}\n`;
   m += `\n----------------------------\n*Total:* ${fmt(tot)}\n*Sinal mínimo (${pct().toLocaleString('pt-BR')}%):* ${fmt(sinalDe(tot))}`;
   const px = U?.pixDe ? U.pixDe(CFG) : null;

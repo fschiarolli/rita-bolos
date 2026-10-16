@@ -1,0 +1,4 @@
+# A função valida o JWT da equipe e a assinatura da Meta dentro do próprio handler.
+# O webhook da Meta não carrega JWT do Supabase.
+[functions.whatsapp]
+verify_jwt = false

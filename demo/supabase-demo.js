@@ -151,6 +151,17 @@ export function criarSupabaseDemo(opcoes = {}) {
           b.produtos.push({ ...p, id: novoId(), categoria_id: atac.id, slug: 'atacado-' + p.slug, preco: 12, destaque: false, destaque_ordem: null, criado_em: agora(), atualizado_em: agora() });
       });
     }
+    // kit de salgados assados no atacado (igual a sql/kit-salgados-assados-atacado.sql)
+    const atacado = (b.categorias || []).find(c => c.slug === 'bolo-no-pote-atacado');
+    const assados = b.produtos.find(p => p.slug === 'salgado-assados-cento');
+    if (atacado && assados && !b.produtos.some(p => p.slug === 'atacado-kit-salgados-assados')) {
+      const g = (b.grupos || []).find(x => x.id === assados.grupo_id);
+      b.produtos.push({ ...assados, id: novoId(), categoria_id: atacado.id, grupo_id: null, slug: 'atacado-kit-salgados-assados', nome: 'Kit de salgados assados',
+        rotulo: 'Kit de salgados assados', descricao: `100 mini salgados assados.${g?.sabores ? ' Sabores: ' + g.sabores : ''}`, tipo: 'personalizavel',
+        unidade_preco: 'kit', quantidade_por_unidade: null, pede_observacao: true, observacao_obrigatoria: true, rotulo_observacao: 'Sabores dos salgados assados',
+        exemplo_observacao: 'Ex.: 50 esfirras de frango, 30 enroladinhos de frios, 20 doguinhos', selo: null, destaque: false, destaque_ordem: null,
+        ordem: 1000, ativo: true, criado_em: agora(), atualizado_em: agora() });
+    }
     return b;
   }
   function semearTopos(b) {
@@ -805,6 +816,16 @@ export function criarSupabaseDemo(opcoes = {}) {
   const RPC = {
     obter_cardapio: () => obterCardapio(),
     criar_pedido: ({ p_pedido }) => { const { id, repetido } = criarPedido(p_pedido); return { ...pedidoJson(id, false), token: db.pedidos.find(p => p.id === id).token, repetido }; },
+    criar_pedido_com_whatsapp: ({ p_pedido }) => {
+      const r = RPC.criar_pedido({ p_pedido });
+      if (p_pedido.whatsapp_autorizado === true) db.pedidos.find(p => p.id === r.id).whatsapp_autorizado = true;
+      salvar(); return r;
+    },
+    definir_whatsapp_pedido: ({ p_pedido_id, p_autorizado }) => {
+      exigirEquipe(); const p = db.pedidos.find(p => p.id === p_pedido_id);
+      if (p) p.whatsapp_autorizado = p_autorizado === true;
+      salvar(); return null;
+    },
     consultar_pedido: ({ p_token }) => { const p = db.pedidos.find(x => x.token === p_token); return p ? pedidoJson(p.id, false) : null; },
     entrega_publica: ({ p_token }) => {   // sql/entregas.sql: endereço e taxa para o recibo do cliente, sem telefone
       const p = db.pedidos.find(x => x.token === String(p_token || '').trim()), e = p && db.pedido_entregas.find(x => x.pedido_id === p.id);

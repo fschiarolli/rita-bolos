@@ -6,7 +6,7 @@
  * Modo demonstração, sem banco: abra com ?demo
  */
 import { criarApi, conectar, formatarPreco as R, formatarPeso, formatarData, linkRecibo, linkWhatsApp, abrirWhatsApp, linkCompartilhavel, montarMensagemStatus, prepararAba,
-  separarReferencia, juntarReferencia, ehTopper, pixDe, textoPix, itensWhatsApp, mapaKits, achatarCardapio, conteudoKit,
+  separarReferencia, juntarReferencia, ehTopper, pixDe, textoPix, itensWhatsApp, novaChave, mapaKits, achatarCardapio, conteudoKit,
   formatarCep, textoEndereco, linkWaze, linkMapa, quemRecebe, buscarCep, calcularTaxaEntrega, localizarEndereco, origemEntrega, temRegraEntrega, taxaPelaDistancia, excessoDePeso } from '../js/rita-api.js';
 import { AVATARES, avatarSVG, temAvatar } from './avatares.js';
 import { montarCalendario } from '../js/calendario.js';
@@ -473,6 +473,7 @@ const NAV = [
   { id: 'painel', rot: 'Painel', ic: 'painel' },
   { id: 'hoje', rot: 'Hoje', ic: 'hoje' },
   { id: 'pedidos', rot: 'Pedidos', ic: 'pedidos', badge: true },
+  { id: 'producao', rot: 'Produção', ic: 'filtro' },
   { id: 'topos', rot: 'Topos', ic: 'topo', topos: true },
   { id: 'relatorio', rot: 'Relatório', ic: 'grafico', admin: true },
   { id: 'prejuizos', rot: 'Prejuízos', ic: 'alerta', admin: true },
@@ -1038,7 +1039,7 @@ function rotear(forcar = false) {
     const el = $('#conteudo');
     document.title = `${NAV.find(n => n.id === tela)?.rot || 'Painel'} — Backoffice Rita Bolos`;
     if (tela !== 'topos') sairTvTopos();
-    ({ painel: telaPainel, hoje: telaHoje, pedidos: telaPedidos, topos: telaTopos, relatorio: telaRelatorio, prejuizos: telaPrejuizos, estoque: telaEstoque, cardapio: telaCardapio, stories: telaStories, ajustes: telaAjustes })[tela](el, sub);
+    ({ painel: telaPainel, hoje: telaHoje, pedidos: telaPedidos, producao: telaProducao, topos: telaTopos, relatorio: telaRelatorio, prejuizos: telaPrejuizos, estoque: telaEstoque, cardapio: telaCardapio, stories: telaStories, ajustes: telaAjustes })[tela](el, sub);
     window.scrollTo(0, 0);
   }
   if (pedidoId && !ehProdutor()) abrirGaveta(pedidoId); else fecharGaveta(true);
@@ -2504,6 +2505,179 @@ document.addEventListener('click', e => {
 setInterval(() => { if (telaAtual === 'hoje' && hojeDia && hojeISO() !== hojeDia) recarregarHoje(); }, 60000);
 
 /* =========================================================
+   PRODUÇÃO: quanto de cada produto foi pedido num período
+   (ex.: quantos mini salgados fritos para o fim de semana). Soma os itens
+   dos pedidos e o que vem dentro dos kits (pela descrição do kit no Cardápio).
+========================================================= */
+const fProd = { periodo: 'fds', de: '', ate: '', busca: '', so: 'todos' };
+const PERIODOS_PROD = [['hoje', 'Hoje'], ['amanha', 'Amanhã'], ['fds', 'Fim de semana'], ['semana', 'Próximos 7 dias'], ['entre', 'Entre datas']];
+let prodDados = null;
+/** Sábado e domingo deste fim de semana (no domingo, só ele). */
+function fimDeSemana() {
+  const h = hojeISO(), dow = diaDaSemanaIso(h);
+  return dow === 0 ? [h, h] : [somarDiasIso(h, 6 - dow), somarDiasIso(h, 7 - dow)];
+}
+function limitesProd() {
+  if (fProd.periodo === 'hoje') return [hojeISO(), hojeISO()];
+  if (fProd.periodo === 'amanha') return [hojeISO(1), hojeISO(1)];
+  if (fProd.periodo === 'semana') return [hojeISO(), hojeISO(6)];
+  if (fProd.periodo === 'entre') { const de = fProd.de || hojeISO(); return [de, fProd.ate && fProd.ate >= de ? fProd.ate : de]; }
+  return fimDeSemana();
+}
+/** Produtos do cadastro (com grupo e quantas unidades vêm em cada um); sem acesso a ele, os do cardápio. */
+let produtosCache = null;
+async function produtosDaLoja() {
+  if (produtosCache && Date.now() - produtosCache.em < 5 * 60e3) return produtosCache.lista;
+  let lista;
+  try { lista = await api.admin.produtos.listarCompleto(); }
+  catch (e) {
+    const c = await carregarCardapioAtivo();
+    lista = (c?.categorias || []).flatMap(cat => [...(cat.grupos || []).flatMap(g => (g.produtos || []).map(p => ({ ...p, grupo_nome: g.nome }))), ...(cat.produtos || [])]
+      .map(p => ({ ...p, categoria_nome: cat.nome, categoria_slug: cat.slug, categoria_layout: cat.layout })));
+  }
+  produtosCache = { em: Date.now(), lista };
+  return lista;
+}
+/** "80 salgadinhos fritos, 20 docinhos e refrigerante 2 L" → [{ qtd: 80, nome: 'salgadinhos fritos' }, { qtd: 20, nome: 'docinhos' }] (o peso do bolo fica de fora). */
+const partesDoKit = txt => [...String(txt || '').matchAll(/(\d+)\s+(?!(?:kg|g|l|ml)\b)(\p{L}[\p{L} ]*?)(?=\s*(?:[,.;:+()]|\se\s|\d|$))/giu)]
+  .map(m => ({ qtd: Number(m[1]), nome: m[2].trim() }));
+/** Unidades em cada item vendido: o cento tem 100. Sem o produto no cadastro, pelo nome. */
+const unidadesPorItem = (i, p) => Number(p?.quantidade_por_unidade) > 1 ? Number(p.quantidade_por_unidade)
+  : /\bmeio cento\b/i.test(i.nome) ? 50 : /\bcento\b/i.test(i.nome) ? 100 : 1;
+
+/** As linhas da tela: uma por produto (o cento e o meio cento do mesmo grupo somam juntos), mais o que vem nos kits. */
+function linhasProducao(pedidos, produtos) {
+  const porId = new Map(produtos.map(p => [p.id, p])), kits = mapaKits(produtos), linhas = new Map();
+  // o que vem no kit soma no grupo de mesmo nome ("100 mini salgados assados" → Mini salgados assados);
+  // salgados sem o tipo são fritos (o site pede "Sabores dos salgados fritos" em todo kit com salgados)
+  const grupos = new Map(produtos.filter(p => p.grupo_nome).map(p => [semAcento(p.grupo_nome).replace(/^mini /, ''), p]));
+  const fritos = produtos.find(p => p.grupo_nome && /salgad.*frit/.test(semAcento(p.grupo_nome)));
+  // partes: de onde vem o total ("3× cento", "2× meio cento", "80 nos kits"); unidades: o total é em unidades (cento, kit)
+  const linha = (chave, nome, cat) => linhas.get(chave) || linhas.set(chave, { chave, nome, cat: cat || '', qtd: 0, kg: 0, kit: false, unidades: false, pedidos: new Set(), partes: new Map(), itens: [] }).get(chave);
+  const somar = (l, p, qtd, parte, conta, texto, obs) => {
+    l.qtd += qtd; l.pedidos.add(p.id); l.partes.set(parte, (l.partes.get(parte) || 0) + conta);
+    l.itens.push({ p, qtd, texto, obs });
+  };
+  for (const p of pedidos) for (const i of p.itens) {
+    const prod = porId.get(i.produto_id), qtd = Number(i.quantidade) || 0, por = unidadesPorItem(i, prod);
+    const grupo = por > 1 && prod?.grupo_nome;
+    const l = grupo ? linha('g:' + semAcento(grupo), grupo, prod.categoria_nome || i.categoria) : linha('p:' + semAcento(i.nome), i.nome, i.categoria || prod?.categoria_nome);
+    const resto = grupo && semAcento(i.nome).startsWith(semAcento(grupo)) ? i.nome.slice(grupo.length).replace(/[()]/g, '').trim() : '';
+    somar(l, p, qtd * por, resto || i.nome, qtd, `${qtd}× ${i.nome}${i.peso_kg ? ' ' + formatarPeso(i.peso_kg) : ''}`, separarReferencia(i.observacao).texto);
+    if (por > 1) l.unidades = true;
+    if (i.peso_kg) l.kg += qtd * Number(i.peso_kg);
+    const kit = conteudoKit(i, kits);
+    if (!kit) continue;
+    l.kit = true;
+    for (const parte of partesDoKit(kit)) {
+      const n = semAcento(parte.nome), frito = /salgad/.test(n) && !/assad|congelad/.test(n) && fritos;
+      const g = grupos.get(n.replace(/^mini /, '')) || frito;
+      const lk = g ? linha('g:' + semAcento(g.grupo_nome), g.grupo_nome, g.categoria_nome)
+        : linha('k:' + n, parte.nome.charAt(0).toUpperCase() + parte.nome.slice(1), 'Nos kits');
+      somar(lk, p, qtd * parte.qtd, 'nos kits', qtd * parte.qtd, `${qtd}× ${i.nome}: ${parte.qtd} ${parte.nome}${qtd > 1 ? ' cada' : ''}`, separarReferencia(i.observacao).texto);
+      lk.unidades = true;
+    }
+  }
+  return [...linhas.values()].sort((a, b) => a.cat.localeCompare(b.cat) || b.qtd - a.qtd || a.nome.localeCompare(b.nome));
+}
+
+async function telaProducao(el) {
+  el.innerHTML = cabecalho('Produção', '', 'Quanto de cada produto foi pedido no período, somando o que vem dentro dos kits. Filtre pelo nome para ver o total.') + `
+    <div class="filtros">
+      <div class="f-topo">
+        <div class="busca">${ic('busca')}<label class="sr" for="prBusca">Filtrar produto</label>
+          <input class="in" id="prBusca" type="search" placeholder="Filtrar produto (ex.: salgados fritos)" value="${esc(fProd.busca)}" autocomplete="off"></div>
+        <div class="f-per"><label class="sr" for="prSo">Quais pedidos contar</label><select class="sel" id="prSo">
+          ${[['todos', 'Todos os pedidos'], ['confirmados', 'Só confirmados']].map(([v, t]) => `<option value="${v}" ${v === fProd.so ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+      </div>
+      <div class="linha" id="prPer" role="group" aria-label="Data de retirada">${PERIODOS_PROD.map(([v, t]) => `<button type="button" class="chip" data-pr-per="${v}" aria-pressed="${v === fProd.periodo}">${t}</button>`).join('')}</div>
+      <div class="linha f-datas" id="prDatas"></div>
+    </div>
+    <div id="prResumo"></div>
+    <section class="card tabela" aria-label="Produtos pedidos"><div class="pr-lista" id="prLista"></div></section>`;
+  $('#prBusca').addEventListener('input', e => { fProd.busca = e.target.value; desenharProducao(); });
+  $('#prSo').addEventListener('change', e => { fProd.so = e.target.value; desenharProducao(); });
+  $('#prPer').addEventListener('click', e => {
+    const b = e.target.closest('[data-pr-per]'); if (!b) return;
+    fProd.periodo = b.dataset.prPer;
+    if (fProd.periodo === 'entre' && !fProd.de) { fProd.de = hojeISO(); fProd.ate = hojeISO(6); }
+    $$('#prPer [data-pr-per]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    datasProducao(); carregarProducao();
+  });
+  $('#prDatas').addEventListener('change', e => {
+    if (e.target.id === 'prDe') { fProd.de = e.target.value; if (fProd.ate && fProd.ate < fProd.de) fProd.ate = fProd.de; }
+    if (e.target.id === 'prAte') fProd.ate = e.target.value;
+    datasProducao(); carregarProducao();
+  });
+  datasProducao();
+  await carregarProducao();
+}
+function datasProducao() {
+  const box = $('#prDatas'); if (!box) return;
+  const html = fProd.periodo === 'entre'
+    ? `<span class="f-de">De ${inData('prDe', fProd.de, { rotulo: 'Retirada a partir de' })}</span>
+      <span class="f-de">até ${inData('prAte', fProd.ate, { min: fProd.de, rotulo: 'Retirada até' })}</span>` : '';
+  redesenharComFoco(box, html);
+  box.hidden = !html;
+}
+async function carregarProducao() {
+  const [de, ate] = limitesProd(), vez = ++carregarProducao.vez;
+  $('#prResumo').innerHTML = '';
+  $('#prLista').innerHTML = '<div class="skel"></div>'.repeat(4);
+  try {
+    const linhas = [];
+    for (let pagina = 1; ; pagina++) {
+      const r = await api.admin.pedidos.listar({ de, ate, pagina, porPagina: 500 });
+      linhas.push(...r.pedidos);
+      if (!r.pedidos.length || linhas.length >= r.total) break;
+    }
+    const [pedidos, produtos] = await Promise.all([pedidosComItens(linhas.filter(p => p.status !== 'cancelado')), produtosDaLoja()]);
+    if (telaAtual !== 'producao' || vez !== carregarProducao.vez) return;
+    prodDados = { pedidos, produtos, de, ate };
+    desenharProducao();
+  } catch (e) {
+    if (vez !== carregarProducao.vez) return;
+    erroToast(e);
+    $('#prLista').innerHTML = `<div class="vazio"><h2>Não foi possível carregar</h2><p>${esc(e.message)}</p></div>`;
+  }
+}
+carregarProducao.vez = 0;
+function desenharProducao() {
+  const lista = $('#prLista'); if (!lista || !prodDados) return;
+  const { de, ate } = prodDados;
+  const pedidos = prodDados.pedidos.filter(p => fProd.so !== 'confirmados' || confirmadoEmDiante(p));
+  const todas = linhasProducao(pedidos, prodDados.produtos);
+  const palavras = semAcento(fProd.busca).split(/\s+/).filter(Boolean);
+  const vistas = todas.filter(l => palavras.every(w => semAcento(`${l.nome} ${l.cat}`).includes(w)));
+  const periodo = de === ate ? nomeDia(de) : `${nomeDia(de)} a ${nomeDia(ate)}`;
+  const partes = l => (l.partes.size > 1 || (l.unidades && l.cat !== 'Nos kits') ? [...l.partes].map(([k, n]) => (k === 'nos kits' ? `${n.toLocaleString('pt-BR')} nos kits` : `${n}× ${k}`)).join(' · ') : '');
+  // filtrando: o total do que apareceu (sem contar o kit em si, que já entra pelo que vem dentro) e por dia
+  if (palavras.length && vistas.length) {
+    const soma = vistas.filter(l => !l.kit), total = soma.reduce((s, l) => s + l.qtd, 0);
+    const porDia = new Map();
+    soma.forEach(l => l.itens.forEach(x => porDia.set(x.p.data_retirada, (porDia.get(x.p.data_retirada) || 0) + x.qtd)));
+    const tile = (cor, icone, r, valor) => `<div class="kpi" style="${corVars(cor)}"><span class="kpi-ic">${ic(icone)}</span><span class="kpi-t"><span>${r}</span><strong>${valor}</strong></span></div>`;
+    $('#prResumo').innerHTML = `<div class="card kpi-strip">
+      ${tile('#2B7465', 'filtro', soma.length === 1 ? esc(soma[0].nome) : `“${esc(fProd.busca.trim())}”`, total.toLocaleString('pt-BR'))}
+      ${de !== ate ? [...porDia.entries()].sort().map(([d, n]) => tile('#C9A15A', 'hoje', esc(nomeDia(d)), n.toLocaleString('pt-BR'))).join('') : ''}</div>`;
+  } else $('#prResumo').innerHTML = '';
+  if (!vistas.length) {
+    lista.innerHTML = `<div class="vazio"><h2>${palavras.length ? `Nada com “${esc(fProd.busca.trim())}”` : 'Nenhum pedido'} para ${esc(periodo)}</h2><p>${palavras.length ? 'Confira o nome ou escolha outro período.' : 'Escolha outro período.'}</p></div>`;
+    return;
+  }
+  const quando = p => `${nomeDia(p.data_retirada)}${p.hora_retirada ? ' · ' + hora(p.hora_retirada) : ''}`;
+  lista.innerHTML = `<p class="pr-topo">${pedidos.length} ${pedidos.length === 1 ? 'pedido' : 'pedidos'} para ${esc(periodo)}</p>` + vistas.map(l => `<details class="pr">
+    <summary><span class="pr-nome"><b>${esc(l.nome)}</b><small>${esc([l.cat, partes(l), l.kg && `${formatarPeso(l.kg)} de bolo`].filter(Boolean).join(' · '))}</small></span>
+      <span class="pr-q"><b>${l.qtd.toLocaleString('pt-BR')}</b>${l.unidades ? `<small>${l.qtd === 1 ? 'unidade' : 'unidades'}</small>` : ''}</span>
+      <span class="pr-n">${l.pedidos.size} ${l.pedidos.size === 1 ? 'pedido' : 'pedidos'}</span></summary>
+    <div class="pr-det">${l.itens.sort((a, b) => `${a.p.data_retirada}${a.p.hora_retirada || '99'}`.localeCompare(`${b.p.data_retirada}${b.p.hora_retirada || '99'}`)).map(x => `<div class="pr-l">
+      <span class="pr-d">${esc(quando(x.p))}</span>
+      <span><a href="#" data-ped="${esc(x.p.id)}">${esc(x.p.cliente_nome)}</a> <small>${esc(x.p.codigo)} · ${esc(nomeStatus(x.p))} · ${esc(x.texto)}</small>${x.obs ? `<small class="obs">${esc(x.obs)}</small>` : ''}</span>
+      <b>${x.qtd.toLocaleString('pt-BR')}</b></div>`).join('')}</div>
+  </details>`).join('');
+}
+
+/* =========================================================
    PEDIDOS (lista)
 ========================================================= */
 /* periodo: proximas | semana | dia (filtro.dia) | entre (filtro.de, filtro.ate) | atrasadas | todas
@@ -3821,6 +3995,10 @@ async function urlReciboCliente(p) {
 const contatoAviso = (p, status) => ((status?.codigo || status) === 'em_rota' && ehEntrega(p) ? quemRecebe(p) : { nome: p.cliente_nome, telefone: p.cliente_telefone });
 /** Campo do modal de status: "Avisar no WhatsApp" + mensagem editável. */
 async function campoAvisoWa(p, status) {
+  if ((await configLoja())?.whatsapp_api_ativa) {
+    const a = await api.admin.whatsapp.autorizacao(p.id);
+    return `<p class="dica" style="margin-top:14px">${a.whatsapp_autorizado ? 'O cliente receberá esta atualização automaticamente pelo WhatsApp da loja.' : 'Este pedido está sem autorização para avisos automáticos. Você pode registrar a autorização em “Mandar mensagem”.'}</p>`;
+  }
   const quem = contatoAviso(p, status);
   if (!telefoneWa(quem.telefone)) return `<p class="dica" style="margin:14px 0 0">${(status?.codigo || status) === 'em_rota'
     ? 'Sem o WhatsApp de quem recebe, ninguém será avisado. Para avisar, inclua o telefone na entrega.'
@@ -3889,28 +4067,57 @@ function modelosMensagem(p, urlRecibo, pix) {
     || ((d === hojeISO() || d === hojeISO(1)) && !st.finalizado && 'retirada') || 'oi';
   return { modelos, sugerido: modelos.some(m => m.id === sugerido) ? sugerido : 'oi' };
 }
+function resumoEnvioWhatsApp(envio) {
+  const partes = envio.whatsapp_partes || [];
+  const falha = partes.find(p => p.estado === 'failed');
+  if (falha) return `Falha na entrega${falha.erro ? ': ' + falha.erro : ''}`;
+  if (envio.estado === 'aguardando_resposta') return 'Aguardando resposta do cliente para enviar os detalhes';
+  if (envio.erro) return envio.erro;
+  const textos = partes.filter(p => p.tipo === 'text');
+  if (textos.length && textos.every(p => p.estado === 'read')) return 'Lido pelo cliente';
+  if (textos.length && textos.every(p => ['read', 'delivered'].includes(p.estado))) return 'Entregue ao cliente';
+  return { fila: 'Na fila para envio automático', aceito: 'Aceito pela Meta; aguardando confirmação de entrega', processando: 'Processando', incerto: 'Resultado incerto; confira antes de reenviar', falhou: 'Falha no envio' }[envio.estado] || envio.estado;
+}
 async function modalMensagem(p) {
   const wa = telefoneWa(p.cliente_telefone); if (!wa) return;
+  const automatica = !!(await configLoja())?.whatsapp_api_ativa;
+  const [autorizacao, envios] = automatica ? await Promise.all([api.admin.whatsapp.autorizacao(p.id), api.admin.whatsapp.historico(p.id)]) : [{}, []];
   const { modelos, sugerido } = modelosMensagem(p, await urlReciboCliente(p).catch(() => ''), pixDe(await configLoja()));
   const nome = String(p.cliente_nome || '').trim().split(/\s+/)[0] || 'cliente';
   const m = abrirModal({
     titulo: `Mensagem para ${nome}`,
     corpo: `<p class="dica" style="margin:0 0 12px;color:var(--ink-3)">${esc(p.cliente_nome)} · <span style="white-space:nowrap">${esc(formatarTel(p.cliente_telefone) || p.cliente_telefone)}</span> · <span style="white-space:nowrap">pedido ${esc(p.codigo)}</span></p>
       <div class="modelos" role="group" aria-label="Mensagens prontas">${modelos.map(x => `<button type="button" class="chip" data-modelo="${x.id}" aria-pressed="${x.id === sugerido}">${esc(x.rot)}</button>`).join('')}</div>
+      ${automatica ? `<div class="card" style="margin:12px 0">${inChk('msgAuto', 'Cliente autorizou a confirmação e as atualizações deste pedido no WhatsApp', !!autorizacao.whatsapp_autorizado)}<button type="button" class="btn ghost sm" data-wa-autorizacao>Salvar autorização</button><p class="dica">As mudanças de status são enviadas automaticamente. Abaixo, você pode preparar uma mensagem avulsa.</p>${envios.length ? `<details><summary>Últimos envios automáticos</summary>${envios.map(e => `<p class="dica">${esc(dataHora(e.criado_em))} · ${esc(resumoEnvioWhatsApp(e))}</p>`).join('')}</details>` : '<p class="dica">Ainda não há envios registrados para este pedido.</p>'}</div>` : ''}
       ${inTa('msgTxt', 'Mensagem <span style="font-weight:400;color:var(--ink-3)">(pode editar antes de enviar)</span>', modelos.find(x => x.id === sugerido).txt, { attrs: 'style="min-height:200px"' })}
-      <p class="dica" style="margin:-4px 0 0">O WhatsApp abre na conversa de ${esc(nome)} com o texto pronto. É só conferir e tocar em Enviar.</p>`,
-    rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn wa" data-ok>${ic('wa')}Abrir no WhatsApp</button>`
+      <p class="dica" style="margin:-4px 0 0">${automatica ? 'A mensagem será enviada pelo número da empresa. Se a conversa estiver fechada, o cliente receberá um convite aprovado pela Meta e os detalhes seguirão quando responder.' : `O WhatsApp abre na conversa de ${esc(nome)} com o texto pronto. É só conferir e tocar em Enviar.`}</p>`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn wa" data-ok>${ic('wa')}${automatica ? 'Enviar pelo sistema' : 'Abrir no WhatsApp'}</button>`
   });
   const ta = m.$('#msgTxt');
+  m.$('[data-wa-autorizacao]')?.addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    await api.admin.whatsapp.autorizar(p.id, chkDe(m, 'msgAuto'));
+    autorizacao.whatsapp_autorizado = chkDe(m, 'msgAuto');
+    toast(autorizacao.whatsapp_autorizado ? 'Autorização salva. A atualização do pedido será enviada automaticamente.' : 'Avisos automáticos desativados para este pedido.');
+  }));
   m.$('.modelos').addEventListener('click', e => {
     const b = e.target.closest('[data-modelo]'); if (!b) return;
     m.$$('[data-modelo]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
     ta.value = modelos.find(x => x.id === b.dataset.modelo).txt;
     ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
   });
-  m.$('[data-ok]').addEventListener('click', () => {
+  let chaveEnvio = novaChave(), ultimoTexto = '';
+  m.$('[data-ok]').addEventListener('click', ev => {
     const txt = ta.value.trim();
     if (!txt) { toast('Escreva a mensagem antes de abrir o WhatsApp.', { tipo: 'erro' }); ta.focus(); return; }
+    if (automatica) return ocupado(ev.currentTarget, async () => {
+      if (!autorizacao.whatsapp_autorizado || !chkDe(m, 'msgAuto')) throw new Error('Registre a autorização do cliente antes de enviar pelo sistema.');
+      if (ultimoTexto && ultimoTexto !== txt) chaveEnvio = novaChave();
+      ultimoTexto = txt;
+      const r = await api.admin.whatsapp.enviar(p.id, txt, chaveEnvio);
+      if (!['aceito', 'aguardando_resposta'].includes(r.estado)) throw new Error(r.erro || 'O resultado ainda não foi confirmado. Confira o histórico antes de reenviar.');
+      m.fechar();
+      toast(r.estado === 'aguardando_resposta' ? 'Convite enviado. Os detalhes seguirão automaticamente quando o cliente responder.' : 'Mensagem aceita pela Meta. A entrega pode ser acompanhada no histórico.');
+    });
     abrirWhatsApp(linkWhatsApp(wa, txt));   // ainda dentro do clique: o navegador não bloqueia
     m.fechar();
     toast(`WhatsApp aberto na conversa de ${nome}.`);
@@ -3952,11 +4159,14 @@ async function modalStatus(p, codigo) {
   });
 }
 
-function modalPagamento(p) {
+async function modalPagamento(p) {
   const faltaSinal = Math.max(0, Math.round((p.valor_sinal - p.valor_pago) * 100) / 100);
   const saldo = Math.max(0, Number(p.saldo));
   const tipo0 = faltaSinal > 0 ? 'sinal' : 'restante';
   const valor0 = faltaSinal > 0 ? faltaSinal : saldo;
+  // pedido ainda não confirmado: o pagamento (o sinal) já pode confirmar, com o aviso ao cliente
+  const conf = statusAtivo('confirmado'), podeConfirmar = !!conf && p.status !== 'cancelado' && !p.finalizado && !confirmadoEmDiante(p);
+  const aviso = podeConfirmar ? await campoAvisoWa(p, conf) : '';
   const m = abrirModal({
     titulo: 'Registrar pagamento',
     corpo: `<p style="margin:0 0 12px;font-weight:400">${esc(p.codigo)} · total ${R(p.total)} · já pago ${R(p.valor_pago)}</p>
@@ -3966,21 +4176,36 @@ function modalPagamento(p) {
       </div>
       <div class="grid2">${inDin('pgValor', 'Valor', valor0 || '')}${inSel('pgForma', 'Forma', Object.entries(FORMAS), 'pix')}</div>
       <div class="grid2">${inSel('pgTipo', 'Referente a', Object.entries(TIPOS_PGTO), tipo0)}${campo('pgData', 'Recebido em', `<input class="in" id="pgData" type="datetime-local" value="${esc(new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 16))}">`)}</div>
-      ${inTxt('pgObs', 'Observação <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>', '', { attrs: 'maxlength="300" placeholder="Ex.: comprovante enviado no WhatsApp"' })}`,
+      ${inTxt('pgObs', 'Observação <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>', '', { attrs: 'maxlength="300" placeholder="Ex.: comprovante enviado no WhatsApp"' })}
+      ${podeConfirmar ? `<div class="np-concl on pg-conf" style="margin:14px 0 0">${inChk('pgConf', `<span><strong>Confirmar o pedido</strong><small>Muda o status para “${esc(conf.nome)}” junto com o pagamento.</small></span>`, true)}
+        <div id="pgConfBox">${aviso}</div></div>` : ''}`,
     rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn teal" data-ok>${ic('moeda')}Registrar</button>`
   });
   m.$$('[data-v]').forEach(c => c.addEventListener('click', () => { m.$('#pgValor').value = valorTxt(c.dataset.v); m.$('#pgTipo').value = c.dataset.t; }));
-  m.$('[data-ok]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+  const bt = m.$('[data-ok]'), confirmar = () => podeConfirmar && chkDe(m, 'pgConf');
+  const rotulo = () => {
+    const c = confirmar(), avisar = c && chkDe(m, 'avWa');
+    if (m.$('#pgConfBox')) { m.$('#pgConfBox').hidden = !c; m.$('.pg-conf').classList.toggle('on', c); }
+    if (m.$('#avWaBox')) m.$('#avWaBox').hidden = !chkDe(m, 'avWa');
+    bt.innerHTML = `${ic(avisar ? 'wa' : 'moeda')}${avisar ? 'Registrar, confirmar e avisar' : c ? 'Registrar e confirmar' : 'Registrar'}`;
+  };
+  m.$('#pgConf')?.addEventListener('change', rotulo); m.$('#avWa')?.addEventListener('change', rotulo); rotulo();
+  bt.addEventListener('click', () => {
     const v = lerValor(valDe(m, 'pgValor'));
-    if (!(v > 0)) { m.$('#pgValor').setAttribute('aria-invalid', 'true'); throw new Error('Informe um valor maior que zero.'); }
-    const quando = valDe(m, 'pgData');
+    if (!(v > 0)) { m.$('#pgValor').setAttribute('aria-invalid', 'true'); m.$('#pgValor').focus(); toast('Informe um valor maior que zero.', { tipo: 'erro' }); return; }
+    const quando = valDe(m, 'pgData'), forma = valDe(m, 'pgForma'), tipo = valDe(m, 'pgTipo'), obs = valDe(m, 'pgObs') || null, vaiConfirmar = confirmar();
+    const wa = vaiConfirmar ? avisoWa(m, p, conf) : { enviar() {}, cancelar() {} };   // abre a aba do WhatsApp ainda no clique
+    const falhou = e => { wa.cancelar(); throw e; };
     m.fechar();
-    await acaoGaveta(null, async () => {
-      const r = await api.admin.pedidos.registrarPagamento(p.id, { valor: v, forma: valDe(m, 'pgForma'), tipo: valDe(m, 'pgTipo'), observacao: valDe(m, 'pgObs') || null, pagoEm: quando ? new Date(quando).toISOString() : null });
-      toast(`Pagamento de ${R(v)} registrado.`);
-      return r;
+    acaoGaveta(null, async () => {
+      const r = await api.admin.pedidos.registrarPagamento(p.id, { valor: v, forma, tipo, observacao: obs, pagoEm: quando ? new Date(quando).toISOString() : null }).catch(falhou);
+      if (!vaiConfirmar) { toast(`Pagamento de ${R(v)} registrado.`); return r; }
+      const r2 = await api.admin.pedidos.alterarStatus(p.id, conf.codigo, `Pagamento de ${R(v).replace(/ /g, ' ')} recebido (${FORMAS[forma] || forma}).`).catch(falhou);
+      wa.enviar();
+      toast(`${p.codigo}: ${conf.nome.toLowerCase()}, pagamento de ${R(v)} registrado.`);
+      return r2;
     });
-  }));
+  });
 }
 
 /* =========================================================
@@ -4088,7 +4313,7 @@ function regraTaxaTxt(c) {
   return `Regra: ${partes.join(' + ') || 'sem valores'}, arredondado para cima${raio ? `; entrega até ${kmTxt(raio)}` : ''}.`;
 }
 /** O que a busca no mapa achou: o número da casa, a rua, o CEP ou só o bairro. */
-const NIVEIS_MAPA = { numero: '', exato: '', rua: 'pela rua: o número da casa não está no mapa', cep: 'pelo CEP, aproximado', bairro: 'só pelo bairro: confira a taxa' };
+const NIVEIS_MAPA = { numero: '', exato: '', rua: 'pela rua: o número da casa não está no mapa', bairro: 'só pelo bairro: confira a taxa' };
 /** Incluir ou mudar a entrega: endereço (o CEP preenche o resto), quem recebe e a taxa (pela distância ou digitada). */
 async function modalEntrega(p) {
   if (!await api.admin.entregas.disponivel().catch(() => false)) {
@@ -4486,6 +4711,7 @@ async function modalNovoPedido() {
         <div class="np-concl-op" hidden>${inSel('npForma', 'Como foi pago', Object.entries(FORMAS), 'pix')}</div>
       </div>
       <div class="grid2">${inTxt('npNome', 'Cliente', '', { attrs: 'maxlength="120" autocomplete="off"' })}${inTxt('npTel', 'Telefone (DDD + número)', '', { attrs: ATTR_TEL })}</div>
+      ${c.configuracoes?.whatsapp_api_ativa ? inChk('npWaAuto', 'Cliente autorizou a confirmação e as atualizações deste pedido no WhatsApp') : ''}
       <div class="grid3">${inSel('npOrig', 'Pedido feito por', [['whatsapp', 'WhatsApp'], ['balcao', 'Balcão'], ['backoffice', 'Outro']], 'whatsapp')}
         ${campo('npData-btn', 'Data da retirada', inData('npData', hojeISO(Number(c.configuracoes?.dias_retirada_sugerida ?? 2))))}
         ${campo('npHora', 'Horário', `<input class="in" id="npHora" type="time" value="${esc(hora(c.configuracoes?.hora_retirada_sugerida || '10:00'))}">`)}</div>
@@ -4565,7 +4791,8 @@ async function modalNovoPedido() {
     if (!itens.length) throw new Error('Adicione pelo menos um item.');
     const data = valDe(m, 'npData'), horaRet = valDe(m, 'npHora');
     const r = await api.admin.pedidos.criar({ origem: valDe(m, 'npOrig'), cliente_nome: valDe(m, 'npNome'), cliente_telefone: formatarTel(valDe(m, 'npTel')) || null,
-      data_retirada: data, hora_retirada: horaRet || null, observacao: valDe(m, 'npObs') || null, itens });
+      data_retirada: data, hora_retirada: horaRet || null, observacao: valDe(m, 'npObs') || null, itens,
+      ...(c.configuracoes?.whatsapp_api_ativa ? { whatsapp_autorizado: !concluido && chkDe(m, 'npWaAuto') } : {}) });
     m.fechar();
     if (concluido) {
       // já nasce pago (100%) e retirado
@@ -4999,6 +5226,10 @@ async function ajLoja(box) {
       <div class="grid2">${inTxt('lNome', 'Nome da loja', c.nome_loja, { attrs: 'maxlength="60"' })}${inTxt('lSlogan', 'Slogan', c.slogan || '', { attrs: 'maxlength="80"' })}</div>
       <div class="grid2">${inTxt('lWa', 'WhatsApp da loja (DDD + número)', formatarTel(c.whatsapp_numero), { attrs: ATTR_TEL.replace('99999-9999', '3845-1550'), dica: 'É o número que recebe os pedidos do site.' })}${inTxt('lWaEx', 'WhatsApp como aparece no site', formatarTel(c.whatsapp_exibicao) || c.whatsapp_exibicao || '', { attrs: ATTR_TEL.replace('99999-9999', '3845-1550'), dica: 'Em branco, usa o mesmo número de cima.' })}</div>
       ${inTxt('lUrl', 'Endereço do site', c.url_site || '', { attrs: 'type="url" placeholder="https://ritabolos.com.br/"', dica: 'Usado no link do recibo que vai no WhatsApp.' })}
+      ${'whatsapp_api_ativa' in c ? `<p class="secao-t linha">WhatsApp automático</p>
+      ${inChk('lWaAuto', 'Enviar confirmação de pedido e mudanças de status pelo WhatsApp da empresa', !!c.whatsapp_api_ativa)}
+      <p class="ajuste-dica">Envia aos clientes que autorizaram os avisos. Quando o cliente precisa iniciar uma conversa, recebe o modelo aprovado; os detalhes completos seguem após a resposta.</p>
+      <button type="button" class="btn ghost sm" id="lWaConectar">Verificar conexão com a Meta</button><p class="dica" id="lWaResultado" role="status">Verifique a conexão antes de ativar.</p>` : ''}
       ${fotoCampo('lLogo', 'Logotipo', c.logo_path)}
 
       <p class="secao-t linha">Pedidos e sinal</p>
@@ -5030,6 +5261,15 @@ async function ajLoja(box) {
       <div style="display:flex;justify-content:flex-end"><button type="button" class="btn primary" id="lSalvar">Salvar ajustes</button></div>
     </div>`;
   const fake = { $: s => box.querySelector(s), $$: s => [...box.querySelectorAll(s)] };
+  // WhatsApp automático: só aparece com o sql/whatsapp.sql rodado (por enquanto fica desligado)
+  box.querySelector('#lWaConectar')?.addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    const resultado = box.querySelector('#lWaResultado');
+    resultado.textContent = 'Verificando…';
+    try {
+      const r = await api.admin.whatsapp.conexao();
+      resultado.textContent = r.pronta ? `Conexão verificada: ${r.nome || 'WhatsApp da empresa'} · ${r.numero}.` : 'A conexão ainda não está pronta. Complete a configuração da Meta no Supabase.';
+    } catch (e) { resultado.textContent = e.message; throw e; }
+  }));
   ligarFotos(fake, 'marca');
   // prévia dos horários que o cliente vai ver
   const previaRetirada = () => {
@@ -5060,6 +5300,11 @@ async function ajLoja(box) {
     } catch (err) { erroToast(err); e.target.checked = !on; }
   });
   box.querySelector('#lSalvar').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    if (chkDe(fake, 'lWaAuto')) {
+      if (!/^https:\/\//i.test(valDe(fake, 'lUrl'))) throw new Error('Informe o endereço HTTPS do site antes de ativar os avisos.');
+      const conexao = await api.admin.whatsapp.conexao();
+      if (!conexao.pronta) throw new Error('Complete a conexão com a Meta antes de ativar os avisos automáticos.');
+    }
     const waDig = digitosTel(valDe(fake, 'lWa'));
     if (waDig.length < 10) throw new Error('Informe o WhatsApp da loja com DDD, ex.: (19) 3845-1550.');
     const wa = '55' + waDig;   // o link do WhatsApp precisa do 55 do Brasil
@@ -5071,6 +5316,7 @@ async function ajLoja(box) {
     await api.admin.configuracoes.salvar({
       mensagem_pausa: valDe(fake, 'lPausa') || null, nome_loja: valDe(fake, 'lNome'), slogan: valDe(fake, 'lSlogan') || null,
       whatsapp_numero: wa, whatsapp_exibicao: valDe(fake, 'lWaEx') || formatarTel(waDig), percentual_sinal: sinal,
+      ...('whatsapp_api_ativa' in c ? { whatsapp_api_ativa: chkDe(fake, 'lWaAuto') } : {}),
       antecedencia_minima_dias: numDe(fake, 'lAnt') || 0, tolerancia_peso_bolo_g: numDe(fake, 'lTol') || 0,
       dias_retirada_sugerida: numDe(fake, 'lDias') || 0, hora_retirada_sugerida: valDe(fake, 'lHora') || '10:00',
       url_site: valDe(fake, 'lUrl') || null, logo_path: fotoDe(fake, 'lLogo'), ...pixRetirada, ...entrega
