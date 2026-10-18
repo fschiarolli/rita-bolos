@@ -7,7 +7,7 @@
  * - Mostra as notificações que chegam com o app fechado (sql/notificacoes-celular.sql) e, no toque, abre a tela certa.
  * Mudou a lista ou a forma de guardar? Troque a VERSAO: a cópia antiga é apagada sozinha.
  */
-const VERSAO = 'rb-backoffice-v3';
+const VERSAO = 'rb-backoffice-v4';
 const ESSENCIAIS = ['./', './index.html', './app.js', './avatares.js', './logo.png', './quadro.html', './quadro.js',
   './manifest.webmanifest', './quadro.webmanifest', './icones/app-192.png', './icones/quadro-192.png',
   '../js/rita-api.js', '../js/calendario.js', '../js/config.js', '../icons/icon-192.png'];

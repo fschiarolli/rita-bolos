@@ -19,7 +19,7 @@
   --font-display: 'DM Serif Display', Georgia, 'Times New Roman', serif;
   --font-ui: 'Nunito', ui-rounded, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --bg: #FBF4EC; --paper: #FFFFFF; --ink: #3A1F14; --ink-2: #6E4B3A; --line: rgba(58,31,20,.14);
-  --teal: #2B7465; --mint-50: #E8F4EF; --rose-50: #FDEEF1; --rose-600: #B9476A; --warm-50: #FFF1DE; --cocoa: #4A2A1C;
+  --teal: #2B7465; --mint-50: #E8F4EF; --rose-50: #FCEBD6; --rose-600: #9C4A20; --warm-50: #FFF1DE; --cocoa: #4A2A1C;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { --bg: #1E130E; }
@@ -49,8 +49,8 @@ button, select { font: inherit; }
 .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 700; cursor: pointer; }
 .chk[hidden] { display: none; }   /* "Anotações internas" só aparece para a equipe */
 .chk input { width: 18px; height: 18px; accent-color: #7DC4B0; }
-.btn-imprimir { border: 0; min-height: 44px; padding: 0 18px; border-radius: 999px; background: #F7C6D2; color: #3A1F14; font-weight: 900; font-size: 15px; cursor: pointer; }
-.btn-imprimir:focus-visible, .seg button:focus-visible { outline: 3px solid #E890A8; outline-offset: 2px; }
+.btn-imprimir { border: 0; min-height: 44px; padding: 0 18px; border-radius: 999px; background: #F5D4AA; color: #3A1F14; font-weight: 900; font-size: 15px; cursor: pointer; }
+.btn-imprimir:focus-visible, .seg button:focus-visible { outline: 3px solid #51AB9D; outline-offset: 2px; }
 
 /* Folha */
 .area { padding: 20px 14px 40px; }
@@ -84,7 +84,7 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 20px; margin
 .totais { margin-top: 18px; padding-top: 12px; border-top: 2px solid var(--ink); }
 .t { display: flex; justify-content: space-between; padding: 4px 0; font-size: 15px; }
 .t.total { font-size: 22px; font-weight: 900; color: var(--teal); border-top: 1px solid #C8B89A; margin-top: 6px; padding-top: 10px; }
-.t.sinal { background: var(--rose-50); color: #8A2E4C; font-weight: 800; padding: 9px 12px; border-radius: 10px; margin-top: 8px; }
+.t.sinal { background: var(--rose-50); color: #9C4A20; font-weight: 800; padding: 9px 12px; border-radius: 10px; margin-top: 8px; }
 .t.saldo { font-weight: 800; }
 
 .bloco { margin-top: 18px; padding: 12px 14px; border-radius: 12px; background: var(--warm-50); font-size: 13.5px; line-height: 1.55; break-inside: avoid; }

@@ -26,7 +26,7 @@
   --line: rgba(58, 31, 20, .11); --plate: #EADFD2;
   --primary: #4A2A1C; --on-primary: #FBF4EC;
   --mint-50: #E8F4EF; --mint-200: #BFE3D6; --mint-400: #7DC4B0; --teal: #2B7465; --on-teal: #FFFFFF;
-  --rose-50: #FDEEF1; --rose-200: #F7C6D2; --rose-400: #E890A8; --rose-600: #B9476A;
+  --rose-50: #FCEBD6; --rose-200: #F5D4AA; --rose-400: #DDA972; --rose-600: #9C4A20;   /* V2: atenção em caramelo (o rosa não está no logo) */
   --warm-50: #FFF1DE; --gold: #C9A15A; --wa: #13803F; --error: #B3261E;
   --shadow-1: 0 1px 2px rgba(58, 31, 20, .05), 0 3px 10px rgba(58, 31, 20, .06);
   --shadow-2: 0 14px 40px rgba(58, 31, 20, .16);
@@ -40,7 +40,7 @@
     --line: rgba(247, 235, 221, .12); --plate: #3E2C22;
     --primary: #F2DCC4; --on-primary: #2A1B14;
     --mint-50: #1D2E28; --mint-200: #2C4A41; --mint-400: #7DC4B0; --teal: #8FD3C0; --on-teal: #10241F;
-    --rose-50: #3A2129; --rose-200: #5C2F3E; --rose-400: #E890A8; --rose-600: #F2A3BA;
+    --rose-50: #3A2416; --rose-200: #5C3A22; --rose-400: #DDA972; --rose-600: #F0A877;
     --warm-50: #3A2A1A; --wa: #2FB765; --error: #FF8A80;
     --shadow-1: 0 1px 2px rgba(0,0,0,.3), 0 3px 10px rgba(0,0,0,.25);
     --shadow-2: 0 14px 40px rgba(0,0,0,.5);
@@ -53,7 +53,7 @@
   --line: rgba(247, 235, 221, .12); --plate: #3E2C22;
   --primary: #F2DCC4; --on-primary: #2A1B14;
   --mint-50: #1D2E28; --mint-200: #2C4A41; --mint-400: #7DC4B0; --teal: #8FD3C0; --on-teal: #10241F;
-  --rose-50: #3A2129; --rose-200: #5C2F3E; --rose-400: #E890A8; --rose-600: #F2A3BA;
+  --rose-50: #3A2416; --rose-200: #5C3A22; --rose-400: #DDA972; --rose-600: #F0A877;
   --warm-50: #3A2A1A; --wa: #2FB765; --error: #FF8A80;
   --shadow-1: 0 1px 2px rgba(0,0,0,.3), 0 3px 10px rgba(0,0,0,.25);
   --shadow-2: 0 14px 40px rgba(0,0,0,.5);
@@ -113,7 +113,7 @@ img { display: block; max-width: 100%; }
 .selo { display: inline-flex; align-items: center; gap: 8px; padding: 6px 13px 6px 8px; border-radius: 999px; background: var(--mint-50); color: var(--teal); font-weight: 800; font-size: 13px; }
 .selo i { width: 8px; height: 8px; border-radius: 50%; background: var(--mint-400); box-shadow: 0 0 0 4px color-mix(in srgb, var(--mint-400) 30%, transparent); }
 .hero h1 { font-family: var(--font-display); font-weight: 400; font-size: clamp(46px, 13vw, 76px); line-height: .95; letter-spacing: -.02em; margin: 16px 0 14px; }
-.hero h1 em { color: var(--rose-600); font-style: italic; white-space: nowrap; }
+.hero h1 em { color: var(--teal); font-style: italic; white-space: nowrap; }   /* "da Rita" no turquesa da fita do logo */
 .hero p.lead { font-size: 17.5px; color: var(--ink-2); max-width: 30em; }
 .preco-chip { display: inline-flex; align-items: baseline; gap: 8px; margin: 20px 0 22px; padding: 10px 18px; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-1); }
 .preco-chip span { font-size: 14px; font-weight: 700; color: var(--ink-3); }
@@ -133,7 +133,7 @@ img { display: block; max-width: 100%; }
 .hero-arte .estrela { position: absolute; z-index: 3; color: var(--gold); }
 .hero-arte .e1 { top: 6%; right: 16%; width: 30px; } .hero-arte .e2 { top: 22%; left: 6%; width: 20px; }
 .etiqueta { position: absolute; z-index: 4; top: 10%; left: 50%; transform: translateX(-50%) rotate(-3deg); background: var(--surface); padding: 8px 14px; border-radius: 14px; box-shadow: var(--shadow-2); font-weight: 900; font-size: 13.5px; white-space: nowrap; }
-.etiqueta b { color: var(--rose-600); }
+.etiqueta b { color: var(--teal); }
 
 /* ---------- Vantagens ---------- */
 .vant { display: grid; gap: 10px; margin: 26px 0 8px; }
@@ -297,7 +297,7 @@ textarea.input { height: auto; min-height: 76px; padding: 12px 15px; resize: ver
 .barra-txt { flex: 1; min-width: 0; line-height: 1.15; }
 .barra-txt strong { display: block; font-size: 17px; font-weight: 900; }
 .barra-txt span { font-size: 13px; opacity: .78; font-weight: 700; }
-.barra .btn { min-height: 48px; padding: 0 20px; background: var(--rose-400); color: #2A1B14; font-size: 15.5px; }
+.barra .btn { min-height: 48px; padding: 0 20px; background: #51AB9D; color: #2A1B14; font-size: 15.5px; }   /* a fita do logo */
 .barra .btn .ic { width: 18px; height: 18px; }
 
 .carga { text-align: center; padding: 30px 16px; color: var(--ink-3); }

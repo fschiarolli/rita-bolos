@@ -20,8 +20,9 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 /* =========================================================
-   TOKENS — cores da marca Rita Bolos (menta, chocolate, creme)
-   com toques de rosa
+   TOKENS — V2: as cores do logo da Rita Bolos (chocolate, fita turquesa, verde-água,
+   pêssego e caramelo). O rosa saiu: não está no logo. As variáveis --rose-* agora são o
+   "atenção" em caramelo queimado (avisos, contadores, obrigatório), com fundo pêssego.
 ========================================================= */
 :root {
   --font-display: 'DM Serif Display', Georgia, 'Times New Roman', serif;
@@ -36,9 +37,9 @@
   --line: rgba(58, 31, 20, .11);
   --plate: #EADFD2;
 
-  --primary: #4A2A1C;
+  --primary: #58210F;
   --on-primary: #FBF4EC;
-  --banner-cocoa: #4A2A1C;
+  --banner-cocoa: #58210F;
 
   --mint-50: #E8F4EF;
   --mint-200: #BFE3D6;
@@ -46,10 +47,10 @@
   --teal: #2B7465;
   --on-teal: #FFFFFF;
 
-  --rose-50: #FDEEF1;
-  --rose-200: #F7C6D2;
-  --rose-400: #E890A8;
-  --rose-600: #B9476A;
+  --rose-50: #FCEBD6;
+  --rose-200: #F5D4AA;
+  --rose-400: #DDA972;
+  --rose-600: #9C4A20;
   --on-rose: #FFFFFF;
 
   --warm-50: #FFF1DE;
@@ -60,7 +61,7 @@
   --shadow-1: 0 1px 2px rgba(58, 31, 20, .05), 0 3px 10px rgba(58, 31, 20, .06);
   --shadow-2: 0 10px 30px rgba(58, 31, 20, .14);
   --stage: #CFE8DE;
-  --stage-dot-1: rgba(232, 144, 168, .35);
+  --stage-dot-1: rgba(245, 212, 170, .65);
   --stage-dot-2: rgba(255, 255, 255, .55);
 
   --sb: 0px;
@@ -74,11 +75,11 @@
     --line: rgba(247, 235, 221, .12); --plate: #3E2C22;
     --primary: #F2DCC4; --on-primary: #2A1B14; --banner-cocoa: #4A2A1C;
     --mint-50: #1D2E28; --mint-200: #2C4A41; --mint-400: #7DC4B0; --teal: #8FD3C0; --on-teal: #10241F;
-    --rose-50: #3A2129; --rose-200: #5C2F3E; --rose-400: #E890A8; --rose-600: #F2A3BA; --on-rose: #2A1B14;
+    --rose-50: #3A2416; --rose-200: #5C3A22; --rose-400: #DDA972; --rose-600: #F0A877; --on-rose: #2A1B14;
     --warm-50: #3A2A1A; --wa: #2FB765; --error: #FF8A80;
     --shadow-1: 0 1px 2px rgba(0,0,0,.3), 0 3px 10px rgba(0,0,0,.25);
     --shadow-2: 0 10px 30px rgba(0,0,0,.45);
-    --stage: #120B08; --stage-dot-1: rgba(232,144,168,.12); --stage-dot-2: rgba(125,196,176,.10);
+    --stage: #120B08; --stage-dot-1: rgba(245,212,170,.10); --stage-dot-2: rgba(125,196,176,.10);
     color-scheme: dark;
   }
 }
@@ -88,11 +89,11 @@
   --line: rgba(247, 235, 221, .12); --plate: #3E2C22;
   --primary: #F2DCC4; --on-primary: #2A1B14; --banner-cocoa: #4A2A1C;
   --mint-50: #1D2E28; --mint-200: #2C4A41; --mint-400: #7DC4B0; --teal: #8FD3C0; --on-teal: #10241F;
-  --rose-50: #3A2129; --rose-200: #5C2F3E; --rose-400: #E890A8; --rose-600: #F2A3BA; --on-rose: #2A1B14;
+  --rose-50: #3A2416; --rose-200: #5C3A22; --rose-400: #DDA972; --rose-600: #F0A877; --on-rose: #2A1B14;
   --warm-50: #3A2A1A; --wa: #2FB765; --error: #FF8A80;
   --shadow-1: 0 1px 2px rgba(0,0,0,.3), 0 3px 10px rgba(0,0,0,.25);
   --shadow-2: 0 10px 30px rgba(0,0,0,.45);
-  --stage: #120B08; --stage-dot-1: rgba(232,144,168,.12); --stage-dot-2: rgba(125,196,176,.10);
+  --stage: #120B08; --stage-dot-1: rgba(245,212,170,.10); --stage-dot-2: rgba(125,196,176,.10);
   color-scheme: dark;
 }
 
@@ -116,7 +117,7 @@ button { cursor: pointer; }
 img { max-width: 100%; display: block; }
 h1, h2, h3, p { margin: 0; }
 a { color: var(--teal); }
-:focus-visible { outline: 3px solid var(--rose-400); outline-offset: 2px; border-radius: 10px; }
+:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px; border-radius: 10px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .ic { width: 22px; height: 22px; flex: none; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .ic-fill { fill: currentColor; stroke: none; }
@@ -596,7 +597,7 @@ a { color: var(--teal); }
 .radio-card .w-price { font-size: 11.5px; font-weight: 700; color: var(--ink-2); }
 .radio-card input:checked + label { border-color: var(--teal); background: var(--mint-50); box-shadow: inset 0 0 0 1px var(--teal); }
 .radio-card input:checked + label .w-price { color: var(--teal); }
-.radio-card input:focus-visible + label { outline: 3px solid var(--rose-400); outline-offset: 2px; }
+.radio-card input:focus-visible + label { outline: 3px solid var(--teal); outline-offset: 2px; }
 .massas { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .massas label { flex-direction: row; justify-content: flex-start; gap: 10px; padding: 10px 12px; text-align: left; }
 .swatch { width: 30px; height: 30px; border-radius: 50%; flex: none; border: 1px solid var(--line); }
@@ -686,7 +687,7 @@ a { color: var(--teal); }
 .order-view-badge { background: #13803F; color: #fff; padding: 6px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 800; white-space: nowrap; }
 .order-view-bar-id { font-size: 14px; opacity: .85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .order-view-bar-actions { display: flex; gap: 8px; align-items: center; }
-.order-view-print-btn { background: #F7C6D2; color: #3A1F14; border: none; min-height: 44px; padding: 0 16px; border-radius: 999px; font-weight: 900; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.order-view-print-btn { background: #F5D4AA; color: #3A1F14; border: none; min-height: 44px; padding: 0 16px; border-radius: 999px; font-weight: 900; font-size: 14px; display: flex; align-items: center; gap: 6px; }
 .order-view-close-btn { background: rgba(255,255,255,.12); color: #FBF4EC; border: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; }
 @media (max-width: 420px) { .order-view-bar-id { display: none; } }
 .order-view-scroll { flex: 1; overflow-y: auto; padding: 24px 16px; }
@@ -712,7 +713,7 @@ a { color: var(--teal); }
 .receipt-totals { margin-top: 20px; padding-top: 14px; border-top: 2px solid #3A1F14; }
 .receipt-total-row { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 0; font-size: 15px; }
 .receipt-total-row.final { font-size: 22px; font-weight: 900; color: #2B7465; border-top: 1px solid #C8B89A; margin-top: 6px; padding-top: 10px; }
-.receipt-total-row.deposit { background: #FDEEF1; padding: 10px 14px; border-radius: 10px; margin-top: 8px; color: #8A2E4C; font-weight: 800; }
+.receipt-total-row.deposit { background: #FCEBD6; padding: 10px 14px; border-radius: 10px; margin-top: 8px; color: #9C4A20; font-weight: 800; }
 .receipt-warning { margin-top: 22px; padding: 14px 16px; border: 2px dashed #3A1F14; border-radius: 12px; background: #FFF6E6; }
 .receipt-warning strong { display: block; font-size: 14px; margin-bottom: 4px; }
 .receipt-warning p { font-size: 13.5px; line-height: 1.55; }

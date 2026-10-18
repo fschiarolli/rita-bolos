@@ -566,8 +566,9 @@ function telaShell() {
       <header class="topo">
         <a class="topo-marca" href="#${telaInicial()}"><img src="${esc(LOGO)}" alt="">Rita Bolos${DEMO ? '<small>demo</small>' : ''}</a>
         ${prod ? '' : `<form class="topo-busca" id="topoBusca" role="search">${ic('busca')}<label class="sr" for="topoBuscaIn">Buscar pedido</label>
-          <input id="topoBuscaIn" type="search" placeholder="Buscar pedido: nome, telefone ou código" autocomplete="off"><kbd aria-hidden="true">/</kbd></form>`}
+          <input id="topoBuscaIn" type="search" placeholder="Buscar pedido: nome, telefone ou código…" autocomplete="off" spellcheck="false" enterkeyhint="search"><kbd aria-hidden="true">/</kbd></form>`}
         <div class="topo-acts">
+          ${prod ? '' : `<button type="button" class="topo-bt so-cel" data-act="buscar" aria-label="Buscar pedido" title="Buscar pedido">${ic('busca')}</button>`}
           ${prod ? '' : `<button type="button" class="topo-bt nb-ind" data-act="niimbot" hidden>${ic('imprimir')}<span class="nb-ponto" aria-hidden="true"></span></button>`}
           ${prod ? '' : `<button type="button" class="topo-bt" data-act="avisos" aria-haspopup="dialog" aria-expanded="false" aria-label="Avisos" title="Avisos" hidden>${ic('sino')}<span class="topo-badge" data-badge-avisos hidden></span></button>`}
           <button type="button" class="topo-bt" data-act="instalar" aria-label="Instalar o app neste aparelho" title="Instalar o app" hidden>${ic('baixar')}</button>
@@ -580,7 +581,7 @@ function telaShell() {
       <footer class="rodape"><span>© ${new Date().getFullYear()} Rita Bolos · Backoffice${DEMO ? ' (demonstração)' : ''}</span>
         ${prod ? '' : `<span><a href="${esc(urlSite())}" target="_blank" rel="noopener">Site</a><a href="${esc(urlQuadro())}" target="_blank" rel="noopener">Quadro da equipe</a></span>`}</footer>
     </div>
-    ${itens.length > 1 ? `<nav class="nav-mob" aria-label="Menu principal">${itens.map(n => link(n, '')).join('')}</nav>` : ''}
+    ${barraCelular(itens, link)}
   </div>
   <div class="veu" id="veu"></div>
   <aside class="gaveta" id="gaveta" role="dialog" aria-modal="true" aria-labelledby="gavTitulo" inert></aside>`;
@@ -592,8 +593,105 @@ function telaShell() {
     const termo = $('#topoBuscaIn').value.trim(); if (!termo) return;
     Object.assign(filtro, { ...FILTRO_PADRAO, busca: termo, status: 'todos', periodo: 'todas' });
     $('#topoBuscaIn').value = ''; $('#topoBuscaIn').blur();
-    if (telaAtual === 'pedidos' && rotaAtual === 'pedidos') telaPedidos($('#conteudo')); else location.hash = '#pedidos';
+    if (telaAtual === 'pedidos') telaPedidos($('#conteudo')); else location.hash = '#pedidos';
   });
+  ligarBuscaTopo();
+  ligarBadgeMais();
+}
+/** Celular: a barra de baixo tem 5 lugares (Painel, Pedidos, Novo pedido no meio, Hoje e Mais); o resto fica no "Mais". */
+const NAV_MOB = ['painel', 'pedidos', 'hoje'];
+function barraCelular(itens, link) {
+  if (itens.length <= 1) return '';
+  const fixos = NAV_MOB.map(id => itens.find(n => n.id === id)).filter(Boolean);
+  if (fixos.length < 2) return `<nav class="nav-mob" aria-label="Menu principal">${itens.map(n => link(n, '')).join('')}</nav>`;
+  const [a, b, c] = fixos;
+  return `<nav class="nav-mob" aria-label="Menu principal">${link(a, '')}${link(b, '')}
+    <button type="button" class="nav-novo" data-act="novo-pedido" title="Novo pedido (N)"><span class="nn-c">${ic('mais')}</span><span>Novo</span></button>
+    ${c ? link(c, '') : ''}
+    <button type="button" class="nav-mais" data-act="mais" aria-haspopup="dialog">${ic('menu')}<span>Mais</span><span class="nav-ponto" data-badge-mais hidden></span></button></nav>`;
+}
+/** "Mais" (celular): as outras telas, os atalhos e a conta, numa folha que sobe de baixo. */
+function abrirMais() {
+  const outros = NAV.filter(podeVerNav).filter(n => !NAV_MOB.includes(n.id));
+  const badge = sel => { const b = $(`.side ${sel}`); return b && !b.hidden && b.textContent.trim() ? `<span class="nav-badge">${esc(b.textContent.trim())}</span>` : ''; };
+  const item = n => `<a class="mais-it" href="#${n.id}" ${telaAtual === n.id ? 'aria-current="page"' : ''}>${ic(n.ic)}<span>${esc(n.rot)}</span>${n.topos ? badge('[data-badge-topos]') : ''}${n.id === 'estoque' ? badge('[data-badge-estoque]') : ''}</a>`;
+  const m = abrirModal({
+    titulo: 'Mais',
+    corpo: `<nav class="mais-grade" aria-label="Outras telas">${outros.map(item).join('')}</nav>
+      <p class="mais-sec">Atalhos</p>
+      <div class="mais-grade">
+        <a class="mais-it" href="${esc(urlQuadro())}" target="_blank" rel="noopener">${ic('tv')}<span>Quadro da equipe</span></a>
+        <a class="mais-it" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}<span>Ver o site</span></a>
+        <a class="mais-it" href="${esc(urlPote())}" target="_blank" rel="noopener">${ic('pote')}<span>Bolo no pote</span></a>
+        <button type="button" class="mais-it" data-act="conta">${ic('user')}<span>Minha conta</span></button>
+      </div>`
+  });
+  m.$$('.mais-it').forEach(a => a.addEventListener('click', () => m.fechar()));
+}
+/** O "Mais" do celular ganha um ponto quando alguma tela de dentro dele tem aviso (topos, estoque). */
+function ligarBadgeMais() {
+  const nav = $('.side-nav'), ponto = $('[data-badge-mais]'); if (!nav || !ponto) return;
+  const conta = () => { ponto.hidden = !$$('.side-nav [data-badge-topos], .side-nav [data-badge-estoque]').some(b => !b.hidden && b.textContent.trim()); };
+  new MutationObserver(conta).observe(nav, { subtree: true, attributes: true, attributeFilter: ['hidden'], childList: true, characterData: true });
+  conta();
+}
+/** Busca da barra de cima: os pedidos aparecem enquanto você digita; Enter abre o primeiro, ↑ ↓ escolhem. */
+function ligarBuscaTopo() {
+  const form = $('#topoBusca'), inp = $('#topoBuscaIn'); if (!form || !inp) return;
+  const lista = document.createElement('div');
+  lista.className = 'busca-res'; lista.id = 'buscaRes'; lista.setAttribute('role', 'listbox'); lista.setAttribute('aria-label', 'Pedidos encontrados'); lista.hidden = true;
+  const aviso = document.createElement('span');   // leitor de tela: quantos pedidos a busca achou
+  aviso.className = 'sr'; aviso.setAttribute('aria-live', 'polite');
+  form.append(lista, aviso);
+  inp.setAttribute('role', 'combobox'); inp.setAttribute('aria-controls', 'buscaRes'); inp.setAttribute('aria-expanded', 'false'); inp.setAttribute('aria-autocomplete', 'list');
+  let espera, vez = 0, ativo = -1, res = [];
+  const topo = () => $('.topo');
+  const fechar = () => { lista.hidden = true; inp.setAttribute('aria-expanded', 'false'); inp.removeAttribute('aria-activedescendant'); ativo = -1; };
+  const marcar = i => {
+    ativo = i;
+    lista.querySelectorAll('[role="option"]').forEach((o, k) => o.setAttribute('aria-selected', String(k === i)));
+    const o = lista.querySelector(`#br-${i}`); if (o) { inp.setAttribute('aria-activedescendant', o.id); o.scrollIntoView({ block: 'nearest' }); }
+  };
+  const desenhar = termo => {
+    lista.innerHTML = (res.length ? res.map((p, i) => `<div class="br-it" role="option" id="br-${i}" data-i="${i}" aria-selected="false">
+        <span class="br-q">${esc(dataCurta(p.data_retirada))}<small>${p.hora_retirada ? esc(hora(p.hora_retirada)) : 'sem horário'}</small></span>
+        <span class="br-m"><b>${esc(p.cliente_nome)}</b><small>${esc(p.codigo)}${p.resumo_itens ? ' · ' + esc(p.resumo_itens) : ''}</small></span>
+        ${pill(nomeStatus(p, { nome: p.status_nome, codigo: p.status }), p.status_cor)}</div>`).join('')
+      : `<p class="br-vazio">Nenhum pedido com “${esc(termo)}”. Confira o nome ou tente o telefone.</p>`)
+      + `<div class="br-it br-todos" role="option" id="br-${res.length}" data-todos aria-selected="false">${ic('busca')}<span>Ver todos os resultados na lista de pedidos</span></div>`;
+    lista.hidden = false; inp.setAttribute('aria-expanded', 'true');
+    aviso.textContent = res.length ? `${res.length} ${res.length === 1 ? 'pedido encontrado' : 'pedidos encontrados'}` : 'Nenhum pedido encontrado';
+    marcar(res.length ? 0 : res.length);
+  };
+  const escolher = i => { const p = res[i]; fechar(); inp.value = ''; inp.blur(); topo()?.classList.remove('buscando'); verPedido(p.id); };
+  inp.addEventListener('input', () => {
+    clearTimeout(espera);
+    const termo = inp.value.trim();
+    if (termo.length < 2) { fechar(); return; }
+    espera = setTimeout(async () => {
+      const n = ++vez;
+      try {
+        const r = await api.admin.pedidos.listar({ busca: termo, porPagina: 6, ordenarPor: 'data_retirada', crescente: false });
+        if (n !== vez || inp.value.trim() !== termo) return;
+        res = r.pedidos; desenhar(termo);
+      } catch (e) { /* o Enter continua levando para a lista de pedidos */ }
+    }, 220);
+  });
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.stopPropagation(); if (!lista.hidden) fechar(); else { inp.blur(); topo()?.classList.remove('buscando'); } return; }
+    if (lista.hidden) return;
+    const total = lista.querySelectorAll('[role="option"]').length;
+    if (e.key === 'ArrowDown') { e.preventDefault(); marcar((ativo + 1) % total); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); marcar((ativo - 1 + total) % total); }
+    else if (e.key === 'Enter' && ativo >= 0 && ativo < res.length) { e.preventDefault(); escolher(ativo); }
+  });
+  lista.addEventListener('mousedown', e => e.preventDefault());   // clicar num resultado não tira o foco do campo
+  lista.addEventListener('click', e => {
+    const o = e.target.closest('[role="option"]'); if (!o) return;
+    if (o.hasAttribute('data-todos')) { fechar(); form.requestSubmit(); } else escolher(Number(o.dataset.i));
+  });
+  inp.addEventListener('blur', () => setTimeout(() => { fechar(); if (!inp.value.trim()) topo()?.classList.remove('buscando'); }, 150));
+  window.addEventListener('hashchange', fechar);   // abriu um pedido ou trocou de tela: os resultados somem
 }
 
 /* ---- Temas: Automático (segue o aparelho), Claro e Escuro ----
@@ -601,8 +699,8 @@ function telaShell() {
    Quem tinha escolhido um tema que saiu volta para o Automático. */
 const TEMAS = [
   { id: 'auto', nome: 'Automático', desc: 'Claro ou escuro, como o aparelho', attr: null },
-  { id: 'claro', nome: 'Claro', desc: 'Creme e chocolate', attr: 'light', meta: '#F8F2EA', icone: 'sol', amostra: ['#F8F2EA', '#FFFFFF', '#4A2A1C', '#2B7465'] },
-  { id: 'escuro', nome: 'Escuro', desc: 'Para pouca luz', attr: 'dark', meta: '#120B08', icone: 'lua', amostra: ['#120B08', '#1C130F', '#F2DCC6', '#8FD3BF'] }
+  { id: 'claro', nome: 'Claro', desc: 'Creme e chocolate', attr: 'light', meta: '#FBF4EC', icone: 'sol', amostra: ['#FBF4EC', '#FFFFFF', '#58210F', '#51AB9D'] },
+  { id: 'escuro', nome: 'Escuro', desc: 'Para pouca luz', attr: 'dark', meta: '#1A0D07', icone: 'lua', amostra: ['#1A0D07', '#24130B', '#F5D4AA', '#51AB9D'] }
 ];
 const temaDe = id => TEMAS.find(t => t.id === id) || TEMAS[0];
 const temaEscolhido = () => { try { const t = localStorage.getItem('ritabolos.tema'); return TEMAS.some(x => x.id === t) ? t : 'auto'; } catch (e) { return 'auto'; } };
@@ -669,12 +767,14 @@ document.addEventListener('keydown', e => {
   }
 }, true);
 addEventListener('resize', posicionarMenuTema);
-/* "/" leva para a busca da barra superior */
+/* Atalhos de teclado: "/" leva para a busca da barra superior; "N" abre um novo pedido */
 document.addEventListener('keydown', e => {
-  if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.target.closest('input, textarea, select, [contenteditable]') || pilhaModais.length) return;
-  const b = $('#topoBuscaIn'); if (!b || !b.offsetParent) return;
-  e.preventDefault(); b.focus();
+  if (e.ctrlKey || e.metaKey || e.altKey || !perfil) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable]') || pilhaModais.length) return;
+  if (e.key === '/') {
+    const b = $('#topoBuscaIn'); if (!b || !b.offsetParent) return;
+    e.preventDefault(); b.focus();
+  } else if ((e.key === 'n' || e.key === 'N') && !ehProdutor() && !$('#gaveta')?.classList.contains('on')) { e.preventDefault(); modalNovoPedido(); }
 });
 
 /* =========================================================
@@ -1027,15 +1127,26 @@ function modalConta() {
    Um pedido aberto fica no fim do endereço: #pedidos@<id>
 ========================================================= */
 let gavetaPorClique = false;
+let ajAlterado = false;   // Ajustes > Loja com mudanças que ainda não foram salvas
+window.addEventListener('beforeunload', e => { if (ajAlterado) { e.preventDefault(); e.returnValue = ''; } });
 function rotear(forcar = false) {
   if (!perfil) return;
   const [rota, pedidoId] = decodeURIComponent(location.hash.slice(1) || telaInicial()).split('@');
   let [tela, sub] = rota.split('/');
   if (!NAV.some(n => n.id === tela && podeVerNav(n))) tela = telaInicial();
+  if (ajAlterado && rota !== rotaAtual && !forcar) {
+    // saindo de Ajustes > Loja com mudanças não salvas: pergunta antes (a tela continua como estava)
+    const destino = location.hash;
+    history.replaceState(null, '', '#' + rotaAtual);
+    confirmar('Sair sem salvar?', 'Você mudou os ajustes da loja e ainda não salvou. Se sair agora, essas mudanças se perdem.', { botao: 'Sair sem salvar', perigo: true })
+      .then(ok => { if (ok) { ajAlterado = false; location.hash = destino; } });
+    return;
+  }
   if (forcar || rota !== rotaAtual) {
     fecharCalendario();
     rotaAtual = rota; telaAtual = tela;
     $$('[data-nav]').forEach(a => { if (a.dataset.nav === tela) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+    $('.nav-mais')?.classList.toggle('atual', !NAV_MOB.includes(tela));
     const el = $('#conteudo');
     document.title = `${NAV.find(n => n.id === tela)?.rot || 'Painel'} — Backoffice Rita Bolos`;
     if (tela !== 'topos') sairTvTopos();
@@ -1092,6 +1203,8 @@ document.addEventListener('click', e => {
   switch (a.dataset.act) {
     case 'conta': modalConta(); break;
     case 'novo-pedido': modalNovoPedido(); break;
+    case 'mais': abrirMais(); break;
+    case 'buscar': $('.topo')?.classList.add('buscando'); setTimeout(() => $('#topoBuscaIn')?.focus(), 30); break;
     case 'tema': abrirMenuTema(a); break;
     case 'instalar': instalarApp(); break;
     case 'avisos': abrirAvisos(a); break;
@@ -1169,12 +1282,16 @@ function linhaPedido(p) {
     else if (p.sinal_pago && Number(p.valor_pago) > 0) pg = `<span class="tag sinal">Sinal pago</span>`;
     else pg = `<span class="tag pend">Sinal pendente</span>`;
   }
-  return `<button type="button" class="ped" data-ped="${esc(p.id)}" aria-label="Pedido ${esc(p.codigo)} de ${esc(p.cliente_nome)}, ${ehEntrega(p) ? 'entrega' : 'retirada'} ${esc(dataCurta(p.data_retirada))}">
+  const a = proximaAcao(p);
+  // a linha inteira abre o pedido (o botão cobre a linha); o próximo passo é um botão próprio, por cima dela
+  return `<div class="ped">
+    <button type="button" class="ped-abrir" data-ped="${esc(p.id)}" aria-label="Abrir o pedido ${esc(p.codigo)} de ${esc(p.cliente_nome)}, ${ehEntrega(p) ? 'entrega' : 'retirada'} ${esc(dataCurta(p.data_retirada))}"></button>
     <span class="quando ${quandoCls}">${esc(dataCurta(p.data_retirada))}${atraso ? ' (atrasado)' : ''}<small>${p.hora_retirada ? esc(hora(p.hora_retirada)) : 'sem horário'}</small></span>
     <span class="meio"><span class="nome">${esc(p.cliente_nome)} <span class="cod">${esc(p.codigo)}${p.qtd_observacoes ? ` · ${p.qtd_observacoes} obs.` : ''}</span>${ehEntrega(p) ? `<span class="ent-tag">${ic('entrega')}Entrega</span>` : ''}</span>
       <span class="itens">${esc(p.resumo_itens || '')}</span></span>
     <span class="dir">${pill(nomeStatus(p, { nome: p.status_nome, codigo: p.status }), p.status_cor)}<span class="total">${R(p.total)}</span>${pg}</span>
-  </button>`;
+    ${a ? `<button type="button" class="ped-acao ${a.cls || ''}" data-proxima="${esc(p.id)}">${ic(a.icone)}${esc(a.rot)}<span class="sr"> (${esc(p.cliente_nome)}, ${esc(p.codigo)})</span></button>` : ''}
+  </div>`;
 }
 
 /* Ícone de cada etapa na faixa de indicadores (status criados no cadastro usam o relógio) */
@@ -1209,11 +1326,11 @@ async function telaPainel(el, _sub, silencioso = false) {
       <div class="hero-grid">
         <section class="card hero">
           <div style="position:relative;z-index:1">
-            <p class="eyebrow">Resumo do dia</p>
+
             <h2 class="hero-t">Olá, ${esc(nome)}!</h2>
             <p class="hero-txt">${resumo}${sinal}</p>
-            <div class="hero-acts"><button type="button" class="btn primary" data-act="novo-pedido">${ic('mais')}Novo pedido</button>
-              <a class="btn ghost" href="#pedidos" data-filtro="recebido">${ic('pedidos')}Pedidos para confirmar</a></div>
+            <div class="hero-acts"><a class="btn ghost" href="#pedidos" data-filtro="recebido">${ic('pedidos')}Pedidos para confirmar</a>
+              <a class="btn ghost" href="#pedidos/quadro">${ic('painel')}Quadro de produção</a></div>
           </div>
           <div class="hero-stats">
             <a href="#hoje"><span>Retiradas hoje</span><strong>${r.retiradas_hoje}</strong></a>
@@ -1232,12 +1349,12 @@ async function telaPainel(el, _sub, silencioso = false) {
       </div>
       <div class="card kpi-strip">
         ${abertos.filter(s => s.status !== 'em_rota' || s.quantidade).map(s => kpi('#pedidos', 'st:' + s.status, s.cor || '#2B7465', ICONE_STATUS[s.status] || 'relogio', s.nome, s.quantidade)).join('')}
-        ${kpi('#pedidos', 'sinal', '#B9476A', 'moeda', 'Aguardando sinal', r.sinais_pendentes)}
+        ${kpi('#pedidos', 'sinal', '#9C4A20', 'moeda', 'Aguardando sinal', r.sinais_pendentes)}
       </div>
       <div class="cols">
-        <section class="card"><div class="card-h"><div><p class="eyebrow">Balcão</p><h2>Retiradas de hoje</h2></div><a class="btn sm ghost" href="#hoje">Abrir a tela Hoje</a></div>
+        <section class="card"><div class="card-h"><div><h2>Retiradas de hoje</h2></div><a class="btn sm ghost" href="#hoje">Abrir a tela Hoje</a></div>
           ${hoje.pedidos.length ? `<div class="lista-ped">${hoje.pedidos.map(linhaPedido).join('')}</div>` : '<p class="vazio" style="padding:18px">Nenhuma retirada marcada para hoje.</p>'}</section>
-        <section class="card"><div class="card-h"><div><p class="eyebrow">Atendimento</p><h2>Para confirmar</h2></div><a class="btn sm ghost" href="#pedidos" data-filtro="recebido">Ver todos</a></div>
+        <section class="card"><div class="card-h"><div><h2>Para confirmar</h2></div><a class="btn sm ghost" href="#pedidos" data-filtro="recebido">Ver todos</a></div>
           ${novos.pedidos.length ? `<div class="lista-ped">${novos.pedidos.map(linhaPedido).join('')}</div>` : '<p class="vazio" style="padding:18px">Nenhum pedido esperando confirmação.</p>'}</section>
       </div>`;
   } catch (e) {
@@ -1408,11 +1525,11 @@ async function telaRelatorio(el, sub) {
         </section>
       </div>
       <div class="card kpi-strip">
-        ${tile('#2B7465', 'pedidos', 'Pedidos', s.pedidos, variacao(s.pedidos, a.pedidos))}
+        ${tile('#1F6E63', 'pedidos', 'Pedidos', s.pedidos, variacao(s.pedidos, a.pedidos))}
         ${tile('#7DC4B0', 'ok', 'Retirados ou entregues', s.concluidos, variacao(s.concluidos, a.concluidos))}
         ${tile('#C9A15A', 'moeda', 'Ticket médio', R(s.ticket), variacao(s.ticket, a.ticket, { dinheiro: true }))}
-        ${tile('#B9476A', 'x', 'Cancelados', s.cancelados, variacao(s.cancelados, a.cancelados, { menorMelhor: true }))}
-        ${prejS ? `<a class="kpi" href="#prejuizos/${ini.slice(0, 7)}" style="${corVars('#A8405F')}"><span class="kpi-ic">${ic('alerta')}</span><span class="kpi-t"><span>Prejuízos</span><strong>${R(totalPrej(prejS))}</strong>${variacao(totalPrej(prejS), totalPrej(prejA || []), { dinheiro: true, menorMelhor: true, zero: 'nenhum prejuízo' })}</span></a>` : ''}
+        ${tile('#7A5A47', 'x', 'Cancelados', s.cancelados, variacao(s.cancelados, a.cancelados, { menorMelhor: true }))}
+        ${prejS ? `<a class="kpi" href="#prejuizos/${ini.slice(0, 7)}" style="${corVars('#B3261E')}"><span class="kpi-ic">${ic('alerta')}</span><span class="kpi-t"><span>Prejuízos</span><strong>${R(totalPrej(prejS))}</strong>${variacao(totalPrej(prejS), totalPrej(prejA || []), { dinheiro: true, menorMelhor: true, zero: 'nenhum prejuízo' })}</span></a>` : ''}
         ${excS?.length ? `<a class="kpi" href="#prejuizos/peso/${ini.slice(0, 7)}" style="${corVars('#C9A15A')}"><span class="kpi-ic">${ic('bolo')}</span><span class="kpi-t"><span>Excesso de peso</span><strong>${R(totalExc(excS))}</strong>${variacao(totalExc(excS), totalExc(excA || []), { dinheiro: true, menorMelhor: true, zero: 'nenhum excesso' })}</span></a>` : ''}
       </div>
       <section class="card" style="margin-bottom:18px">
@@ -2022,7 +2139,7 @@ async function telaPrejuizos(el) {
     const rs = v => R(v).replace(/ /g, ' ');
     el.innerHTML = cab + (lista.length || antes.length ? `
       <div class="card kpi-strip">
-        ${tile('#B9476A', 'alerta', 'Prejuízo no mês', R(total), variacao(total, totalPrej(antes), { dinheiro: true, menorMelhor: true, periodo: 'mês anterior', zero: 'nenhum prejuízo' }))}
+        ${tile('#B3261E', 'alerta', 'Prejuízo no mês', R(total), variacao(total, totalPrej(antes), { dinheiro: true, menorMelhor: true, periodo: 'mês anterior', zero: 'nenhum prejuízo' }))}
         ${tile('#C9A15A', 'pedidos', 'Pedidos afetados', pedidos)}
         ${tile('#6E4B3A', 'bolo', 'Unidades refeitas', unidades)}
         ${tile('#2B7465', 'moeda', 'Lançamentos', lista.length, variacao(lista.length, antes.length, { menorMelhor: true, periodo: 'mês anterior' }))}
@@ -2082,7 +2199,7 @@ async function telaExcessoPeso(el, nav, ym, rot) {
     const rs = v => R(v).replace(/\u00a0/g, ' ');
     el.innerHTML = cab + (lista.length || antes.length ? `
       <div class="card kpi-strip">
-        ${tile('#B9476A', 'alerta', 'Excesso no mês', R(total), variacao(total, totalExc(antes), { dinheiro: true, menorMelhor: true, periodo: 'mês anterior', zero: 'nenhum excesso' }))}
+        ${tile('#B3261E', 'alerta', 'Excesso no mês', R(total), variacao(total, totalExc(antes), { dinheiro: true, menorMelhor: true, periodo: 'mês anterior', zero: 'nenhum excesso' }))}
         ${tile('#C9A15A', 'bolo', 'Bolos acima do limite', lista.length, variacao(lista.length, antes.length, { menorMelhor: true, periodo: 'mês anterior' }))}
         ${tile('#6E4B3A', 'estoque', 'Peso a mais', lista.length ? pesoCurto(kg) : '0 g')}
         ${tile('#2B7465', 'moeda', 'Média por bolo', lista.length ? pesoCurto(media) : '—')}
@@ -2370,7 +2487,7 @@ function detalheHoje(id) {
   return `${ehEntrega(p) ? caixaEntregaHoje(p) : ''}<div class="hj-cols">
       <section class="hj-box"><h3>O que tem no pedido</h3>${itens}
         ${p.observacao_cliente ? `<p class="hj-nota"><b>Observação do cliente:</b> ${esc(p.observacao_cliente)}</p>` : ''}
-        ${fixadas.map(o => `<p class="hj-nota fix">📌 ${esc(o.texto)}</p>`).join('')}</section>
+        ${fixadas.map(o => `<p class="hj-nota fix">${ic('pin', 'ic ic-pin')}${esc(o.texto)}</p>`).join('')}</section>
       <section class="hj-box hj-pagto"><h3>Pagamento</h3>
         <div class="lin"><span>Total do pedido</span><b>${R(p.total)}</b></div>
         <div class="lin"><span>Já pago</span><b>${R(p.valor_pago)} <span class="tag ${pg.cls}">${pg.pct}%</span></b></div>
@@ -2732,9 +2849,12 @@ function telaPedidos(el) {
   const status = opcoesStatus(), corDe = v => status.find(([c]) => c === v)?.[2] || '';
   const sel = (id, rot, ops, val) => campo(id, rot, `<select class="sel" id="${id}">${ops.map(([v, t]) => `<option value="${esc(v)}" ${String(v) === String(val) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`);
   const extras = filtrosExtrasAtivos();
-  el.innerHTML = cabecalho('Pedidos', `<button type="button" class="btn ghost" data-lote-pedidos title="Imprimir os pedidos desta lista: cupom de 80 mm ou etiquetas">${ic('imprimir')}Imprimir</button><button type="button" class="btn primary" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`,
-      'Pedidos do site, do WhatsApp e do balcão. Toque em um pedido para ver tudo.') + `
-    <div class="filtros">
+  const quadro = vistaQuadro();
+  const vista = (ativa, href, icone, rot) => `<a class="btn sm ${ativa ? 'primary' : 'ghost'}" href="${href}" ${ativa ? 'aria-current="page"' : ''}>${ic(icone)}${rot}</a>`;
+  el.innerHTML = cabecalho('Pedidos', `<div class="vista-sel" role="group" aria-label="Ver os pedidos como">${vista(!quadro, '#pedidos', 'pedidos', 'Lista')}${vista(quadro, '#pedidos/quadro', 'painel', 'Quadro')}</div>
+      <button type="button" class="btn ghost" data-lote-pedidos title="Imprimir os pedidos desta lista: cupom de 80 mm ou etiquetas">${ic('imprimir')}Imprimir</button><button type="button" class="btn primary" data-act="novo-pedido" title="Novo pedido (N)">${ic('mais')}Novo pedido</button>`,
+      quadro ? 'Os pedidos em aberto por etapa. O botão de cada cartão leva o pedido para a etapa seguinte.' : 'Pedidos do site, do WhatsApp e do balcão. Toque em um pedido para ver tudo.') + `
+    <div class="filtros ${quadro ? 'quadro' : ''}">
       <div class="f-topo">
         <div class="busca">${ic('busca')}<label class="sr" for="fBusca">Buscar pedido</label>
           <input class="in" id="fBusca" type="search" placeholder="Nome, telefone, código ou item (ex.: kit)" value="${esc(filtro.busca)}" autocomplete="off"></div>
@@ -2751,11 +2871,13 @@ function telaPedidos(el) {
       <div class="dias-ret" id="fDias" role="group" aria-label="Dia da retirada"></div>
       ${filtro.extra ? `<div class="linha"><button type="button" class="chip" data-limpar-extra aria-pressed="true">${esc(EXTRAS[filtro.extra])} ${ic('x')}</button></div>` : ''}
     </div>
-    <section class="card tabela" aria-label="Lista de pedidos">
-      <div class="tab-cab" aria-hidden="true"><span>Retirada</span><span>Cliente e itens</span><span>Status e total</span></div>
+    ${quadro ? `<div class="quadro-ped" id="listaPed" aria-label="Pedidos em aberto por etapa">${'<div class="skel" style="height:320px"></div>'.repeat(4)}</div>
+      <div class="tab-pe quadro"><span id="pedResumo"></span><div class="mais" id="maisPed"></div></div>`
+    : `<section class="card tabela" aria-label="Lista de pedidos">
+      <div class="tab-cab" aria-hidden="true"><span>Retirada</span><span>Cliente e itens</span><span>Status e total</span><span class="tc-acao">Próximo passo</span></div>
       <div class="lista-ped" id="listaPed">${'<div class="skel"></div>'.repeat(4)}</div>
       <div class="tab-pe"><span id="pedResumo"></span><div class="mais" id="maisPed"></div></div>
-    </section>`;
+    </section>`}`;
   let t;
   $('#fBusca').addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => { filtro.busca = e.target.value; carregarPedidos(); }, 300); });
   $('#fPeriodo').addEventListener('change', e => {
@@ -2896,10 +3018,19 @@ async function carregarPedidos(mais = false, silencioso = false) {
   try {
     const f = { ...consultaPedidos(), pagina: mais ? paginaPedidos + 1 : 1, comEntrega: true };
     if (silencioso && !mais) f.porPagina = Math.max(30, listaPedidos.length);
+    const quadro = vistaQuadro();
+    if (quadro) { delete f.status; f.apenasAbertos = true; f.porPagina = Math.max(f.porPagina, 200); }   // as colunas já são os status
     const r = await api.admin.pedidos.listar(f);
     if (pedido !== carregarPedidos.n || !$('#listaPed')) return;
     if (mais) { paginaPedidos++; listaPedidos = listaPedidos.concat(r.pedidos); } else listaPedidos = r.pedidos;
     totalPedidos = r.total;
+    if (quadro) {
+      lista.innerHTML = colunasQuadro(listaPedidos);
+      $('#pedResumo').innerHTML = `<b>${totalPedidos} ${totalPedidos === 1 ? 'pedido em aberto' : 'pedidos em aberto'}</b> ${esc(descricaoFiltro())}${listaPedidos.length < totalPedidos ? ` · mostrando ${listaPedidos.length}` : ''}`;
+      $('#maisPed').innerHTML = listaPedidos.length < totalPedidos ? `<button type="button" class="btn ghost" id="btnMais">Carregar mais (${totalPedidos - listaPedidos.length})</button>` : '';
+      $('#btnMais')?.addEventListener('click', e => ocupado(e.currentTarget, () => carregarPedidos(true)));
+      return;
+    }
     lista.innerHTML = listaPedidos.length ? listaPedidos.map(linhaPedido).join('')
       : `<div class="vazio"><h2>Nenhum pedido ${esc(descricaoFiltro())}</h2><p>${filtro.busca ? 'Nada encontrado para essa busca.' : 'Tente outro dia, período ou status.'}</p>
           ${filtroMudou() ? '<button type="button" class="btn ghost" data-limpar-filtros style="margin-top:12px">Limpar filtros</button>' : ''}</div>`;
@@ -2912,6 +3043,32 @@ async function carregarPedidos(mais = false, silencioso = false) {
   }
 }
 carregarPedidos.n = 0;
+/* ---- Pedidos em quadro: uma coluna por etapa (em aberto), com o próximo passo em cada cartão ---- */
+const vistaQuadro = () => rotaAtual === 'pedidos/quadro';
+function colunasQuadro(lista) {
+  const cols = STATUS.filter(s => s.ativo && !s.finalizado && s.codigo !== 'cancelado').sort((a, b) => a.ordem - b.ordem);
+  const porSt = new Map(cols.map(s => [s.codigo, []]));
+  lista.forEach(p => porSt.get(p.status)?.push(p));
+  return cols.filter(s => s.codigo !== 'em_rota' || porSt.get(s.codigo).length).map(s => {
+    const ps = porSt.get(s.codigo);
+    return `<section class="qp-col" style="${corVars(s.cor)}" aria-label="${esc(s.nome)}: ${ps.length} ${ps.length === 1 ? 'pedido' : 'pedidos'}">
+      <header class="qp-h"><span class="dot" aria-hidden="true"></span><h2>${esc(s.nome)}</h2><span class="qp-n">${ps.length}</span></header>
+      <div class="qp-lista">${ps.length ? ps.map(cartaoQuadro).join('') : '<p class="qp-vazio">Nada nesta etapa.</p>'}</div>
+    </section>`;
+  }).join('');
+}
+function cartaoQuadro(p) {
+  const hoje = hojeISO(), atraso = !p.finalizado && p.data_retirada < hoje;
+  const pg = situacaoPagamento(p), a = proximaAcao(p);
+  return `<article class="qp-card ${atraso ? 'atraso' : p.data_retirada === hoje ? 'hoje' : ''}">
+    <button type="button" class="ped-abrir" data-ped="${esc(p.id)}" aria-label="Abrir o pedido ${esc(p.codigo)} de ${esc(p.cliente_nome)}"></button>
+    <span class="qp-quando">${esc(dataCurta(p.data_retirada))}${p.hora_retirada ? ' · ' + esc(hora(p.hora_retirada)) : ''}${atraso ? ' · atrasado' : ''}${ehEntrega(p) ? ` <span class="ent-tag">${ic('entrega')}Entrega</span>` : ''}</span>
+    <strong class="qp-nome">${esc(p.cliente_nome)} <small>${esc(p.codigo)}</small></strong>
+    <span class="qp-itens">${esc(p.resumo_itens || '')}</span>
+    <span class="qp-pe"><b>${R(p.total)}</b>${pg.falta ? `<span class="tag pend">Falta ${R(pg.falta)}</span>` : `<span class="tag pago">${ic('ok')}Pago</span>`}</span>
+    ${a ? `<button type="button" class="ped-acao ${a.cls || ''}" data-proxima="${esc(p.id)}">${ic(a.icone)}${esc(a.rot)}<span class="sr"> (${esc(p.cliente_nome)})</span></button>` : ''}
+  </article>`;
+}
 
 /* =========================================================
    PEDIDO (gaveta lateral)
@@ -2945,6 +3102,71 @@ function proximoStatus(p) {
   const atual = statusDe(p.status);
   if (atual.finalizado) return null;
   return statusDoPedido(p).find(s => s.ordem > (atual.ordem ?? 0) && s.codigo !== 'cancelado') || null;
+}
+/** Rótulo do botão do próximo passo, pelo status de destino. */
+const ROTULO_PASSO = { confirmado: 'Confirmar', em_producao: 'Iniciar produção', pronto: 'Marcar pronto' };
+/**
+ * O próximo passo do pedido, para o botão da linha, do quadro e da gaveta: { tipo, codigo, rot, icone, cls } ou null.
+ * Sem sinal ainda: registrar o sinal (o modal já confirma o pedido). Depois, avança o status;
+ * pronto com entrega: sair para entrega; o último passo (retirado ou entregue) recebe o que falta.
+ */
+function proximaAcao(p) {
+  if (!p || p.status === 'cancelado' || statusDe(p.status).finalizado) return null;
+  const sinalOk = p.sinal_pago ?? (Number(p.valor_sinal) > 0 && Number(p.valor_pago) >= Number(p.valor_sinal));
+  if (!confirmadoEmDiante(p) && !sinalOk && Number(p.total) > 0) return { tipo: 'pagar', rot: 'Registrar sinal', icone: 'moeda' };
+  const prox = proximoStatus(p); if (!prox) return null;
+  if (prox.codigo === 'em_rota' && ehEntrega(p)) return { tipo: 'status', codigo: 'em_rota', rot: 'Sair para entrega', icone: 'entrega', cls: 'ent' };
+  if (prox.codigo === statusFinal(p)?.codigo) return { tipo: 'status', codigo: prox.codigo, rot: `Marcar ${nomeStatus(p, prox).toLowerCase()}`, icone: 'ok' };
+  return { tipo: 'status', codigo: prox.codigo, rot: ROTULO_PASSO[prox.codigo] || `Mover para ${nomeStatus(p, prox).toLowerCase()}`, icone: ICONE_STATUS[prox.codigo] || 'seta' };
+}
+const gavetaMostra = id => !!$('#gaveta')?.classList.contains('on') && gavetaAbertaId === id;
+/** Executa o próximo passo de um pedido (da lista, do quadro, do painel ou da gaveta), com as janelas de sempre. */
+async function executarProxima(id, btn) {
+  const p = gavetaMostra(id) && pedidoAtual?.id === id ? pedidoAtual
+    : await ocupado(btn, async () => (await Promise.all([api.admin.pedidos.obter(id), configLoja()]))[0]);
+  if (!p) return;
+  const a = proximaAcao(p);
+  if (!a) { toast(`O pedido ${p.codigo} já foi concluído.`); recarregarTela(); return; }
+  const depois = r => { if (gavetaMostra(p.id)) { renderGaveta(r); precisaRecarregar = true; } else recarregarTela(); };
+  if (a.tipo === 'pagar') modalPagamento(p);
+  else if (a.codigo === 'em_rota') modalSairEntrega(p, depois);
+  else if (a.codigo === statusFinal(p)?.codigo) modalConcluir(p, depois);
+  else modalStatus(p, a.codigo);
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-proxima]'); if (!b || !perfil) return;
+  e.preventDefault();
+  executarProxima(b.dataset.proxima, b);
+});
+/* Menus "Imprimir" e "Mais" da gaveta (details): fecham ao escolher, ao clicar fora e com Esc */
+document.addEventListener('click', e => {
+  $$('details.menu-acao[open]').forEach(d => { if (!d.contains(e.target) || e.target.closest('.menu-pop button, .menu-pop a')) d.open = false; });
+});
+document.addEventListener('keydown', e => {
+  const d = e.key === 'Escape' && $('details.menu-acao[open]'); if (!d) return;
+  e.stopPropagation(); d.open = false; d.querySelector('summary').focus();
+}, true);
+/** O caminho do pedido (Recebido → … → Retirado), com o passo atual em destaque; tocar num passo muda o status. */
+function passosPedido(p) {
+  const passos = statusDoPedido(p).filter(s => s.codigo !== 'cancelado');
+  const atual = statusDe(p.status), cancelado = p.status === 'cancelado';
+  return `<ol class="passos" aria-label="Andamento do pedido">${passos.map(s => {
+    const cls = cancelado ? '' : s.codigo === p.status ? 'atual' : (s.ordem ?? 0) < (atual.ordem ?? 0) ? 'feito' : '';
+    return `<li class="${cls}"><button type="button" data-status="${esc(s.codigo)}" ${s.codigo === p.status ? 'aria-current="step"' : ''} title="Mudar para “${esc(nomeStatus(p, s))}”">
+      <span class="pt" aria-hidden="true">${cls === 'feito' ? ic('ok') : ''}</span><span class="pr">${esc(nomeStatus(p, s))}</span></button></li>`;
+  }).join('')}</ol>
+  ${cancelado ? '<p class="dica" style="margin:12px 0 0">Pedido cancelado. Para reabrir, toque numa etapa.</p>' : ''}`;
+}
+/** Rodapé fixo da gaveta: quanto falta e o próximo passo, sempre à mão (no celular, no alcance do polegar). */
+function rodapeGaveta(p) {
+  if (p.status === 'cancelado') return '';
+  const a = proximaAcao(p), pg = situacaoPagamento(p);
+  if (!a && !pg.falta) return '';
+  return `<div class="gav-pe">
+    <span class="gp-falta ${pg.falta ? '' : 'ok'}">${pg.falta ? `<small>Falta receber</small><b>${R(pg.falta)}</b>` : `${ic('ok')}Tudo pago`}</span>
+    ${pg.falta && a?.tipo !== 'pagar' ? `<button type="button" class="btn ghost" data-gav="pagar">${ic('moeda')}Pagamento</button>` : ''}
+    ${a ? `<button type="button" class="btn teal ${a.cls || ''}" data-proxima="${esc(p.id)}">${ic(a.icone)}${esc(a.rot)}</button>` : ''}
+  </div>`;
 }
 /* ---- Imagem de referência do item (topper): vem do site na observação, como "Referência: <link>" ---- */
 function itemReferencia(i) {
@@ -3826,7 +4048,6 @@ function renderGaveta(p) {
   if (!kitsCache) mapaKitsLoja().then(() => { if (pedidoAtual?.id === p.id && $('#gaveta')?.classList.contains('on')) renderGaveta(pedidoAtual); });
   const g = $('#gaveta');
   const rolagem = g.querySelector('.gav-b')?.scrollTop || 0;
-  const prox = proximoStatus(p);
   const itens = p.itens.map(i => `<div class="it">
       <div class="it-l"><span>${i.quantidade}× ${esc(i.nome)}${i.peso_kg ? ` <span style="color:var(--teal)">${esc(formatarPeso(i.peso_kg))}</span>` : ''}</span><span>${R(i.subtotal)}</span></div>
       ${i.massa || i.formato ? `<div class="it-d">${i.massa ? `<b>Massa:</b> ${esc(i.massa)}` : ''}${i.massa && i.formato ? ' · ' : ''}${i.formato ? `<b>Formato:</b> ${esc(i.formato)}` : ''}</div>` : ''}
@@ -3846,22 +4067,24 @@ function renderGaveta(p) {
     </div>
     <div class="gav-b">
       <div class="acoes-topo">
-        <a class="btn sm" href="${esc(urlReciboInterno(p.id))}" target="_blank" rel="noopener">${ic('imprimir')}Imprimir recibo</a>
-        <button type="button" class="btn sm" data-gav="termica">${ic('imprimir')}Imprimir 80 mm</button>
-        <button type="button" class="btn sm" data-gav="etiqueta">${ic('imprimir')}Etiqueta</button>
         <button type="button" class="btn sm wa" data-gav="msg">${ic('wa')}Mandar mensagem</button>
-        <button type="button" class="btn sm ghost" data-gav="link">${ic('copiar')}Link do recibo</button>
-        ${isAdmin() ? `<button type="button" class="btn sm ghost" data-gav="prejuizo">${ic('alerta')}Lançar prejuízo</button>` : ''}
+        <details class="menu-acao"><summary class="btn sm ghost">${ic('imprimir')}Imprimir${ic('seta', 'ic menu-seta')}</summary>
+          <div class="menu-pop">
+            <a href="${esc(urlReciboInterno(p.id))}" target="_blank" rel="noopener">${ic('imprimir')}Recibo (folha A4)</a>
+            <button type="button" data-gav="termica">${ic('imprimir')}Cupom 80 mm</button>
+            <button type="button" data-gav="etiqueta">${ic('imprimir')}Etiqueta</button>
+          </div></details>
+        <details class="menu-acao"><summary class="btn sm ghost">${ic('menu')}Mais${ic('seta', 'ic menu-seta')}</summary>
+          <div class="menu-pop">
+            <button type="button" data-gav="link">${ic('copiar')}Copiar o link do recibo</button>
+            ${isAdmin() ? `<button type="button" data-gav="prejuizo">${ic('alerta')}Lançar prejuízo</button>` : ''}
+            ${!statusDe(p.status).finalizado && p.status !== 'cancelado' && statusAtivo('cancelado') ? `<button type="button" class="perigo" data-status="cancelado">${ic('x')}Cancelar pedido</button>` : ''}
+            ${isAdmin() ? `<button type="button" class="perigo" data-gav="excluir">${ic('lixo')}Excluir pedido</button>` : ''}
+          </div></details>
       </div>
 
-      <section class="card"><div class="card-h"><h2>Status</h2>${pill(nomeStatus(p), p.status_cor)}</div>
-        <div class="status-sel" role="group" aria-label="Mudar status">${statusDoPedido(p).map(s => {
-          const atual = s.codigo === p.status;
-          return `<button type="button" class="st-btn" data-status="${esc(s.codigo)}" ${atual ? `aria-current="true" style="background:${esc(s.cor)};color:${corTexto(s.cor)}"` : ''}><span class="dot" style="background:${esc(s.cor)}"></span>${esc(nomeStatus(p, s))}</button>`;
-        }).join('')}</div>
-        ${prox ? (prox.codigo === 'em_rota' && ehEntrega(p)
-          ? `<button type="button" class="btn ent block prox" data-status="em_rota">${ic('entrega')}Sair para entrega</button>`
-          : `<button type="button" class="btn teal block prox" data-status="${esc(prox.codigo)}">${ic('ok')}Avançar para “${esc(nomeStatus(p, prox))}”</button>`) : ''}
+      <section class="card"><div class="card-h"><h2>Andamento</h2>${pill(nomeStatus(p), p.status_cor)}</div>
+        ${passosPedido(p)}
       </section>
 
       ${ehEntrega(p) ? cartaoEntrega(p) : `<section class="card"><div class="card-h"><h2>Retirada</h2></div>
@@ -3877,7 +4100,7 @@ function renderGaveta(p) {
 
       <section class="card"><div class="card-h"><h2>Itens</h2><span class="tag cinza">${p.itens.length} ${p.itens.length === 1 ? 'item' : 'itens'}</span></div>${itens}</section>
 
-      <section class="card valores"><div class="card-h"><h2>Valores</h2><button type="button" class="btn sm teal" data-gav="pagar">${ic('moeda')}Registrar pagamento</button></div>
+      <section class="card valores"><div class="card-h"><h2>Valores</h2><button type="button" class="btn sm ghost" data-gav="pagar">${ic('moeda')}Registrar pagamento</button></div>
         <div class="lin"><span>Subtotal</span><span>${R(p.subtotal)}</span></div>
         ${Number(p.desconto) > 0 ? `<div class="lin"><span>Desconto</span><span>− ${R(p.desconto)}</span></div>` : ''}
         ${ehEntrega(p) ? `<div class="lin"><span>Entrega</span><span>${Number(p.entrega.taxa) > 0 ? '+ ' + R(p.entrega.taxa) : 'grátis'}</span></div>` : ''}
@@ -3899,7 +4122,7 @@ function renderGaveta(p) {
             <button type="submit" class="btn primary sm">Adicionar</button></div>
         </form>
         ${p.observacoes.map(o => `<div class="obs ${o.fixada ? 'fix' : ''}"><p>${esc(o.texto)}</p>
-          <div class="meta"><span>${o.fixada ? '📌 ' : ''}${esc(o.autor_nome || 'Equipe')} · ${esc(dataHora(o.criado_em))}</span>
+          <div class="meta"><span>${o.fixada ? `${ic('pin', 'ic ic-pin')}<span class="sr">Fixada · </span>` : ''}${esc(o.autor_nome || 'Equipe')} · ${esc(dataHora(o.criado_em))}</span>
             <span class="bt"><button type="button" class="btn icon sm ghost" data-gav="fixar" data-id="${esc(o.id)}" data-fix="${o.fixada ? 0 : 1}" aria-label="${o.fixada ? 'Desafixar' : 'Fixar'} observação">${ic('pin')}</button>
             <button type="button" class="btn icon sm ghost" data-gav="tirar-obs" data-id="${esc(o.id)}" aria-label="Apagar observação">${ic('lixo')}</button></span></div></div>`).join('')}
       </section>
@@ -3908,8 +4131,8 @@ function renderGaveta(p) {
         <ul class="hist">${p.historico.slice().reverse().map(h => `<li style="--c:${esc(statusDe(h.status_novo).cor || '#2B7465')}"><b>${esc(h.status_nome || h.status_novo)}</b>
           <small>${esc(dataHora(h.alterado_em))}${h.alterado_por ? ' · ' + esc(h.alterado_por) : ''}</small>${h.comentario ? `<em>${esc(h.comentario)}</em>` : ''}</li>`).join('')}</ul>
       </section>
-      ${isAdmin() ? `<div style="text-align:center;margin-top:18px"><button type="button" class="btn danger sm" data-gav="excluir">${ic('lixo')}Excluir pedido</button></div>` : ''}
-    </div>`;
+    </div>
+    ${rodapeGaveta(p)}`;
   g.querySelector('.gav-b').scrollTop = rolagem;
   if (isAdmin()) toposDaGaveta(p);
   $('#fObs').addEventListener('submit', e => {
@@ -3926,7 +4149,8 @@ function renderGaveta(p) {
 async function acaoGaveta(btn, fn) {
   salvandoGaveta = true;
   const r = await ocupado(btn, async () => { const x = await fn(); precisaRecarregar = true; return x ?? true; });
-  if (r && typeof r === 'object' && r.itens) renderGaveta(r);
+  if (!$('#gaveta')?.classList.contains('on')) { if (r) { precisaRecarregar = false; recarregarTela(); } }   // ação rápida (lista, quadro, painel): a tela se atualiza na hora
+  else if (r && typeof r === 'object' && r.itens) renderGaveta(r);
   else if (r) await recarregarGaveta();
   setTimeout(() => { salvandoGaveta = false; }, 900);
   atualizarBadge();
@@ -4680,6 +4904,99 @@ async function configLoja(forcar = false) {
   if (!cacheLoja || forcar) { try { cacheLoja = await api.admin.configuracoes.obter(); } catch (e) { cacheLoja = null; } }
   return cacheLoja;
 }
+/** Atalhos de data do novo pedido: hoje, amanhã e o próximo sábado. */
+function atalhosDia() {
+  const h = hojeISO(), dow = diaDaSemanaIso(h);
+  const sab = somarDiasIso(h, ((6 - dow + 7) % 7) || 7);
+  const dias = [[h, 'Hoje'], [hojeISO(1), 'Amanhã'], ...(sab !== hojeISO(1) ? [[sab, `Sábado, ${sab.slice(8, 10)}/${sab.slice(5, 7)}`]] : [])];
+  return `<div class="np-dias" role="group" aria-label="Atalhos de data">${dias.map(([iso, t]) => `<button type="button" class="chip" data-np-dia="${iso}">${esc(t)}</button>`).join('')}</div>`;
+}
+function ligarAtalhosDia(m) {
+  m.el.addEventListener('click', e => {
+    const b = e.target.closest('[data-np-dia]'); if (!b) return;
+    const inp = m.$('#npData'); inp.value = b.dataset.npDia; atualizarData(inp);
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+}
+/** Novo pedido: o telefone de quem já pediu traz o nome e o resumo do último pedido (sem digitar de novo). */
+function ligarCliente(m) {
+  const box = m.$('#npCli'), tel = m.$('#npTel'), nome = m.$('#npNome');
+  let espera, vez = 0;
+  tel.addEventListener('input', () => {
+    clearTimeout(espera);
+    const d = digitosTel(tel.value);
+    if (d.length < 10) { box.hidden = true; return; }
+    espera = setTimeout(async () => {
+      const n = ++vez;
+      // no banco o telefone fica formatado ("(19) 99876-5432"): procura pelo fim do número e confere os dígitos
+      const resto = d.slice(2), corte = resto.length > 8 ? 5 : 4;
+      try {
+        const r = await api.admin.pedidos.listar({ busca: `${resto.slice(0, corte)}-${resto.slice(corte)}`, porPagina: 30, ordenarPor: 'criado_em', crescente: false });
+        if (n !== vez) return;
+        const dele = r.pedidos.filter(p => digitosTel(p.cliente_telefone) === d);
+        box.hidden = false;
+        if (!dele.length) { box.className = 'np-cli novo'; box.innerHTML = `${ic('user')}<span>Cliente novo: nenhum pedido com este telefone.</span>`; return; }
+        const ult = dele[0], quem = ult.cliente_nome, preencheu = !nome.value.trim();
+        if (preencheu) nome.value = quem;
+        box.className = 'np-cli';
+        box.innerHTML = `${ic('ok')}<span><b>${esc(quem)}</b> já fez ${dele.length >= 30 ? 'mais de 30' : dele.length} ${dele.length === 1 ? 'pedido' : 'pedidos'}. Último: ${esc(dataCurta(ult.data_retirada))}${ult.resumo_itens ? ` · ${esc(ult.resumo_itens)}` : ''}.
+          ${!preencheu && nome.value.trim() !== quem ? `<button type="button" class="link" data-usar-nome>Usar o nome “${esc(quem)}”</button>` : ''}</span>`;
+        box.querySelector('[data-usar-nome]')?.addEventListener('click', ev => { nome.value = quem; ev.currentTarget.remove(); });
+      } catch (e) { box.hidden = true; }
+    }, 350);
+  });
+}
+/**
+ * Produtos que batem com o que foi digitado (todas as palavras, no nome, na categoria ou no grupo), do mais relevante:
+ * palavra do nome que começa com o termo ("coca" é Coca-Cola antes de Paçoca), o texto inteiro no nome, e o nome mais curto.
+ */
+function buscarProdutos(produtos, texto) {
+  const ps = semAcento(texto).split(/\s+/).filter(Boolean);
+  if (!ps.length) return [];
+  const nota = p => {
+    const nome = semAcento(p.nome), palavras = nome.split(/[^a-z0-9]+/);
+    return ps.reduce((n, w) => n + (palavras.some(x => x.startsWith(w)) ? 3 : nome.includes(w) ? 1 : 0), 0) + (nome.includes(ps.join(' ')) ? 4 : 0);
+  };
+  return produtos.filter(p => ps.every(w => semAcento(`${p.nome} ${p.categoria || ''} ${p.grupo || ''}`).includes(w)))
+    .map(p => [p, nota(p)]).sort((a, b) => b[1] - a[1] || a[0].nome.length - b[0].nome.length).map(([p]) => p);
+}
+/** Novo pedido: digite parte do nome e o produto entra na lista (Enter escolhe o primeiro; ↑ ↓ trocam). */
+function ligarBuscaProduto(m, produtos, linha) {
+  const busca = m.$('#npBusca'), sug = m.$('#npSug');
+  let achados = [], ativo = -1;
+  const fechar = () => { sug.hidden = true; busca.setAttribute('aria-expanded', 'false'); busca.removeAttribute('aria-activedescendant'); ativo = -1; };
+  const marcar = i => {
+    ativo = i;
+    sug.querySelectorAll('[role="option"]').forEach((o, k) => o.setAttribute('aria-selected', String(k === i)));
+    const o = sug.querySelector('#nps-' + i); if (o) { busca.setAttribute('aria-activedescendant', o.id); o.scrollIntoView({ block: 'nearest' }); }
+  };
+  const adicionar = p => {
+    let box = m.$$('.np-item').find(b => !b.querySelector('[data-np="prod"]').value);
+    if (!box) { m.$('#npItens').insertAdjacentHTML('beforeend', linha()); box = m.$('#npItens .np-item:last-child'); }
+    const s = box.querySelector('[data-np="prod"]'); s.value = p.slug; s.dispatchEvent(new Event('change', { bubbles: true }));
+    box.classList.remove('novo-item'); void box.offsetWidth; box.classList.add('novo-item');   // pisca a linha que entrou
+    busca.value = ''; fechar(); busca.focus();
+  };
+  busca.addEventListener('input', () => {
+    if (!busca.value.trim()) { fechar(); return; }
+    achados = buscarProdutos(produtos, busca.value).slice(0, 8);
+    sug.innerHTML = achados.length ? achados.map((p, i) => `<div class="nps-it" role="option" id="nps-${i}" data-i="${i}" aria-selected="false">
+        <span><b>${esc(p.nome)}</b><small>${esc([p.categoria, p.grupo].filter(Boolean).join(' · '))}</small></span><span class="nps-p">${esc(R(p.preco))}${p.unidade_preco === 'kg' ? '/kg' : ''}</span></div>`).join('')
+      : `<p class="nps-vazio">Nenhum produto com “${esc(busca.value.trim())}”.</p>`;
+    sug.hidden = false; busca.setAttribute('aria-expanded', 'true');
+    marcar(achados.length ? 0 : -1);
+  });
+  busca.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !sug.hidden) { e.stopPropagation(); fechar(); return; }
+    if (sug.hidden || !achados.length) { if (e.key === 'Enter') e.preventDefault(); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); marcar((ativo + 1) % achados.length); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); marcar((ativo - 1 + achados.length) % achados.length); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (ativo >= 0) adicionar(achados[ativo]); }
+  });
+  sug.addEventListener('mousedown', e => e.preventDefault());
+  sug.addEventListener('click', e => { const o = e.target.closest('[role="option"]'); if (o) adicionar(achados[Number(o.dataset.i)]); });
+  busca.addEventListener('blur', () => setTimeout(fechar, 150));
+}
 async function modalNovoPedido() {
   let c;
   try { c = await carregarCardapioAtivo(true); } catch (e) { erroToast(e); return; }
@@ -4706,24 +5023,31 @@ async function modalNovoPedido() {
   const m = abrirModal({
     titulo: 'Novo pedido',
     largo: true,
-    corpo: `<div class="np-concl">
-        ${inChk('npConcl', '<span><strong>Pedido já concluído</strong><small>Para lançar um pedido que já foi retirado e pago: ele entra como retirado e 100% pago.</small></span>')}
-        <div class="np-concl-op" hidden>${inSel('npForma', 'Como foi pago', Object.entries(FORMAS), 'pix')}</div>
-      </div>
-      <div class="grid2">${inTxt('npNome', 'Cliente', '', { attrs: 'maxlength="120" autocomplete="off"' })}${inTxt('npTel', 'Telefone (DDD + número)', '', { attrs: ATTR_TEL })}</div>
+    // o telefone vem primeiro: cliente que já pediu é reconhecido e o nome vem preenchido
+    corpo: `<div class="grid2">${inTxt('npTel', 'Telefone (DDD + número)', '', { attrs: ATTR_TEL })}${inTxt('npNome', 'Cliente', '', { attrs: 'maxlength="120" autocomplete="off"' })}</div>
+      <div class="np-cli" id="npCli" aria-live="polite" hidden></div>
       ${c.configuracoes?.whatsapp_api_ativa ? inChk('npWaAuto', 'Cliente autorizou a confirmação e as atualizações deste pedido no WhatsApp') : ''}
       <div class="grid3">${inSel('npOrig', 'Pedido feito por', [['whatsapp', 'WhatsApp'], ['balcao', 'Balcão'], ['backoffice', 'Outro']], 'whatsapp')}
-        ${campo('npData-btn', 'Data da retirada', inData('npData', hojeISO(Number(c.configuracoes?.dias_retirada_sugerida ?? 2))))}
+        ${campo('npData-btn', 'Data da retirada', inData('npData', hojeISO(Number(c.configuracoes?.dias_retirada_sugerida ?? 2))) + atalhosDia())}
         ${campo('npHora', 'Horário', `<input class="in" id="npHora" type="time" value="${esc(hora(c.configuracoes?.hora_retirada_sugerida || '10:00'))}">`)}</div>
       ${temEntregas ? `<div class="np-concl np-ent">${inChk('npEnt', '<span><strong>Tem entrega</strong><small>Depois de criar o pedido, você informa o endereço, quem recebe e a taxa.</small></span>')}</div>` : ''}
       ${inTxt('npObs', 'Observação geral <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>', '', { attrs: 'maxlength="1000"' })}
       <p class="secao-t">Itens</p>
+      <div class="np-busca">${ic('busca')}<label class="sr" for="npBusca">Adicionar produto pelo nome</label>
+        <input class="in" id="npBusca" type="search" autocomplete="off" spellcheck="false" placeholder="Digite para adicionar: ninho, coxinha, kit…" role="combobox" aria-controls="npSug" aria-expanded="false" aria-autocomplete="list">
+        <div class="np-sug" id="npSug" role="listbox" aria-label="Produtos" hidden></div></div>
       <div id="npItens">${linha()}</div>
       <button type="button" class="btn ghost sm" data-np="add">${ic('mais')}Adicionar item</button>
-      <div class="np-total"><span>Total estimado</span><span id="npTotal">${R(0)}</span></div>
+      <div class="np-concl np-feito">
+        ${inChk('npConcl', '<span><strong>Pedido já concluído</strong><small>Para lançar um pedido que já foi retirado e pago: ele entra como retirado e 100% pago.</small></span>')}
+        <div class="np-concl-op" hidden>${inSel('npForma', 'Como foi pago', Object.entries(FORMAS), 'pix')}</div>
+      </div>
       <p class="dica" style="margin:0">Os preços são confirmados pelo sistema ao salvar.</p>`,
-    rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>Criar pedido</button>`
+    rodape: `<div class="np-tot-f esq"><span>Total estimado</span><b id="npTotal">${R(0)}</b></div><button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-ok>Criar pedido</button>`
   });
+  ligarCliente(m);
+  ligarAtalhosDia(m);
+  ligarBuscaProduto(m, Object.values(prods), linha);
   const precoItem = box => {
     const p = prods[box.querySelector('[data-np="prod"]').value]; if (!p) return 0;
     const q = Math.max(1, parseInt(box.querySelector('[data-np="qtd"]').value, 10) || 1);
@@ -4756,7 +5080,7 @@ async function modalNovoPedido() {
   m.$('#npEnt')?.addEventListener('change', e => { m.$('.np-ent').classList.toggle('on', e.target.checked); rotuloData(); });
   m.$('#npConcl').addEventListener('change', e => {
     const on = e.target.checked;
-    m.$('.np-concl').classList.toggle('on', on);
+    m.$('.np-feito').classList.toggle('on', on);
     m.$('.np-concl-op').hidden = !on;
     const ent = m.$('#npEnt');
     if (ent) { if (on) ent.checked = false; ent.disabled = on; m.$('.np-ent').classList.toggle('on', ent.checked); }
@@ -4833,6 +5157,7 @@ const LAYOUTS = [['lista', 'Aba do cardápio'], ['grade', 'Tela de kits (cards c
 
 let CAD = null;          // { categorias, grupos, produtos, faixas }
 let catSel = null;
+let cardBusca = '';      // busca do cardápio: procura em todas as categorias
 async function carregarCadastro() {
   const [categorias, grupos, produtos, faixas] = await Promise.all([
     api.admin.categorias.listar({ ordenarPor: [['ordem', true], ['nome', true]] }),
@@ -4876,11 +5201,23 @@ function desenharCardapio() {
       ${prods.length ? `<div class="prods">${prods.map(linhaProd).join('')}</div>` : '<p class="dica" style="padding:6px 4px;margin:0;color:var(--ink-3)">Nenhum produto neste grupo.</p>'}
     </section>`;
   const semGrupo = c ? prodsDe(null) : [];
+  const palavras = semAcento(cardBusca).split(/\s+/).filter(Boolean);
+  const achados = palavras.length ? CAD.produtos.filter(p => palavras.every(w => semAcento(`${p.nome} ${p.rotulo || ''}`).includes(w))) : [];
+  const resultados = () => (!achados.length
+    ? `<div class="vazio"><h2>Nenhum produto com “${esc(cardBusca.trim())}”</h2><p>Confira o nome ou procure por outra palavra.</p></div>`
+    : CAD.categorias.filter(x => achados.some(p => p.categoria_id === x.id)).map(x => {
+      const deles = achados.filter(p => p.categoria_id === x.id);
+      return `<section class="grupo"><div class="grupo-h"><h2>${esc(x.nome)}</h2><span class="info">${deles.length} ${deles.length === 1 ? 'produto' : 'produtos'}</span>
+          <span class="acts"><a class="btn sm ghost" href="#cardapio/${esc(x.slug)}" data-limpar-busca>Abrir a categoria</a></span></div>
+        <div class="prods">${deles.map(linhaProd).join('')}</div></section>`;
+    }).join(''));
   el.innerHTML = cabecalho('Cardápio', `<a class="btn ghost" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}Ver no site</a>`, 'Categorias, produtos, preços e fotos que aparecem no site.') + `
-    <div class="cat-bar"><div class="chips" role="tablist" aria-label="Categorias">
+    <div class="busca cat-busca">${ic('busca')}<label class="sr" for="cardBusca">Buscar produto no cardápio</label>
+      <input class="in" id="cardBusca" type="search" placeholder="Buscar produto em todo o cardápio (ex.: ninho, coca)…" value="${esc(cardBusca)}" autocomplete="off" spellcheck="false"></div>
+    <div class="cat-bar ${palavras.length ? 'buscando' : ''}"><div class="chips" role="tablist" aria-label="Categorias">
       ${CAD.categorias.map(x => `<a class="chip ${x.ativo ? '' : 'off'}" role="tab" href="#cardapio/${esc(x.slug)}" aria-pressed="${x.id === c?.id}" aria-selected="${x.id === c?.id}">${esc(x.nome)}</a>`).join('')}</div>
       <button type="button" class="btn sm ghost" data-nova-cat>${ic('mais')}Categoria</button></div>
-    ${c ? `<div class="card" style="margin-bottom:16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+    ${palavras.length ? resultados() : c ? `<div class="card" style="margin-bottom:16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
         <div style="flex:1;min-width:200px"><strong style="font-size:17px">${esc(c.nome)}</strong>
           <div class="dica" style="color:var(--ink-3);font-weight:400;font-size:13px">${esc(LAYOUTS.find(l => l[0] === c.layout)?.[1] || c.layout)}${c.layout === 'pagina' ? (c.link_externo ? ` · faixa no site levando a ${esc(c.link_externo)}` : ' · fora do cardápio do site (vendida só na página própria)') : ''}${c.antecedencia_minima_dias ? ` · ${c.antecedencia_minima_dias} dias de antecedência` : ''}${c.aceita_pedido_online ? '' : c.layout === 'pagina' ? ' · sem pedido pelo site' : ' · só no backoffice (não aparece no site)'}${c.precos_validos_ate ? ` · preços até ${esc(formatarData(c.precos_validos_ate))}` : ''}</div>
           ${c.precos_validos_ate && c.precos_validos_ate < hojeISO() ? `<div class="tag pend" style="margin-top:6px">A validade dos preços já passou</div>` : ''}</div>
@@ -4892,6 +5229,11 @@ function desenharCardapio() {
       ${semGrupo.length || !grupos.length ? blocoGrupo(null, semGrupo) : ''}
       <p class="dica" style="color:var(--ink-3);font-weight:400;font-size:13px">Dica: altere o preço direto no campo e toque fora para salvar. Desligue a chave para tirar um item do site sem apagar.</p>`
     : `<div class="vazio"><h2>Nenhuma categoria</h2><p>Comece criando uma categoria.</p></div>`}`;
+  const busca = $('#cardBusca');
+  if (desenharCardapio.foco) { busca.focus(); busca.setSelectionRange(busca.value.length, busca.value.length); desenharCardapio.foco = false; }
+  let espera;
+  busca.addEventListener('input', () => { clearTimeout(espera); espera = setTimeout(() => { cardBusca = busca.value; desenharCardapio.foco = true; desenharCardapio(); }, 160); });
+  el.querySelectorAll('[data-limpar-busca], .cat-bar .chip').forEach(a => a.addEventListener('click', () => { cardBusca = ''; }));
 }
 document.addEventListener('change', async e => {
   if (telaAtual !== 'cardapio' || !CAD) return;
@@ -5258,9 +5600,18 @@ async function ajLoja(box) {
 
       <p class="secao-t linha">Topos de bolo</p>
       <div class="grid2">${inTxt('lTopNum', 'WhatsApp de quem faz os topos', formatarTel(topos.numero), { attrs: ATTR_TEL, dica: 'Usado no botão “Enviar para quem faz o topo”, ao lado da imagem de referência.' })}${inTxt('lTopNome', 'Nome de quem faz os topos', topos.nome, { attrs: 'maxlength="60"' })}</div>
-      <div style="display:flex;justify-content:flex-end"><button type="button" class="btn primary" id="lSalvar">Salvar ajustes</button></div>
+      <div class="aj-salvar" id="ajSalvar"><span class="aj-estado" id="ajEstado" aria-live="polite">Nenhuma mudança para salvar.</span><button type="button" class="btn primary" id="lSalvar">Salvar ajustes</button></div>
     </div>`;
   const fake = { $: s => box.querySelector(s), $$: s => [...box.querySelectorAll(s)] };
+  // mudanças não salvas: a barra de salvar (presa no rodapé) avisa, e sair da tela ou fechar a aba pergunta antes
+  ajAlterado = false;
+  const barraSalvar = box.querySelector('#ajSalvar'), estadoSalvar = box.querySelector('#ajEstado');
+  const marcarSujo = e => {
+    if (e.target.id === 'lAceita' || !e.target.matches('input, select, textarea')) return;
+    ajAlterado = true; barraSalvar.classList.add('sujo'); estadoSalvar.textContent = 'Você tem mudanças que ainda não foram salvas.';
+  };
+  (barraSalvar.closest('.card') || box).addEventListener('input', marcarSujo);
+  (barraSalvar.closest('.card') || box).addEventListener('change', marcarSujo);
   // WhatsApp automático: só aparece com o sql/whatsapp.sql rodado (por enquanto fica desligado)
   box.querySelector('#lWaConectar')?.addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
     const resultado = box.querySelector('#lWaResultado');
@@ -5327,6 +5678,7 @@ async function ajLoja(box) {
     if (topNum && topNum.length < 10) throw new Error('Informe o WhatsApp de quem faz os topos com DDD.');
     await salvarContatoTopos(topNum, valDe(fake, 'lTopNome'));
     cacheLoja = null; cardapioAtivo = null; kitsCache = null; toast('Ajustes salvos. O site já mostra as mudanças.');
+    ajAlterado = false; barraSalvar.classList.remove('sujo'); estadoSalvar.textContent = 'Tudo salvo.';
   }));
 }
 
@@ -5633,7 +5985,7 @@ async function ajEquipe(box) {
    arrastar o cartão ou tocar no botão dele muda o status.
 ========================================================= */
 const TOPO_STATUS = [
-  { codigo: 'novo', nome: 'Novo', cor: '#B9476A', acao: 'Começar' },
+  { codigo: 'novo', nome: 'Novo', cor: '#9C4A20', acao: 'Começar' },
   { codigo: 'em_producao', nome: 'Em produção', cor: '#C9A15A', acao: 'Marcar como pronto' },
   { codigo: 'pronto', nome: 'Pronto', cor: '#2B7465', acao: 'Marcar como entregue' },
   { codigo: 'entregue', nome: 'Entregue', cor: '#6E4B3A' },

@@ -27,7 +27,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Nunito:wght@500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 /*
   Quadro da equipe: feito para TV (1920×1080), visto de longe e sem ninguém mexer.
@@ -41,10 +41,10 @@
   --critical: #FF8676; --critical-bg: rgba(255, 112, 94, .15); --critical-line: rgba(255, 134, 118, .5);
   --warning: #F5B850; --warning-bg: rgba(245, 184, 80, .14);
   --good: #8ED9A9; --good-bg: rgba(142, 217, 169, .13);
-  --brand: #F4AFC2; --brand-bg: rgba(244, 175, 194, .15);
+  --brand: #A1DFD0; --brand-bg: rgba(161, 223, 208, .15);   /* V2: o verde-água da borda do logo (o rosa não está no logo) */
   --gold: #E8C886; --gold-bg: rgba(232, 200, 134, .12);
-  --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-display: 'Manrope', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-ui: 'Nunito', ui-rounded, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;   /* V2: as fontes do site e do backoffice */
+  --font-display: 'Nunito', ui-rounded, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --r: 1rem; --r-sm: .75rem; --gap: .9rem;
   color-scheme: dark;
   font-size: 16px;
@@ -55,8 +55,6 @@ html, body { margin: 0; height: 100%; }
 body {
   font-family: var(--font-ui); font-size: 1rem; line-height: 1.3; color: var(--ink);
   background:
-    radial-gradient(70rem 36rem at -5% -20%, rgba(232, 144, 168, .08), transparent 65%),
-    radial-gradient(60rem 30rem at 105% -15%, rgba(125, 196, 176, .06), transparent 60%),
     var(--bg);
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; overflow: hidden;
 }
