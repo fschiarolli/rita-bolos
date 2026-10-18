@@ -115,6 +115,7 @@ export function criarSupabaseDemo(opcoes = {}) {
     if (!b.stories) semearStories(b);   // imagens para os stories (igual a sql/stories.sql)
     (b.pedidos || []).forEach(p => { if (p.taxa_entrega == null) p.taxa_entrega = 0; });
     if (cf && !('entrega_origem' in cf)) Object.assign(cf, LOJA_ENTREGA, { entrega_taxa_minima: 8, entrega_km_incluidos: 3, entrega_valor_km: 1.5, entrega_raio_km: 15 });
+    if (cf && !('endereco_retirada' in cf)) cf.endereco_retirada = null;   // igual a sql/endereco-retirada.sql (em branco: vale o da entrega)
     // demonstração aberta antes, com a loja num endereço de exemplo em Campinas: a loja e o pedido de exemplo passam para Hortolândia
     if (cf?.entrega_origem === 'Rua Barão de Jaguara, 1000, Centro, Campinas - SP') {
       Object.assign(cf, LOJA_ENTREGA);

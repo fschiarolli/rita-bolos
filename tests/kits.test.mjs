@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import vm from 'node:vm';
 import { DADOS_DEMO } from '../demo/dados-demo.js';
 import { criarSupabaseDemo } from '../demo/supabase-demo.js';
-import { criarApi, juntarReferencia, separarReferencia, montarMensagemWhatsApp, formatarPreco, formatarPeso, formatarData } from '../js/rita-api.js';
+import { criarApi, juntarReferencia, separarReferencia, montarMensagemWhatsApp, formatarPreco, formatarPeso, formatarData, agruparFinalizacoes, detalhesDoItem } from '../js/rita-api.js';
 
 const fonte = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const backoffice = readFileSync(new URL('../backoffice/app.js', import.meta.url), 'utf8');
@@ -137,7 +137,7 @@ test('pedido salvo e consultado mantém todas as escolhas e referência no Whats
   assert.ok(mensagem.includes(linha.notes));
   assert.ok(mensagem.includes(linha.ref));
 
-  const impressao = vm.createContext({ esc, separarReferencia, kitDoItem: () => 'Bolo, salgados, pastéis e docinhos',
+  const impressao = vm.createContext({ esc, separarReferencia, agruparFinalizacoes, detalhesDoItem, kitDoItem: () => 'Bolo, salgados, pastéis e docinhos',
     R: formatarPreco, formatarPeso, formatarData, formatarTel: s => s, dataHora: s => s, dataCurta: s => s,
     hora: s => s, ORIGENS: {}, area: { innerHTML: '' }, document: { title: '', getElementById: () => ({}) },
     conteudoKit: () => 'Bolo, salgados, pastéis e docinhos' });
@@ -146,7 +146,8 @@ test('pedido salvo e consultado mantém todas as escolhas e referência no Whats
   vm.runInContext(trecho(recibo, 'function render(', 'function configurarBarra('), impressao);
   impressao.render(salvo, { interno: false, mostrarInterno: false, pix: null });
   for (const html of [termica, impressao.area.innerHTML]) {
-    for (const valor of Object.values(linha.kit)) assert.ok(html.includes(valor), valor);
+    // a massa sai como no bolo avulso ("Massa preta"): o que importa é a escolha estar lá
+    for (const valor of Object.values(linha.kit)) assert.ok(html.toLowerCase().includes(valor.toLowerCase()), valor);
     assert.ok(html.includes(esc(linha.notes)));
     assert.ok(html.includes(`src="${linha.ref}"`));
     assert.ok(!html.includes('<Ana & João>'));

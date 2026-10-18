@@ -76,9 +76,15 @@ h2 { font-family: var(--font-display); font-weight: 400; font-size: 20px; margin
 .item { padding: 11px 0; border-bottom: 1px dashed #C8B89A; break-inside: avoid; }
 .item-l { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; font-size: 15.5px; }
 .item-l b { font-weight: 800; }
+.item-l .q { display: inline-block; min-width: 34px; padding-right: 6px; font-weight: 900; color: var(--teal); font-variant-numeric: tabular-nums; }
+.item-l .peso { font-weight: 800; color: var(--ink-2); white-space: nowrap; }
 .item-l .v { font-weight: 900; color: var(--teal); white-space: nowrap; }
-.det { font-size: 13.5px; color: var(--ink-2); margin: 3px 0 0 18px; line-height: 1.5; }
+.det { font-size: 13.5px; color: var(--ink-2); margin: 3px 0 0 34px; line-height: 1.5; }
 .det strong { color: var(--ink); }
+.det.u { font-size: 12.5px; margin-top: 1px; }
+.det.esc { color: var(--ink); }
+.det.fin { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; color: var(--ink); font-weight: 700; }
+.det.fin .v { font-weight: 800; white-space: nowrap; }
 .det.obs { white-space: pre-line; overflow-wrap: anywhere; }
 
 .totais { margin-top: 18px; padding-top: 12px; border-top: 2px solid var(--ink); }
@@ -122,12 +128,12 @@ body.cupom .meta .retirada { background: none; border-radius: 0; padding: 3px 0;
 body.cupom h2 { font-size: 15px; }
 body.cupom .item-l { font-size: 12.5px; }
 body.cupom .det { font-size: 11.5px; margin-left: 8px; }
+body.cupom .item-l .q { min-width: 0; margin-right: 5px; }
 body.cupom .t { font-size: 12.5px; }
 body.cupom .t.total { font-size: 16px; }
 body.cupom .t.sinal { padding: 4px 0; background: none; }
 body.cupom .bloco { font-size: 11.5px; padding: 6px 0; background: none; border-radius: 0; }
 body.cupom .bloco.aviso { border: 1px dashed #000; padding: 6px; }
-.det.kit { color: var(--ink); }
 /* Na térmica não existe cinza: texto claro, fino ou pequeno e linha pontilhada saem falhados.
    No cupom impresso: tudo preto, em negrito, nada menor que 13 px e linhas cheias. */
 @media print {
@@ -183,7 +189,8 @@ body.cupom .bloco.aviso { border: 1px dashed #000; padding: 6px; }
 </main>
 
 <script type="module">
-import { conectar, formatarPreco as R, formatarPeso, formatarData, formatarCep, separarReferencia, PIX, pixDe, mapaKits, achatarCardapio, conteudoKit } from './js/rita-api.js';
+import { conectar, formatarPreco as R, formatarPeso, formatarData, formatarCep, PIX, pixDe, mapaKits, achatarCardapio, conteudoKit,
+  agruparFinalizacoes, detalhesDoItem } from './js/rita-api.js';
 
 const LOGO_DEMO = null;
 const PEDIDO_DEMO = {
@@ -220,20 +227,19 @@ function render(p, { urlLogo, interno, mostrarInterno, pix, kits }) {
     ? `<br>Quem recebe: ${esc(e.recebedor_nome || p.cliente_nome)}${interno && e.recebedor_telefone ? ' · ' + esc(e.recebedor_telefone) : ''}` : '';
   const entrega = e ? `<div class="bloco entrega"><strong>Endereço da entrega</strong>${esc(e.endereco)}${e.complemento ? '<br>' + esc(e.complemento) : ''}
       ${[e.bairro, e.cidade].filter(Boolean).length ? '<br>' + esc([e.bairro, e.cidade].filter(Boolean).join(' - ')) : ''}${e.cep ? '<br>CEP ' + esc(formatarCep(e.cep)) : ''}${recebe}</div>` : '';
-  const itens = (p.itens || []).map((i, n) => {
+  // cada item: quantidade, nome e peso; embaixo, o preço do kg ou da unidade (quando ajuda), o que vem no kit, as escolhas
+  // (no kit, separadas por campo) e as finalizações do bolo, com o preço delas; depois a observação e a imagem
+  const itens = agruparFinalizacoes(p.itens).map(({ item: i, fins }) => {
+    const { linhas, notas, imagem } = detalhesDoItem(i), kit = conteudoKit(i, kits);   // o que vem no kit (descrição do produto no cardápio)
+    const unid = [i.preco_kg ? `${R(i.preco_kg)} o kg` : '', i.quantidade > 1 ? `${i.quantidade} × ${R(i.preco_unitario)}` : '', i.faixa_preco ? `Faixa de preço: ${esc(i.faixa_preco)}` : ''].filter(Boolean);
     const det = [];
-    if (i.peso_kg) det.push(`<div class="det"><strong>Peso:</strong> ${formatarPeso(i.peso_kg)}${i.preco_kg ? ` (${R(i.preco_kg)} o kg)` : ''}</div>`);
-    if (i.massa) det.push(`<div class="det"><strong>Massa:</strong> ${esc(i.massa)}</div>`);
-    if (i.formato) det.push(`<div class="det"><strong>Formato:</strong> ${esc(i.formato)}</div>`);
-    if (i.segundo_recheio) det.push(`<div class="det"><strong>2º recheio:</strong> ${esc(i.segundo_recheio)}</div>`);
-    const kit = conteudoKit(i, kits);   // o que vem no kit (descrição do produto no cardápio)
-    if (kit) det.push(`<div class="det kit"><strong>Vem no kit:</strong> ${esc(kit)}</div>`);
-    if (i.faixa_preco) det.push(`<div class="det"><strong>Faixa de preço:</strong> ${esc(i.faixa_preco)}</div>`);
-    det.push(`<div class="det">Quantidade: ${i.quantidade} × ${R(i.preco_unitario)}</div>`);
-    const obs = separarReferencia(i.observacao);
-    if (obs.texto) det.push(`<div class="det obs"><strong>Observações:</strong>\n${esc(obs.texto)}</div>`);
-    if (obs.imagem) det.push(`<div class="det ref"><strong>Imagem de referência:</strong> <a href="${esc(obs.imagem)}" target="_blank" rel="noopener"><img src="${esc(obs.imagem)}" alt="Imagem de referência"></a></div>`);
-    return `<div class="item"><div class="item-l"><b>${n + 1}. ${esc(i.nome)}</b><span class="v">${R(i.subtotal)}</span></div>${det.join('')}</div>`;
+    if (unid.length) det.push(`<div class="det u">${unid.join(' · ')}</div>`);
+    if (kit) det.push(`<div class="det kit">Vem no kit: ${esc(kit)}</div>`);
+    for (const x of linhas) det.push(`<div class="det esc">${x.rotulo ? `<strong>${esc(x.rotulo)}:</strong> ` : ''}${esc(x.valor)}</div>`);
+    for (const f of fins) det.push(`<div class="det fin"><span>+ ${Number(f.quantidade) > 1 ? `${f.quantidade} × ` : ''}${esc(f.nome)}</span><span class="v">${R(f.subtotal)}</span></div>`);
+    if (notas) det.push(`<div class="det obs"><strong>Observações:</strong>\n${esc(notas)}</div>`);
+    if (imagem) det.push(`<div class="det ref"><strong>Imagem de referência:</strong> <a href="${esc(imagem)}" target="_blank" rel="noopener"><img src="${esc(imagem)}" alt="Imagem de referência"></a></div>`);
+    return `<div class="item"><div class="item-l"><b><span class="q">${i.quantidade}×</span>${esc(i.nome)}${i.peso_kg ? ` <span class="peso">${formatarPeso(i.peso_kg)}</span>` : ''}</b><span class="v">${R(i.subtotal)}</span></div>${det.join('')}</div>`;
   }).join('');
 
   const pagamentos = interno && (p.pagamentos || []).length

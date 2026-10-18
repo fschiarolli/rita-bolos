@@ -158,31 +158,100 @@ export const alvoWhatsApp = url => /^whatsapp:/i.test(url) ? '' : 'target="_blan
 /** Link da imagem que pode ir numa mensagem (no modo demonstração a imagem é um "data:" enorme, que quebra o link). */
 export const linkCompartilhavel = url => /^https?:\/\//i.test(String(url || '')) ? url : '(imagem anexada no pedido)';
 
-/** Escolhas do item, inclusive os campos dos kits gravados na observação pelo cardápio. */
-export function detalhesItemWhatsApp(item) {
-  const linhas = [];
-  if (item.massa) linhas.push(`_Massa:_ ${item.massa}`);
-  if (item.formato) linhas.push(`_Formato:_ ${item.formato}`);
-  if (item.segundo_recheio) linhas.push(`_2º recheio:_ ${item.segundo_recheio}`);
-  const { texto, imagem } = separarReferencia(item.observacao);
+/* ---- Observação dos itens: escolhas dos kits, notas livres e imagem de referência ---- */
+const CAMPOS_KIT = { 'sabor do bolo': 'sabor', 'formato do bolo': 'formato', 'massa do bolo': 'massa', 'sabores dos salgados fritos': 'salgados',
+  'sabores dos pastéis': 'pasteis', 'sabores dos docinhos': 'docinhos', 'topo do bolo': 'topo' };
+const RE_CAMPO_KIT = /^(Sabor do bolo|Formato do bolo|Massa do bolo|Sabores dos salgados fritos|Sabores dos pastéis|Sabores dos docinhos|Topo do bolo):\s*(.*)$/i;
+/**
+ * A observação de um item em partes: { campos: [{ rotulo, chave, valor }], kit: { sabor, formato, massa, salgados, pasteis, docinhos, topo },
+ * notas, imagem }. campos: as escolhas que o cardápio grava nos kits, uma por linha e na ordem (um valor pode ter várias linhas);
+ * notas: o texto livre; imagem: o link da referência.
+ */
+export function lerObservacao(obs) {
+  const { texto, imagem } = separarReferencia(obs);
   const campos = [], notas = [];
   let atual = null, terminouKit = false;
   for (const linha of texto.split(/\r?\n/)) {
-    const campo = !terminouKit && linha.match(/^(Sabor do bolo|Formato do bolo|Massa do bolo|Sabores dos salgados fritos|Sabores dos pastéis|Sabores dos docinhos|Topo do bolo):\s*(.*)$/i);
+    const campo = !terminouKit && linha.match(RE_CAMPO_KIT);
     if (campo) {
-      atual = { rotulo: campo[1], valor: campo[2] };
+      atual = { rotulo: campo[1], chave: CAMPOS_KIT[campo[1].toLowerCase()], valor: campo[2] };
       campos.push(atual);
       // O topo é o último campo salvo pelo cardápio; as linhas seguintes são notas livres.
-      if (/^Topo do bolo$/i.test(campo[1])) { terminouKit = true; atual = null; }
+      if (atual.chave === 'topo') { terminouKit = true; atual = null; }
     } else if (atual) {
       atual.valor += '\n' + linha;
     } else {
       notas.push(linha);
     }
   }
-  for (const campo of campos) linhas.push(`*${campo.rotulo}:* ${campo.valor.trim()}`);
-  const obs = notas.join('\n').trim();
-  if (obs) linhas.push(`_Obs:_ ${obs}`);
+  for (const campo of campos) campo.valor = campo.valor.trim();
+  return { campos, kit: Object.fromEntries(campos.map(c => [c.chave, c.valor])), notas: notas.join('\n').trim(), imagem };
+}
+const maiuscula = t => { const s = String(t ?? '').trim(); return s.charAt(0).toUpperCase() + s.slice(1); };
+/** "Preta" (escolha do kit) ou "Massa preta" (cadastro) → "Massa preta". */
+export const nomeMassa = m => { const t = String(m ?? '').trim(); return !t ? '' : /^massa\b/i.test(t) ? maiuscula(t) : `Massa ${t.toLowerCase()}`; };
+const OUTROS_DO_KIT = [['salgados', 'Salgados fritos'], ['pasteis', 'Pastéis'], ['docinhos', 'Docinhos']];
+/**
+ * O que foi escolhido num item, no bolo avulso ou no kit (campos gravados na observação), pronto para mostrar:
+ * { sabor (do bolo do kit), massa ("Massa preta"), formato ("Redondo"), segundo (2º recheio), topo ("Sim", "Não" ou "", só nos kits),
+ *   outros: [{ rotulo, valor }] (salgados, pastéis e docinhos do kit), notas, imagem }.
+ */
+export function escolhasDoItem(item) {
+  const i = item || {}, { kit, notas, imagem } = lerObservacao(i.observacao);
+  return {
+    sabor: maiuscula(kit.sabor), massa: nomeMassa(i.massa || kit.massa), formato: maiuscula(i.formato || kit.formato),
+    segundo: String(i.segundo_recheio ?? '').trim(), topo: maiuscula(kit.topo),
+    outros: OUTROS_DO_KIT.filter(([chave]) => kit[chave]).map(([chave, rotulo]) => ({ rotulo, valor: kit[chave] })), notas, imagem
+  };
+}
+/**
+ * As linhas de detalhe de um item no recibo e no cupom: { linhas: [{ rotulo, valor }], notas, imagem } (rótulo vazio: só o valor).
+ * Bolo: "Massa preta · Redondo" e o 2º recheio. Kit: o bolo dele ("Ninho com morango · Massa preta · Quadrado · Com topo"),
+ * depois os salgados, os pastéis e os docinhos.
+ */
+export function detalhesDoItem(item) {
+  const e = escolhasDoItem(item), linhas = [];
+  const temBolo = !!(e.sabor || e.massa || e.formato);
+  const topo = /^sim/i.test(e.topo) ? 'Com topo' : temBolo && /^n[ãa]o/i.test(e.topo) ? 'Sem topo' : '';
+  const bolo = [e.sabor, e.massa, e.formato, topo].filter(Boolean);
+  if (bolo.length) linhas.push({ rotulo: e.sabor ? 'Bolo' : '', valor: bolo.join(' · ') });
+  if (e.segundo) linhas.push({ rotulo: '2º recheio', valor: e.segundo });
+  linhas.push(...e.outros);
+  return { linhas, notas: e.notas, imagem: e.imagem };
+}
+/** Finalização (colorida, glitter…): um adicional do bolo, gravado como item logo abaixo dele, com "Bolo: <nome> <peso>" na observação. */
+export const ehItemFinalizacao = i => /^finaliza[çc][ãa]o/i.test(String(i?.nome ?? '').trim());
+const chaveBolo = t => String(t ?? '').toLowerCase().replace(/\./g, ',').replace(/\s+/g, ' ').trim();
+/** O bolo de que a finalização fala ("Bolo: Bolo Ninho 2 kg" → "bolo ninho 2 kg"), ou "" (vale para todos os bolos). */
+export const boloDaFinalizacao = f => chaveBolo(separarReferencia(f?.observacao).texto.match(/^bolo:\s*(.+)$/im)?.[1]);
+/** Se a finalização é deste bolo: pelo nome e peso, ou só pelo nome. */
+export const finalizacaoDoBolo = (f, bolo) => {
+  const alvo = boloDaFinalizacao(f);
+  return !!alvo && [chaveBolo(`${bolo?.nome} ${formatarPeso(bolo?.peso_kg)}`), chaveBolo(bolo?.nome)].includes(alvo);
+};
+/**
+ * Os itens do pedido com as finalizações embaixo do bolo delas, na ordem do pedido: [{ item, fins: [itens] }].
+ * Cada finalização vai para o bolo mais próximo acima dela que bate com o "Bolo: …"; sem isso, fica como um item à parte.
+ */
+export function agruparFinalizacoes(itens) {
+  const grupos = [];
+  for (const i of itens || []) {
+    let dono = null;   // de baixo para cima (o recibo abre em celulares antigos: sem findLast)
+    if (ehItemFinalizacao(i)) for (let k = grupos.length - 1; k >= 0 && !dono; k--) if (!ehItemFinalizacao(grupos[k].item) && finalizacaoDoBolo(i, grupos[k].item)) dono = grupos[k];
+    if (dono) dono.fins.push(i); else grupos.push({ item: i, fins: [] });
+  }
+  return grupos;
+}
+
+/** Escolhas do item, inclusive os campos dos kits gravados na observação pelo cardápio. */
+export function detalhesItemWhatsApp(item) {
+  const linhas = [];
+  if (item.massa) linhas.push(`_Massa:_ ${item.massa}`);
+  if (item.formato) linhas.push(`_Formato:_ ${item.formato}`);
+  if (item.segundo_recheio) linhas.push(`_2º recheio:_ ${item.segundo_recheio}`);
+  const { campos, notas, imagem } = lerObservacao(item.observacao);
+  for (const campo of campos) linhas.push(`*${campo.rotulo}:* ${campo.valor}`);
+  if (notas) linhas.push(`_Obs:_ ${notas}`);
   if (imagem) linhas.push(`_Imagem de referência:_ ${linkCompartilhavel(imagem)}`);
   return linhas.join('\n');
 }
@@ -232,6 +301,26 @@ export function montarMensagemWhatsApp(pedido, urlRecibo, cfg) {
   return l.join('\n').replace(/\u00a0/g, ' ');
 }
 
+/** Coordenadas coladas do Google Maps ("-22.8815, -47.2059"). */
+const RE_COORDENADAS = /^\s*(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*$/;
+/**
+ * Onde o cliente busca o pedido: { texto, mapa } ou null. texto: o endereço para retirada (Ajustes > Loja) ou, em branco,
+ * o endereço de onde sai a entrega (vazio quando ali estão coordenadas). mapa: o link do Google Maps (pelas coordenadas
+ * ou pelo ponto achado ao salvar a loja, que é mais exato; senão, pelo endereço).
+ */
+export function localRetirada(cfg) {
+  const proprio = String(cfg?.endereco_retirada ?? '').trim(), base = proprio || String(cfg?.entrega_origem ?? '').trim();
+  if (!base) return null;
+  const c = base.match(RE_COORDENADAS), ponto = c ? { lat: c[1], lng: c[2] } : !proprio ? origemEntrega(cfg) : null;
+  const busca = ponto ? `${ponto.lat},${ponto.lng}` : encodeURIComponent(base);
+  return { texto: c ? '' : base, mapa: `https://www.google.com/maps/search/?api=1&query=${busca}` };
+}
+/** As linhas do local de retirada para as mensagens do WhatsApp ([] se não houver). */
+export function linhasLocalRetirada(cfg) {
+  const l = localRetirada(cfg);
+  return !l ? [] : l.texto ? [`*Local de retirada:* ${l.texto}`, `Mapa: ${l.mapa}`] : [`*Local de retirada:* ${l.mapa}`];
+}
+
 /**
  * Mensagem para o cliente quando o pedido muda de status (a equipe confere antes de enviar).
  * status: { codigo, nome, descricao, finalizado } do cadastro. Os c\u00f3digos padr\u00e3o t\u00eam texto
@@ -248,15 +337,16 @@ export function montarMensagemStatus(pedido, status, urlRecibo, cfg) {
   const quando = `${formatarData(p.data_retirada)}${p.hora_retirada ? ' \u00e0s ' + String(p.hora_retirada).slice(0, 5) : ''}`;
   const retirada = e ? `*Entrega:* ${quando}` : `*Retirada:* ${quando}`;
   const endereco = e ? `*Endere\u00e7o:* ${textoEndereco(e)}` : '';
+  const local = e ? [] : linhasLocalRetirada(cfg);   // onde buscar (s\u00f3 na retirada)
   const saldo = Number(p.saldo ?? 0);
   const pct = Number(p.percentual_sinal ?? 50).toLocaleString('pt-BR');
   const textos = {
     recebido: [`Recebemos o seu pedido ${ped}.`, `Para confirmar, envie o comprovante do sinal de ${formatarPreco(p.valor_sinal)} (${pct}% ${e && Number(e.taxa) > 0 ? 'dos produtos' : 'do total'}).`, pix ? `\n${pix}` : ''],
-    confirmado: [`Seu pedido ${ped} est\u00e1 *confirmado*! Recebemos o sinal.`, retirada, endereco],
+    confirmado: [`Seu pedido ${ped} est\u00e1 *confirmado*! Recebemos o sinal.`, retirada, endereco, ...local],
     em_producao: [`Seu pedido ${ped} j\u00e1 est\u00e1 *em produ\u00e7\u00e3o*.`, retirada],
     pronto: e
       ? [`Seu pedido ${ped} est\u00e1 *pronto* e logo sai para entrega!`, retirada, saldo > 0 ? `*Falta pagar na entrega:* ${formatarPreco(saldo)}` : 'Est\u00e1 tudo pago.']
-      : [`Seu pedido ${ped} est\u00e1 *pronto para retirada*!`, retirada, saldo > 0 ? `*Falta pagar:* ${formatarPreco(saldo)}` : 'Est\u00e1 tudo pago, \u00e9 s\u00f3 vir buscar.'],
+      : [`Seu pedido ${ped} est\u00e1 *pronto para retirada*!`, retirada, ...local, saldo > 0 ? `*Falta pagar:* ${formatarPreco(saldo)}` : 'Est\u00e1 tudo pago, \u00e9 s\u00f3 vir buscar.'],
     em_rota: paraOutro
       ? ['Um pedido para voc\u00ea *saiu para entrega* e j\u00e1 est\u00e1 a caminho!', endereco, 'Qualquer coisa, \u00e9 s\u00f3 responder esta mensagem.']
       : [`Seu pedido ${ped} *saiu para entrega* e j\u00e1 est\u00e1 a caminho!`, endereco, saldo > 0 ? `*Falta pagar na entrega:* ${formatarPreco(saldo)}` : 'Est\u00e1 tudo pago, \u00e9 s\u00f3 receber.'],

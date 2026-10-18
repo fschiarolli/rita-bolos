@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
 import { detalhesItemWhatsApp, itensWhatsApp, montarMensagemWhatsApp, montarMensagemStatus,
-  juntarReferencia, formatarPreco, formatarPeso, formatarData, formatarCep, textoEndereco, quemRecebe, textoPix } from '../js/rita-api.js';
+  juntarReferencia, formatarPreco, formatarPeso, formatarData, formatarCep, textoEndereco, quemRecebe, textoPix, localRetirada, linhasLocalRetirada } from '../js/rita-api.js';
 
 const escolhas = {
   'Sabor do bolo': 'Ninho com morango',
@@ -34,11 +34,11 @@ function conferirKit(txt) {
   assert.ok(txt.includes(`_Imagem de referência:_ ${referencia}`));
   assert.ok(!txt.includes('_Obs:_ Sabor do bolo:'));
 }
-function modelos(p = pedido(), recibo = 'https://example.com/recibo.html?t=teste') {
+function modelos(p = pedido(), recibo = 'https://example.com/recibo.html?t=teste', cfg = null) {
   const ctx = vm.createContext({ R: formatarPreco, formatarData, formatarPeso, itensWhatsApp, textoEndereco, quemRecebe,
-    formatarCep, textoPix, hora: x => x.slice(0, 5), hojeISO: () => '2099-12-20', statusDe: () => ({ finalizado: false }) });
+    formatarCep, textoPix, linhasLocalRetirada, hora: x => x.slice(0, 5), hojeISO: () => '2099-12-20', statusDe: () => ({ finalizado: false }) });
   vm.runInContext(trecho(back, 'function modelosMensagem(', 'async function modalMensagem('), ctx);
-  return ctx.modelosMensagem(p, recibo, null).modelos;
+  return ctx.modelosMensagem(p, recibo, null, cfg).modelos;
 }
 
 test('mensagem do pedido salvo separa todos os campos do kit, notas e referência', () => {
@@ -125,4 +125,30 @@ test('envio direto do cardápio também separa os campos do kit', () => {
   vm.runInContext(trecho(site, 'function sendDirect(', 'function openClearConfirm('), ctx);
   ctx.sendDirect();
   conferirKit(enviada);
+});
+
+test('confirmação e pedido pronto dizem onde retirar, com o link do mapa', () => {
+  const cfg = { endereco_retirada: 'Rua Jesus Tomás de Aquino, 44 - Jardim Santo André, Hortolândia', entrega_origem: '-22.8815, -47.2059' };
+  const mapa = 'https://www.google.com/maps/search/?api=1&query=Rua%20Jesus%20Tom%C3%A1s%20de%20Aquino%2C%2044%20-%20Jardim%20Santo%20Andr%C3%A9%2C%20Hortol%C3%A2ndia';
+  for (const codigo of ['confirmado', 'pronto']) {
+    const txt = montarMensagemStatus(pedido(), { codigo }, null, cfg);
+    assert.ok(txt.includes(`*Local de retirada:* ${cfg.endereco_retirada}\nMapa: ${mapa}`), codigo);
+  }
+  for (const codigo of ['recebido', 'em_producao']) assert.doesNotMatch(montarMensagemStatus(pedido(), { codigo }, null, cfg), /Local de retirada/);
+  // entrega: vai o endereço do cliente, não o da loja
+  const entrega = { ...pedido(), entrega: { endereco: 'Rua A, 10', cidade: 'Campinas' } };
+  assert.doesNotMatch(montarMensagemStatus(entrega, { codigo: 'confirmado' }, null, cfg), /Local de retirada/);
+  // os modelos do backoffice: lembrete da retirada e pedido pronto
+  const lista = modelos(pedido(), '', cfg);
+  for (const id of ['retirada', 'pronto']) assert.ok(lista.find(m => m.id === id).txt.includes(`*Local de retirada:* ${cfg.endereco_retirada}`), id);
+});
+
+test('sem endereço de retirada vale o da entrega; coordenadas viram só o link', () => {
+  assert.equal(localRetirada({}), null);
+  assert.deepEqual(localRetirada({ entrega_origem: '-22.88150483513304, -47.20591178835479' }),
+    { texto: '', mapa: 'https://www.google.com/maps/search/?api=1&query=-22.88150483513304,-47.20591178835479' });
+  assert.deepEqual(localRetirada({ entrega_origem: 'Rua das Flores, 123, Centro', entrega_origem_lat: -22.9, entrega_origem_lng: -47.1 }),
+    { texto: 'Rua das Flores, 123, Centro', mapa: 'https://www.google.com/maps/search/?api=1&query=-22.9,-47.1' });
+  assert.deepEqual(linhasLocalRetirada({ entrega_origem: '-22.8815, -47.2059' }), ['*Local de retirada:* https://www.google.com/maps/search/?api=1&query=-22.8815,-47.2059']);
+  assert.doesNotMatch(montarMensagemStatus(pedido(), { codigo: 'confirmado' }, null, null), /Local de retirada/);
 });

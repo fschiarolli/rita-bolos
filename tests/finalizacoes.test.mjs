@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
-import { criarApi, formatarPreco as R, formatarPeso, formatarData, separarReferencia, montarMensagemWhatsApp } from '../js/rita-api.js';
+import { criarApi, formatarPreco as R, formatarPeso, formatarData, separarReferencia, montarMensagemWhatsApp, agruparFinalizacoes, detalhesDoItem } from '../js/rita-api.js';
 import { criarSupabaseDemo } from '../demo/supabase-demo.js';
 
 const site = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
@@ -121,7 +121,7 @@ test('pedido enviado salva ambas as finalizações na quantidade correta, no Wha
   assert.deepEqual(salvo.itens.slice(1).map(i => i.nome), opcoes.map(f => f.nome));
   assert.equal(salvo.total, Math.round((Number(bolo.preco) * peso + 30) * 2 * 100) / 100);
   assert.equal(salvo.total, ctx.precoLinha(ctx.cart[0]) * 2);
-  const print = vm.createContext({ R, formatarPeso, formatarData, separarReferencia, esc: s => String(s ?? ''),
+  const print = vm.createContext({ R, formatarPeso, formatarData, separarReferencia, agruparFinalizacoes, detalhesDoItem, esc: s => String(s ?? ''),
     dataHora: () => '', dataCurta: s => s, hora: s => s, ORIGENS: {}, kitDoItem: () => null, conteudoKit: () => null,
     area: { innerHTML: '' }, document: { getElementById: () => ({}) } });
   vm.runInContext(trecho(back, 'function cupomTermica(', '/** Um ou mais pedidos completos'), print);
