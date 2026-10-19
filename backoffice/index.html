@@ -448,6 +448,28 @@ a.chip { text-decoration: none; }
 .tag.pend { background: var(--rose-50); color: var(--rose-600); }
 .tag.cinza { background: var(--surface-2); color: var(--ink-2); }
 .tag .ic { width: 13px; height: 13px; }
+/* ---------- Avaliações dos clientes (sql/avaliacoes.sql) ---------- */
+.aval-estrelas { display: inline-flex; gap: 1px; vertical-align: middle; }
+.aval-estrelas .ic { width: 19px; height: 19px; fill: var(--gold); stroke: none; }
+.aval-estrelas .ic.vazia { fill: var(--surface-3); }
+.aval-site { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 18px; }
+.aval-site label { cursor: pointer; }
+.aval-site .switch { margin-top: 2px; }
+.aval-site strong { display: block; font-size: 15.5px; }
+.aval-site p { margin: 3px 0 0; color: var(--ink-2); font-size: 13.5px; line-height: 1.5; }
+.aval-site a { font-weight: 700; }
+.aval-filtro { margin-bottom: 14px; }
+.aval-lista { display: grid; gap: 12px; }
+.aval-card { padding: 16px 18px; }
+.aval-topo { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.aval-nota { font-weight: 800; font-size: 14px; }
+.aval-quando { margin-left: auto; font-size: 12.5px; color: var(--ink-3); }
+.aval-txt { margin: 10px 0 0; font-size: 15px; line-height: 1.55; white-space: pre-line; overflow-wrap: anywhere; max-width: 70ch; }
+.aval-txt.sem { color: var(--ink-3); font-size: 14px; }
+.aval-quem { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 10px 0 0; font-size: 13.5px; color: var(--ink-2); }
+.aval-quem strong { color: var(--ink); }
+.aval-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
+.aval-acoes .btn.icon { margin-left: auto; }
 .vazio { text-align: center; padding: 40px 16px; color: var(--ink-2); }
 .vazio h2 { font-family: var(--font-head); font-weight: 800; font-size: 18px; color: var(--ink); margin-bottom: 4px; }
 .mais { display: flex; justify-content: center; margin-top: 14px; }
@@ -1626,6 +1648,7 @@ a, button, summary, label, .chip { touch-action: manipulation; }
     <symbol id="i-voltar" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
     <symbol id="i-seta" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></symbol>
     <symbol id="i-sino" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></symbol>
+    <symbol id="i-estrela" viewBox="0 0 24 24"><path d="M12 3.2l2.6 5.4 5.9.9-4.3 4.2 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.2 5.9-.9z"/></symbol>
     <symbol id="i-foto" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></symbol>
     <symbol id="i-topo" viewBox="0 0 24 24"><path d="M12 2.5l1.41 3.56 3.82.24-2.95 2.44.95 3.71L12 10.4l-3.23 2.05.95-3.71L6.77 6.3l3.82-.24z"/><path d="M12 10.4V21"/><path d="M8.5 21h7"/></symbol>
     <symbol id="i-presente" viewBox="0 0 24 24"><rect x="3.5" y="8" width="17" height="4.5" rx="1"/><path d="M5 12.5v8h14v-8M12 8v12.5"/><path d="M12 8c-1-3.6-5.6-3.9-5.2-.9.2 1.4 2.6 1 5.2.9zM12 8c1-3.6 5.6-3.9 5.2-.9-.2 1.4-2.6 1-5.2.9z"/></symbol>

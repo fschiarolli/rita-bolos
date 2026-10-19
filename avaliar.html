@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#58210F">
+<title>Avaliar pedido — Rita Bolos</title>
+<link rel="icon" href="imagens/marca/rita-bolos.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+/*
+  Avaliação do pedido pelo cliente (sql/avaliacoes.sql).
+    avaliar.html?t=TOKEN        -> link enviado no WhatsApp quando o pedido é retirado ou entregue (o mesmo código do recibo)
+    avaliar.html?t=TOKEN&demo   -> na demonstração (o mesmo banco de mentirinha do site e do backoffice)
+  As cores e fontes são as do site (index.html).
+*/
+:root {
+  --font-display: 'DM Serif Display', Georgia, 'Times New Roman', serif;
+  --font-ui: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --bg: #FBF4EC; --surface: #FFFFFF; --surface-2: #F5EBDF;
+  --ink: #3A1F14; --ink-2: #6E4B3A; --ink-3: #85675A; --line: rgba(58, 31, 20, .14);
+  --primary: #58210F; --on-primary: #FBF4EC;
+  --teal: #2B7465; --mint-50: #E8F4EF; --gold: #C9A15A; --star-off: #E4D6C6;
+  --error: #B3261E; --wa: #13803F;
+  --shadow-1: 0 1px 2px rgba(58, 31, 20, .05), 0 3px 10px rgba(58, 31, 20, .06);
+  --raio: 18px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1E130E; --surface: #2A1B14; --surface-2: #352319;
+    --ink: #F7EBDD; --ink-2: #D9C4B1; --ink-3: #B8A08E; --line: rgba(247, 235, 221, .14);
+    --primary: #F2DCC4; --on-primary: #2A1B14; --teal: #8FD3C0; --mint-50: #1D2E28; --star-off: #4A3529;
+    --error: #FF8A80; --wa: #2FB765; --shadow-1: 0 1px 2px rgba(0,0,0,.3), 0 3px 10px rgba(0,0,0,.25);
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  min-height: 100vh; min-height: 100dvh; background: var(--bg); color: var(--ink);
+  font: 400 16px/1.5 var(--font-ui); -webkit-font-smoothing: antialiased;
+  padding: calc(20px + env(safe-area-inset-top, 0px)) 16px calc(32px + env(safe-area-inset-bottom, 0px));
+}
+button, input, textarea { font: inherit; color: inherit; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.pagina { max-width: 34rem; margin: 0 auto; }
+
+/* topo: a marca */
+.marca { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; text-decoration: none; color: inherit; }
+.marca img { width: 58px; height: auto; }
+.marca strong { display: block; font-family: var(--font-display); font-weight: 400; font-size: 22px; line-height: 1.1; }
+.marca span { font-size: 13px; font-weight: 700; color: var(--ink-2); }
+
+h1 { font-family: var(--font-display); font-weight: 400; font-size: clamp(28px, 7.4vw, 36px); line-height: 1.12; letter-spacing: -.01em; margin: 0 0 8px; text-wrap: balance; }
+.sobre { margin: 0 0 4px; font-weight: 800; color: var(--ink-2); font-size: 15px; }
+.itens { margin: 0 0 20px; color: var(--ink-3); font-size: 14.5px; }
+
+.cartao { background: var(--surface); border: 1px solid var(--line); border-radius: var(--raio); padding: 22px 20px; box-shadow: var(--shadow-1); }
+
+/* as estrelas: botões de opção (dá para usar pelo teclado com as setas) */
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+legend { padding: 0; font-weight: 900; font-size: 17px; margin-bottom: 10px; }
+.estrelas { display: flex; gap: 6px; justify-content: space-between; max-width: 320px; }
+.estrela { position: relative; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 14px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.estrela input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.estrela svg { width: 46px; height: 46px; fill: var(--star-off); stroke: none; transition: transform .15s ease, fill .15s ease; pointer-events: none; }
+.estrela.cheia svg { fill: var(--gold); }
+.estrela input:focus-visible + svg { outline: 3px solid var(--teal); outline-offset: 4px; border-radius: 8px; }
+.estrela:active svg { transform: scale(.92); }
+.nota-txt { min-height: 26px; margin: 8px 0 0; font-weight: 900; font-size: 17px; color: var(--teal); }
+.nota-txt:empty::before { content: 'Toque numa estrela'; font-weight: 700; color: var(--ink-3); }
+
+.campo { margin-top: 20px; }
+.campo label { display: block; font-weight: 800; margin-bottom: 6px; }
+.campo label small { font-weight: 600; color: var(--ink-3); font-size: 14px; }
+textarea { width: 100%; min-height: 116px; resize: vertical; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); line-height: 1.5; }
+textarea:focus-visible, .chk input:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px; }
+.contador { margin: 4px 0 0; text-align: right; font-size: 13px; font-weight: 700; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.chk { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; font-size: 14.5px; cursor: pointer; }
+.chk input { width: 22px; height: 22px; margin: 1px 0 0; flex: none; accent-color: var(--teal); }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; padding: 0 22px; border-radius: 999px; border: 0; font-weight: 900; font-size: 16.5px; cursor: pointer; text-decoration: none; touch-action: manipulation; }
+.btn:focus-visible, .link:focus-visible { outline: 3px solid var(--teal); outline-offset: 3px; }
+.btn-primario { background: var(--primary); color: var(--on-primary); width: 100%; margin-top: 20px; }
+.btn-primario:disabled { opacity: .6; cursor: progress; }
+.btn-ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.btn:not(:disabled):active { transform: scale(.985); }
+.erro { margin: 12px 0 0; color: var(--error); font-weight: 800; font-size: 14.5px; }
+.erro:empty { display: none; }
+
+/* obrigada */
+.feito { text-align: center; }
+.feito .selo { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; margin: 0 auto 12px; background: var(--mint-50); color: var(--teal); }
+.feito .selo svg { width: 34px; height: 34px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.feito h1 { font-size: 28px; line-height: 1.15; margin: 0 0 6px; }
+.feito h1:focus { outline: none; }   /* recebe o foco só para o leitor de tela anunciar; não é um controle */
+.feito p { margin: 0; color: var(--ink-2); }
+.resumo { display: inline-flex; gap: 4px; margin: 16px 0 4px; }
+.resumo svg { width: 28px; height: 28px; fill: var(--star-off); }
+.resumo svg.cheia { fill: var(--gold); }
+.citacao { margin: 10px auto 0; max-width: 28rem; font-family: var(--font-display); font-size: 19px; line-height: 1.4; color: var(--ink); white-space: pre-line; overflow-wrap: anywhere; }
+.acoes { display: grid; gap: 10px; margin-top: 20px; }
+.links { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 18px; margin-top: 16px; font-weight: 800; font-size: 15px; }
+.link { color: var(--teal); text-underline-offset: 3px; }
+
+.estado { text-align: center; padding: 18px 4px; }
+.estado h1 { font-size: 26px; }
+.estado p { margin: 0 auto; max-width: 26rem; color: var(--ink-2); }
+.carregando { width: 34px; height: 34px; border-radius: 50%; border: 4px solid var(--surface-2); border-top-color: var(--teal); margin: 40px auto 14px; animation: gira .8s linear infinite; }
+@keyframes gira { to { transform: rotate(360deg); } }
+.rodape { margin-top: 26px; text-align: center; font-size: 14px; color: var(--ink-3); }
+.rodape a { color: inherit; font-weight: 800; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .carregando { animation: none; } .estrela svg { transition: none; } }
+@media (min-width: 600px) { body { padding-top: 48px; } .cartao { padding: 28px; } }
+</style>
+</head>
+<body>
+<main class="pagina">
+  <a class="marca" href="./" aria-label="Rita Bolos, ir para o site"><img src="imagens/marca/rita-bolos.png" alt="" width="58" height="52"><span><strong>Rita Bolos</strong><span>Bolos e sobremesas</span></span></a>
+  <div id="area"><div class="carregando" aria-hidden="true"></div><p class="estado" role="status">Carregando o pedido…</p></div>
+  <p class="rodape" id="rodape" hidden></p>
+</main>
+
+<script type="module">
+import { conectar, formatarData } from './js/rita-api.js';
+
+const ESTRELA = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.4c.4 0 .8.2 1 .6l2.6 5.3 5.8.9c.9.1 1.3 1.2.6 1.9l-4.2 4.1 1 5.8c.2.9-.8 1.6-1.6 1.2L12 19.4l-5.2 2.8c-.8.4-1.8-.3-1.6-1.2l1-5.8-4.2-4.1c-.7-.7-.3-1.8.6-1.9l5.8-.9L11 3c.2-.4.6-.6 1-.6z"/></svg>';
+const CERTO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const PALAVRAS = ['', 'Não gostei', 'Podia ser melhor', 'Bom', 'Muito bom', 'Amei'];
+const MAX = 1000;
+const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const area = document.getElementById('area');
+const qs = new URLSearchParams(location.search), token = (qs.get('t') || '').trim(), demo = qs.has('demo');
+const comDemo = url => url + (demo ? (url.includes('?') ? '&demo' : '?demo') : '');
+let api = null, pedido = null, sujo = false;   // sujo: comentário digitado e ainda não enviado
+addEventListener('beforeunload', e => { if (sujo) { e.preventDefault(); e.returnValue = ''; } });
+
+function estado(titulo, texto, extra = '') {
+  area.innerHTML = `<div class="estado"><h1>${esc(titulo)}</h1><p>${esc(texto)}</p>${extra}</div>`;
+}
+const linkRecibo = () => `<p class="links"><a class="link" href="${esc(comDemo(`recibo.html?t=${encodeURIComponent(token)}`))}">Ver o recibo do pedido</a></p>`;
+
+/* ---------- o formulário ---------- */
+function formulario(atual = null) {
+  const nome = pedido.nome ? `${pedido.nome}, como` : 'Como';
+  const feito = pedido.status === 'entregue' ? 'entregue' : 'retirado';
+  area.innerHTML = `
+    <h1>${esc(nome)} foi o seu pedido?</h1>
+    <p class="sobre">Pedido ${esc(pedido.codigo)}${pedido.data_retirada ? ` · ${feito} em ${esc(formatarData(pedido.data_retirada))}` : ''}</p>
+    ${pedido.itens?.length ? `<p class="itens">${esc(pedido.itens.slice(0, 4).join(', '))}${pedido.itens.length > 4 ? ` e mais ${pedido.itens.length - 4}` : ''}</p>` : ''}
+    <form class="cartao" id="form" novalidate>
+      <fieldset>
+        <legend>Sua nota</legend>
+        <div class="estrelas" id="estrelas">${[1, 2, 3, 4, 5].map(n => `<label class="estrela"><input type="radio" name="nota" value="${n}" ${atual?.nota === n ? 'checked' : ''}
+          aria-label="${n} ${n === 1 ? 'estrela' : 'estrelas'}: ${PALAVRAS[n]}">${ESTRELA}</label>`).join('')}</div>
+        <p class="nota-txt" id="notaTxt" aria-live="polite"></p>
+      </fieldset>
+      <div class="campo">
+        <label for="comentario">Quer contar mais? <small>(opcional)</small></label>
+        <textarea id="comentario" maxlength="${MAX}" autocomplete="off" placeholder="Ex.: o bolo estava macio e chegou no horário…">${esc(atual?.comentario || '')}</textarea>
+        <p class="contador" id="contador" aria-live="polite"></p>
+      </div>
+      <label class="chk"><input type="checkbox" id="podePublicar" ${atual && !atual.pode_publicar ? '' : 'checked'}>
+        <span>Pode mostrar minha avaliação no site da Rita Bolos, só com o meu primeiro nome.</span></label>
+      <button type="submit" class="btn btn-primario" id="enviar">${atual ? 'Salvar a avaliação' : 'Enviar avaliação'}</button>
+      <p class="erro" id="erro" role="alert"></p>
+    </form>`;
+  const estrelas = [...area.querySelectorAll('.estrela')], txt = area.querySelector('#notaTxt');
+  const marcada = () => Number(area.querySelector('input[name="nota"]:checked')?.value || 0);
+  const pintar = n => estrelas.forEach((e, i) => e.classList.toggle('cheia', i < n));
+  const mostrar = () => { const n = marcada(); pintar(n); txt.textContent = n ? PALAVRAS[n] : ''; };
+  area.querySelector('#estrelas').addEventListener('change', () => { mostrar(); area.querySelector('#erro').textContent = ''; });
+  // no computador, passar o mouse mostra a nota antes de clicar
+  estrelas.forEach((e, i) => { e.addEventListener('pointerenter', ev => { if (ev.pointerType === 'mouse') pintar(i + 1); }); });
+  area.querySelector('#estrelas').addEventListener('pointerleave', () => pintar(marcada()));
+  const com = area.querySelector('#comentario'), cont = area.querySelector('#contador');
+  const contar = () => { const n = com.value.length; cont.textContent = n > MAX - 200 ? `${n} de ${MAX} caracteres` : ''; };
+  com.addEventListener('input', () => { contar(); sujo = com.value.trim() !== (atual?.comentario || ''); });
+  mostrar(); contar();
+  area.querySelector('#form').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const nota = marcada(), erro = area.querySelector('#erro'), bt = area.querySelector('#enviar');
+    if (!nota) { erro.textContent = 'Escolha de 1 a 5 estrelas.'; estrelas[0].querySelector('input').focus(); return; }
+    bt.disabled = true; const rotulo = bt.textContent; bt.textContent = 'Enviando…'; erro.textContent = '';
+    try {
+      pedido = await api.avaliacoes.enviar(token, { nota, comentario: com.value.trim() || null, podePublicar: area.querySelector('#podePublicar').checked });
+      sujo = false;
+      obrigada(true);
+    } catch (e) {
+      erro.textContent = e.message || 'Não deu para enviar agora. Tente de novo em instantes.';
+      bt.disabled = false; bt.textContent = rotulo;
+    }
+  });
+}
+
+/* ---------- depois de avaliar ---------- */
+function obrigada(agora) {
+  const a = pedido.avaliacao;
+  area.innerHTML = `<section class="cartao feito" aria-labelledby="tFeito">
+      <div class="selo">${CERTO}</div>
+      <h1 id="tFeito" tabindex="-1">${agora ? `Obrigada${pedido.nome ? ', ' + esc(pedido.nome) : ''}!` : 'Você já avaliou este pedido'}</h1>
+      <p>${agora ? 'Sua avaliação chegou para a Rita Bolos. Ela ajuda a gente a caprichar cada vez mais.' : `Pedido ${esc(pedido.codigo)}. Se quiser, dá para mudar.`}</p>
+      <div class="resumo" role="img" aria-label="${a.nota} de 5 estrelas">${[1, 2, 3, 4, 5].map(n => ESTRELA.replace('<svg', `<svg class="${n <= a.nota ? 'cheia' : ''}"`)).join('')}</div>
+      <p><strong>${a.nota} de 5 · ${esc(PALAVRAS[a.nota])}</strong></p>
+      ${a.comentario ? `<p class="citacao">“${esc(a.comentario)}”</p>` : ''}
+      <div class="acoes"><button type="button" class="btn btn-ghost" id="mudar">Mudar minha avaliação</button></div>
+      <p class="links"><a class="link" href="${esc(comDemo(`recibo.html?t=${encodeURIComponent(token)}`))}">Ver o recibo</a><a class="link" href="${esc(comDemo('./'))}">Fazer outro pedido</a></p>
+    </section>`;
+  area.querySelector('#mudar').addEventListener('click', () => formulario(pedido.avaliacao));
+  if (agora) area.querySelector('#tFeito').focus();
+}
+
+async function iniciar() {
+  if (!token) { estado('Link incompleto', 'Abra a avaliação pelo link que a Rita Bolos mandou no WhatsApp.'); return; }
+  try {
+    if (demo) {
+      const [{ criarApi }, { criarSupabaseDemo }] = await Promise.all([import('./js/rita-api.js'), import('./demo/supabase-demo.js')]);
+      api = criarApi(criarSupabaseDemo({ anonimo: true }));
+    } else {
+      const cfg = await import('./js/config.js');
+      api = await conectar(cfg.SUPABASE_URL, cfg.SUPABASE_PUBLISHABLE_KEY || cfg.SUPABASE_ANON_KEY, { anonimo: true });
+    }
+  } catch (e) { estado('Não foi possível conectar', 'Confira a internet e tente de novo.'); return; }
+  // o WhatsApp da loja no rodapé (se não vier, a página segue sem)
+  api.cardapio.obter().then(c => {
+    const zap = c?.configuracoes?.whatsapp_exibicao, num = String(c?.configuracoes?.whatsapp_numero || zap || '').replace(/\D/g, '');
+    if (!zap) return;
+    const r = document.getElementById('rodape');
+    r.innerHTML = `Dúvidas? Fale com a Rita no WhatsApp: <a href="https://wa.me/${num.length <= 11 ? '55' + num : num}" target="_blank" rel="noopener">${esc(zap)}</a>`;
+    r.hidden = false;
+  }).catch(() => {});
+  try {
+    pedido = await api.avaliacoes.doPedido(token);
+  } catch (e) { estado('Não foi possível abrir a avaliação', e.message || 'Tente novamente em instantes.'); return; }
+  if (!pedido) { estado('Pedido não encontrado', 'Confira se o link está completo ou fale com a Rita pelo WhatsApp.'); return; }
+  if (pedido.indisponivel) { estado('Avaliação indisponível', 'A avaliação dos pedidos ainda não está funcionando. Se quiser contar como foi, fale com a Rita pelo WhatsApp.'); return; }
+  document.title = `Avaliar o pedido ${pedido.codigo} — Rita Bolos`;
+  if (pedido.status === 'cancelado') { estado('Este pedido foi cancelado', 'Não há o que avaliar por aqui. Qualquer dúvida, fale com a Rita pelo WhatsApp.'); return; }
+  if (!pedido.pode_avaliar) {
+    estado('Seu pedido ainda não chegou', 'Assim que você retirar ou receber o pedido, volte por este mesmo link para contar como foi.', linkRecibo());
+    return;
+  }
+  if (pedido.avaliacao) obrigada(false); else formulario();
+}
+iniciar();
+</script>
+</body>
+</html>

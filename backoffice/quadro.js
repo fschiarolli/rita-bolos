@@ -89,6 +89,13 @@ function nomeCurto(nome) {
   const p = String(nome || '').trim().split(/\s+/);
   return p.length <= 2 ? p.join(' ') : `${p[0]} ${p[p.length - 1]}`;
 }
+/** No nível mínimo, o nome divide a linha com o atraso: "Ana Paula" → "Ana P.". */
+function nomeMini(nome) {
+  const p = String(nome || '').trim().split(/\s+/).filter(Boolean);
+  return p.length < 2 ? p.join('') : `${p[0]} ${p[p.length - 1].charAt(0).toUpperCase()}.`;
+}
+/** "2 h" (de 2 h 05 a 2 h 59), "45 min": a etiqueta curta do nível mínimo. */
+const duracaoCurta = min => { min = Math.round(Math.abs(min)); return min < 60 ? `${min} min` : min < 1440 ? `${Math.floor(min / 60)} h` : plural(Math.floor(min / 1440), 'dia', 'dias'); };
 const primeiroNome = nome => String(nome || '').trim().split(/\s+/)[0] || 'Cliente';
 
 /* =========================================================
@@ -450,15 +457,23 @@ function vazio(ehPronto) {
 const ficha = (tipo, icone, texto) => `<span class="ficha ${tipo}">${ic(icone)}${esc(texto)}</span>`;
 function cartao(p, ctx) {
   const { ag } = ctx, falta = minRetirada(p) - ag.min, pronto = ctx.estaPronto(p), dia = rotuloDia(p.data_retirada, ag.iso);
-  let classe = '', urgencia = '';
+  // urgencia: a ficha dos cartões normais e compactos; curta: a do nível mínimo, ao lado do nome (o atraso escrito, não só a cor)
+  let classe = '', urgencia = '', curta = '';
   if (falta < 0) {
-    if (pronto) { classe = 'esperando'; urgencia = ficha('aviso', 'relogio', p.hora_retirada ? `${p.entrega ? 'Era para sair há' : 'Esperando há'} ${duracao(falta)}` : `Era para ${dia.toLowerCase()}`); }
-    else { classe = 'atrasado'; urgencia = ficha('critico', 'alerta', p.hora_retirada ? `Atrasado ${duracao(falta)}` : `Era para ${dia.toLowerCase()}`); }
+    if (pronto) {
+      classe = 'esperando'; urgencia = ficha('aviso', 'relogio', p.hora_retirada ? `${p.entrega ? 'Era para sair há' : 'Esperando há'} ${duracao(falta)}` : `Era para ${dia.toLowerCase()}`);
+      curta = ficha('aviso c-urg', 'relogio', p.hora_retirada ? `há ${duracaoCurta(falta)}` : dia.toLowerCase());
+    } else {
+      classe = 'atrasado'; urgencia = ficha('critico', 'alerta', p.hora_retirada ? `Atrasado ${duracao(falta)}` : `Era para ${dia.toLowerCase()}`);
+      curta = ficha('critico c-urg', 'alerta', p.hora_retirada ? `atraso ${duracaoCurta(falta)}` : dia.toLowerCase());
+    }
   } else if (!pronto && p.hora_retirada && falta <= EM_BREVE_MIN) {
     classe = 'em-breve'; urgencia = ficha('aviso', 'relogio', `${p.entrega ? 'Sai em' : 'Retira em'} ${duracao(falta)}`);
+    curta = ficha('aviso c-urg', 'relogio', `em ${duracaoCurta(falta)}`);
   }
   const d = destaques.get(p.id);
   const novo = d?.tipo === 'novo' ? ficha('marca', 'brilho', 'Novo') : '';
+  if (!curta && novo) curta = ficha('marca c-urg', 'brilho', 'novo');
   const entrega = p.entrega ? ficha('ent', 'entrega', p.entrega.bairro ? `Entrega · ${p.entrega.bairro}` : 'Entrega') : '';
   // o atraso negativo continua a animação de onde parou quando o quadro é redesenhado
   const anim = d ? ` style="animation-delay:-${Date.now() - d.em}ms"` : '';
@@ -467,10 +482,11 @@ function cartao(p, ctx) {
   return `<article class="cartao ${classe} ${d ? d.tipo : ''}"${anim} aria-label="${esc(`${p.codigo}, ${p.cliente_nome}, ${p.entrega ? 'entrega' : 'retirada'} ${dia.toLowerCase()}${hora(p) ? ' às ' + hora(p) : ''}`)}">
     <div class="c-cab">
       <div class="c-quando">${hora(p) ? `<span class="c-hora">${hora(p)}</span>` : '<span class="c-hora sem">Sem hora</span>'}${SO_HOJE && p.data_retirada === ag.iso ? '' : `<span class="c-dia">${esc(dia)}</span>`}</div>
-      <div class="c-quem"><span class="c-nome" title="${esc(p.cliente_nome)}">${esc(nomeCurto(p.cliente_nome))}</span><span class="c-cod">${esc(p.codigo)}</span></div>
+      <div class="c-quem"><span class="c-nome" title="${esc(p.cliente_nome)}">${esc(nomeCurto(p.cliente_nome))}</span><span class="c-nome-mini" aria-hidden="true">${esc(nomeMini(p.cliente_nome))}</span><span class="c-cod">${esc(p.codigo)}</span>${curta}</div>
     </div>
     ${urgencia || novo || entrega ? `<div class="c-fichas">${novo}${urgencia}${entrega}</div>` : ''}
     <ul class="c-itens">${itensDoCartao(p)}</ul>
+    <div class="c-resumo">${resumoDoCartao(p)}</div>
     ${notas.map(n => `<div class="c-nota">${ic('pin')}<span>${esc(n)}</span></div>`).join('')}
     ${p.observacao_cliente ? `<div class="c-obs">${ic('conversa')}<span>${esc(p.observacao_cliente)}</span></div>` : ''}
     ${pagto ? `<div class="c-pag">${pagto}</div>` : ''}
@@ -490,6 +506,13 @@ function itensDoCartao(p) {
       ${det ? `<span class="c-det">${esc(det)}</span>` : ''}${(() => { const k = conteudoKit(i, kits.mapa); return k ? `<span class="c-kit">Vem no kit: ${esc(k)}</span>` : ''; })()}${(() => { const o = separarReferencia(i.observacao);   // o link da imagem de referência vira uma miniatura
         return `${o.texto ? `<span class="c-iobs">${esc(o.texto)}</span>` : ''}${o.imagem ? `<span class="c-ref"><img src="${esc(o.imagem)}" alt="">imagem de referência</span>` : ''}`; })()}</span></li>`;
   }).join('') + (itens.length > mostrar.length ? `<li class="c-mais">+ ${plural(itens.length - mostrar.length, 'item', 'itens')}</li>` : '');
+}
+/** Nível mínimo: o primeiro item inteiro e quantos mais há ("1× Bolo Ninho 1,5 kg" "+2 itens"), em vez de cortar o segundo no meio. */
+function resumoDoCartao(p) {
+  const itens = dados.itens ? dados.itens.get(p.id) : null;
+  if (!itens?.length) return `<span>${esc(p.resumo_itens || 'Itens do pedido')}</span>`;
+  const i = itens[0];
+  return `<span>${i.quantidade}× ${esc(i.nome)}${i.peso_kg ? ` ${esc(formatarPeso(i.peso_kg))}` : ''}</span>${itens.length > 1 ? `<b>+${plural(itens.length - 1, 'item', 'itens')}</b>` : ''}`;
 }
 /** Dinheiro só onde importa: sinal no começo, saldo no pronto (para quem entrega). */
 function pagamento(p, ctx) {
@@ -525,11 +548,12 @@ function producao(ctx) {
           <span class="p-qtd">${l.qtd}<small>×</small></span>
           <span class="p-nome">${esc(l.nome)}${l.peso ? ` · ${esc(formatarPeso(l.peso))}` : ''}${l.det ? `<span class="p-det">${esc(l.det)}</span>` : ''}${l.obs ? `<span class="p-obs">${esc(l.obs)}</span>` : ''}</span>
         </div>`).join('')}`).join('');
-      return `<div class="p-dia">
-        <div class="p-dia-cab"><strong>${dia.nome}</strong><span>${esc(maiuscula(fmtSemana.format(new Date(dia.data + 'T12:00:00Z'))))} ${dataCurta(dia.data)} · ${plural(pedidos.length, 'pedido', 'pedidos')}</span></div>
+      // quanto bolo sai no dia: o que a cozinha planeja primeiro
+      const bolos = [...linhas.values()].filter(l => Number(l.peso) > 0).reduce((t, l) => ({ n: t.n + l.qtd, kg: t.kg + l.qtd * Number(l.peso) }), { n: 0, kg: 0 });
+      // cada linha é da coluna (não fica dentro de um bloco do dia): assim a coluna troca de página entre elas
+      return `<div class="p-dia-cab"><strong>${dia.nome}</strong><span>${esc(maiuscula(fmtSemana.format(new Date(dia.data + 'T12:00:00Z'))))} ${dataCurta(dia.data)} · ${plural(pedidos.length, 'pedido', 'pedidos')}</span>${bolos.n ? `<small>${plural(bolos.n, 'bolo', 'bolos')}, ${esc(formatarPeso(Math.round(bolos.kg * 10) / 10))} no total</small>` : ''}</div>
         ${cats || `<div class="p-nota">${dia.nome === 'Hoje' ? 'Nada para produzir hoje.' : 'Nada confirmado para amanhã ainda.'}</div>`}
-        ${semSinal ? `<div class="p-nota"><b>+ ${plural(semSinal, 'pedido', 'pedidos')}</b> aguardando sinal (fora da lista)</div>` : ''}
-      </div>`;
+        ${semSinal ? `<div class="p-nota"><b>+ ${plural(semSinal, 'pedido', 'pedidos')}</b> aguardando sinal (fora da lista)</div>` : ''}`;
     });
     corpo = blocos.join('');
   }
@@ -563,7 +587,9 @@ function paginar() {
       const H = rolo.clientHeight; let base = 0;
       for (const f of trilho.children) {
         if (!(f.offsetTop > base && f.offsetTop + f.offsetHeight - base > H + 1)) continue;
-        const ant = f.previousElementSibling, ini = ant?.classList.contains('grupo') && ant.offsetTop > base ? ant.offsetTop : f.offsetTop;
+        // os títulos logo acima (período, dia, categoria da produção) vão junto para a página do que vem embaixo deles
+        let ini = f.offsetTop;
+        for (let ant = f.previousElementSibling; ant?.matches('.grupo, .p-dia-cab, .p-cat') && ant.offsetTop > base; ant = ant.previousElementSibling) ini = ant.offsetTop;
         inicios.push(ini); base = ini;
       }
     }

@@ -32,6 +32,26 @@ function semearStories(b) {
   b.stories = ex.map(([path, titulo, pasta], i) => ({ id: novoId(), arquivo_path: path, miniatura_path: null, titulo, pasta, largura: null, altura: null, bytes: null,
     criado_em: new Date(Date.now() - (i + 1) * 36e5).toISOString(), criado_por: USUARIO_DEMO.id }));
 }
+/** Avaliações de exemplo (igual a sql/avaliacoes.sql): de pedidos antigos, que não estão na demonstração (por isso guardam os itens). */
+function semearAvaliacoes(b) {
+  const dia = n => new Date(Date.now() - n * 864e5).toISOString();
+  const ex = [
+    ['Fernanda Rocha', 5, 'O bolo de Ninho com morango estava perfeito: macio, bem recheado e lindo. Todo mundo na festa pediu o contato!', 'publicada', true, 'Bolo Ninho + Morango · Brigadeiro', 3],
+    ['Ricardo Alves', 5, 'Pedi o kit para o aniversário da minha filha. Chegou tudo no horário e os salgados estavam quentinhos.', 'publicada', true, 'Kit 30 pessoas', 6],
+    ['Juliana Costa', 4, 'Bolo delicioso. Só achei o chantilly um pouco doce para o meu gosto.', 'publicada', true, 'Bolo Floresta Negra', 9],
+    ['Marcos Vinícius Oliveira', 5, null, 'nova', true, 'Bolo Brigadeiro + Ninho', 1],
+    ['Patrícia Gomes', 3, 'O sabor estava ótimo, mas a retirada atrasou uns 20 minutos.', 'nova', true, 'Bolo Prestígio · Beijinho', 1],
+    ['Renata Souza', 5, 'Melhor bolo de pote da região!', 'nova', false, 'Bolo no pote Ninho com Nutella', 2]
+  ];
+  b.avaliacoes = ex.map(([cliente_nome, nota, comentario, situacao, pode_publicar, itens, dias], i) => ({ id: novoId(), pedido_id: null,
+    pedido_codigo: 'RB-' + String(980 + i).padStart(5, '0'), cliente_nome, nota, comentario, pode_publicar, situacao,
+    publicada_em: situacao === 'publicada' ? dia(dias - 0.5) : null, criado_em: dia(dias), atualizado_em: dia(dias), _itens: itens }));
+}
+/** "Maria Aparecida dos Santos" → "Maria S." (o mesmo que avaliacao_nome_publico em sql/avaliacoes.sql). */
+function nomePublico(nome) {
+  const p = String(nome || '').trim().split(/\s+/).filter(Boolean), cap = s => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+  return !p.length ? 'Cliente' : p.length === 1 ? cap(p[0]) : `${cap(p[0])} ${p[p.length - 1].charAt(0).toUpperCase()}.`;
+}
 /** Aviso "topo pronto" para a equipe da loja (o mesmo texto do gatilho em sql/topos.sql). */
 function avisoTopoPronto(lista, t) {
   const cod = 'TP-' + String(t.numero).padStart(4, '0'), oque = t.tipo === 'personalizado' ? 'personalizado' : 'topo', qtd = t.quantidade > 1 ? `${t.quantidade}× ` : '';
@@ -113,6 +133,8 @@ export function criarSupabaseDemo(opcoes = {}) {
     b.pedido_entregas = b.pedido_entregas || [];
     b.excessos_peso = b.excessos_peso || [];   // peso final do bolo (igual a sql/peso-final.sql)
     if (!b.stories) semearStories(b);   // imagens para os stories (igual a sql/stories.sql)
+    if (!b.avaliacoes) semearAvaliacoes(b);   // avaliações dos pedidos (igual a sql/avaliacoes.sql): a aba do site começa desligada
+    if (cf && !('avaliacoes_site' in cf)) cf.avaliacoes_site = false;
     (b.pedidos || []).forEach(p => { if (p.taxa_entrega == null) p.taxa_entrega = 0; });
     if (cf && !('entrega_origem' in cf)) Object.assign(cf, LOJA_ENTREGA, { entrega_taxa_minima: 8, entrega_km_incluidos: 3, entrega_valor_km: 1.5, entrega_raio_km: 15 });
     if (cf && !('endereco_retirada' in cf)) cf.endereco_retirada = null;   // igual a sql/endereco-retirada.sql (em branco: vale o da entrega)
@@ -410,6 +432,14 @@ export function criarSupabaseDemo(opcoes = {}) {
       if (q.op === 'insert' || q.op === 'upsert') return erro('new row violates row-level security policy for table "stories"', '42501');
       return finalizar([], q, 0);
     }
+    if (tabela === 'avaliacoes') {   // a equipe vê; a Administração só muda a situação ou apaga; o cliente avalia pelas funções
+      if (q.op === 'select') { if (!equipe()) return finalizar([], q, 0); }
+      else if (q.op === 'delete') { if (!adminLoja()) return finalizar([], q, 0); }
+      else if (q.op !== 'update' || Object.keys(q.dados || {}).some(k => k !== 'situacao')) return erro('permission denied for table avaliacoes', '42501');
+      else if (!adminLoja()) return finalizar([], q, 0);
+      else if (q.dados.situacao === 'publicada' && fonte.filter(filtrar).some(a => !a.pode_publicar))
+        return erro('O cliente não autorizou mostrar esta avaliação no site.');
+    }
     if (tabela === 'pedido_entregas' && !equipe())   // endereço e telefone de quem recebe: só a equipe da loja
       return q.op === 'select' ? finalizar([], q, 0) : erro('new row violates row-level security policy for table "pedido_entregas"', '42501');
     if (q.op === 'upsert') {   // grava por cima quando a chave já existe (ex.: a entrega do pedido)
@@ -513,6 +543,8 @@ export function criarSupabaseDemo(opcoes = {}) {
     return { ...base, ...id, ...extra };
   }
   function aposEscrever(tabela, novo, antigo) {
+    // avaliação: a data da publicação acompanha a situação (o gatilho avaliacoes_antes de sql/avaliacoes.sql)
+    if (tabela === 'avaliacoes' && novo) novo.publicada_em = novo.situacao !== 'publicada' ? null : (antigo?.situacao === 'publicada' && antigo.publicada_em) || agora();
     if (tabela === 'pedidos' && novo) {
       if (antigo && novo.status !== antigo.status) historico(novo.id, antigo.status, novo.status, null);
       recalcularPedido(novo);
@@ -814,6 +846,16 @@ export function criarSupabaseDemo(opcoes = {}) {
     base.pedido_observacoes.push({ id: 1, pedido_id: p1.id, texto: 'Cliente pediu caixa alta para transporte.', fixada: true, autor_id: USUARIO_DEMO.id, autor_nome: 'Rita', criado_em: agora(), atualizado_em: agora() });
   }
 
+  /** O pedido e a avaliação já feita, para a página avaliar.html (o mesmo que avaliacao_do_pedido em sql/avaliacoes.sql). */
+  function avaliacaoDoPedido(token) {
+    const t = String(token ?? '').trim(), p = t && db.pedidos.find(x => x.token === t);
+    if (!p) return null;
+    const a = (db.avaliacoes || []).find(x => x.pedido_id === p.id);
+    return { codigo: p.codigo, nome: String(p.cliente_nome || '').trim().split(/\s+/)[0] || '', data_retirada: p.data_retirada, status: p.status,
+      pode_avaliar: !!status(p.status).finalizado && p.status !== 'cancelado',
+      itens: db.pedido_itens.filter(i => i.pedido_id === p.id).sort((x, y) => (x.ordem ?? 0) - (y.ordem ?? 0)).map(i => i.nome),
+      avaliacao: a ? { nota: a.nota, comentario: a.comentario, pode_publicar: a.pode_publicar, situacao: a.situacao, atualizado_em: a.atualizado_em } : null };
+  }
   const RPC = {
     obter_cardapio: () => obterCardapio(),
     criar_pedido: ({ p_pedido }) => { const { id, repetido } = criarPedido(p_pedido); return { ...pedidoJson(id, false), token: db.pedidos.find(p => p.id === id).token, repetido }; },
@@ -831,6 +873,42 @@ export function criarSupabaseDemo(opcoes = {}) {
     entrega_publica: ({ p_token }) => {   // sql/entregas.sql: endereço e taxa para o recibo do cliente, sem telefone
       const p = db.pedidos.find(x => x.token === String(p_token || '').trim()), e = p && db.pedido_entregas.find(x => x.pedido_id === p.id);
       return e ? { taxa: e.taxa, cep: e.cep, endereco: e.endereco, complemento: e.complemento, bairro: e.bairro, cidade: e.cidade, recebedor_nome: e.recebedor_nome } : null;
+    },
+    // Avaliações (igual a sql/avaliacoes.sql): o cliente avalia pelo token do recibo, depois de retirado ou entregue
+    avaliacao_do_pedido: ({ p_token }) => avaliacaoDoPedido(p_token),
+    avaliar_pedido: ({ p_token, p_nota, p_comentario = null, p_pode_publicar = true }) => {
+      const nota = Number(p_nota);
+      if (p_nota == null || !Number.isInteger(nota) || nota < 1 || nota > 5) throw ['Escolha de 1 a 5 estrelas.', '22023'];
+      const com = String(p_comentario ?? '').trim() || null, pode = p_pode_publicar !== false;
+      if (com && com.length > 1000) throw ['O comentário pode ter até 1.000 caracteres.', '22001'];
+      const p = db.pedidos.find(x => x.token === String(p_token ?? '').trim());
+      if (!p) throw ['Pedido não encontrado. Confira se o link está completo.', 'P0002'];
+      if (!status(p.status).finalizado || p.status === 'cancelado') throw 'Dá para avaliar depois que o pedido for retirado ou entregue.';
+      db.avaliacoes = db.avaliacoes || [];
+      let a = db.avaliacoes.find(x => x.pedido_id === p.id);
+      if (a) {   // mudou o que escreveu (ou a autorização): volta a ser nova
+        if (!(a.nota === nota && (a.comentario ?? null) === com && a.pode_publicar === pode)) Object.assign(a, { situacao: 'nova', publicada_em: null });
+        Object.assign(a, { nota, comentario: com, pode_publicar: pode, pedido_codigo: p.codigo, cliente_nome: p.cliente_nome, atualizado_em: agora() });
+      } else {
+        db.avaliacoes.push({ id: novoId(), pedido_id: p.id, pedido_codigo: p.codigo, cliente_nome: p.cliente_nome, nota, comentario: com, pode_publicar: pode,
+          situacao: 'nova', publicada_em: null, criado_em: agora(), atualizado_em: agora() });
+        db.notificacoes = db.notificacoes || [];
+        const n = { id: db.notificacoes.reduce((m, x) => Math.max(m, x.id), 0) + 1, tipo: 'avaliacao', titulo: `Avaliação nova: ${nota} ${nota === 1 ? 'estrela' : 'estrelas'}`,
+          texto: `${String(p.cliente_nome || '').trim() || 'Cliente'} · pedido ${p.codigo}${com ? ` · “${com.slice(0, 90)}${com.length > 90 ? '…' : ''}”` : ''}`,
+          pedido_id: p.id, criado_em: agora(), lida_em: null };
+        db.notificacoes.push(n);
+        salvar(); emitir('INSERT', n, null, 'notificacoes');
+      }
+      salvar();
+      return avaliacaoDoPedido(p.token);
+    },
+    avaliacoes_publicadas: ({ p_limite = 60 } = {}) => {
+      const pub = (db.avaliacoes || []).filter(a => a.situacao === 'publicada' && a.pode_publicar), data = a => a.publicada_em || a.criado_em;
+      const itens = a => a._itens || db.pedido_itens.filter(i => i.pedido_id === a.pedido_id).sort((x, y) => (x.ordem ?? 0) - (y.ordem ?? 0)).slice(0, 3).map(i => i.nome).join(' · ') || null;
+      return { total: pub.length, media: pub.length ? Math.round(pub.reduce((s, a) => s + a.nota, 0) / pub.length * 10) / 10 : null,
+        notas: Object.fromEntries([5, 4, 3, 2, 1].map(n => [n, pub.filter(a => a.nota === n).length])),
+        avaliacoes: [...pub].sort((a, b) => String(data(b)).localeCompare(String(data(a)))).slice(0, Math.max(1, Math.min(Number(p_limite) || 60, 200)))
+          .map(a => ({ nota: a.nota, comentario: a.comentario, nome: nomePublico(a.cliente_nome), data: data(a), itens: itens(a) })) };
     },
     recibo_pedido: ({ p_pedido_id }) => { exigirEquipe(); const r = pedidoJson(p_pedido_id, true); if (!r) throw ['Pedido não encontrado.', 'P0002']; return r; },
     alterar_status_pedido: ({ p_pedido_id, p_status, p_comentario }) => {

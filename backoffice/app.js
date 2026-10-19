@@ -5,7 +5,7 @@
  * Usa a mesma API do site (../js/rita-api.js).
  * Modo demonstração, sem banco: abra com ?demo
  */
-import { criarApi, conectar, formatarPreco as R, formatarPeso, formatarData, linkRecibo, linkWhatsApp, abrirWhatsApp, linkCompartilhavel, montarMensagemStatus, prepararAba, linhasLocalRetirada, localRetirada,
+import { criarApi, conectar, formatarPreco as R, formatarPeso, formatarData, linkRecibo, linkAvaliacao, linkWhatsApp, abrirWhatsApp, linkCompartilhavel, montarMensagemStatus, prepararAba, linhasLocalRetirada, localRetirada,
   separarReferencia, juntarReferencia, ehTopper, pixDe, textoPix, itensWhatsApp, novaChave, mapaKits, achatarCardapio, conteudoKit,
   escolhasDoItem, detalhesDoItem, agruparFinalizacoes, ehItemFinalizacao, finalizacaoDoBolo, boloDaFinalizacao,
   formatarCep, textoEndereco, linkWaze, linkMapa, quemRecebe, buscarCep, calcularTaxaEntrega, localizarEndereco, origemEntrega, temRegraEntrega, taxaPelaDistancia, excessoDePeso } from '../js/rita-api.js';
@@ -444,7 +444,7 @@ async function aposLogin() {
   if (podeTopos()) atualizarBadgeTopos().then(ok => { if (ok && perfil) ligarTempoRealTopos(); });
   if (!ehProdutor()) carregarAvisos().then(ok => { if (ok && perfil) ligarAvisos(); });
   if (!ehProdutor()) mapaKitsLoja();   // conteúdo dos kits já pronto para a gaveta e a impressão
-  if (isAdmin()) badgeEstoque();
+  if (isAdmin()) { badgeEstoque(); badgeAvaliacoes(); }
   if (!ehProdutor() && confNiimbot().usar) { carregarNiimblue().catch(() => {}); reconectarNiimbot(); }
   if (!ehProdutor() && impressaoAuto().ligada) toast('Impressão automática ligada neste aparelho: pedidos confirmados saem na impressora.', { tempo: 6000 });
   // notificações: a mesma pessoa volta a receber neste aparelho; no app instalado, oferece ligar uma vez
@@ -481,6 +481,7 @@ const NAV = [
   { id: 'estoque', rot: 'Estoque', ic: 'estoque', admin: true },
   { id: 'cardapio', rot: 'Cardápio', ic: 'bolo', admin: true },
   { id: 'stories', rot: 'Stories', ic: 'stories', admin: true },
+  { id: 'avaliacoes', rot: 'Avaliações', ic: 'estrela', admin: true },
   { id: 'ajustes', rot: 'Ajustes', ic: 'config', admin: true }
 ];
 /** Quem vê cada item do menu: Topos para a Administração e quem produz personalizados (que só vê Topos). */
@@ -544,7 +545,7 @@ function modalAvatar() {
 const papelTxt = () => ({ admin: 'Administração', personalizados: 'Topos e personalizados' })[perfil.papel] || 'Atendimento';
 function telaShell() {
   const itens = NAV.filter(podeVerNav), prod = ehProdutor();
-  const link = (n, cls) => `<a class="${cls}" href="#${n.id}" data-nav="${n.id}">${ic(n.ic)}<span>${n.rot}</span>${n.badge ? '<span class="nav-badge" data-badge hidden></span>' : ''}${n.topos ? '<span class="nav-badge" data-badge-topos hidden></span>' : ''}${n.id === 'estoque' ? '<span class="nav-badge" data-badge-estoque hidden></span>' : ''}</a>`;
+  const link = (n, cls) => `<a class="${cls}" href="#${n.id}" data-nav="${n.id}">${ic(n.ic)}<span>${n.rot}</span>${n.badge ? '<span class="nav-badge" data-badge hidden></span>' : ''}${n.topos ? '<span class="nav-badge" data-badge-topos hidden></span>' : ''}${n.id === 'estoque' ? '<span class="nav-badge" data-badge-estoque hidden></span>' : ''}${n.id === 'avaliacoes' ? '<span class="nav-badge" data-badge-avaliacoes hidden></span>' : ''}</a>`;
   const principais = itens.filter(n => !n.admin), gestao = itens.filter(n => n.admin);
   app.innerHTML = `<div class="shell">
     <aside class="side" aria-label="Menu principal">
@@ -615,7 +616,7 @@ function barraCelular(itens, link) {
 function abrirMais() {
   const outros = NAV.filter(podeVerNav).filter(n => !NAV_MOB.includes(n.id));
   const badge = sel => { const b = $(`.side ${sel}`); return b && !b.hidden && b.textContent.trim() ? `<span class="nav-badge">${esc(b.textContent.trim())}</span>` : ''; };
-  const item = n => `<a class="mais-it" href="#${n.id}" ${telaAtual === n.id ? 'aria-current="page"' : ''}>${ic(n.ic)}<span>${esc(n.rot)}</span>${n.topos ? badge('[data-badge-topos]') : ''}${n.id === 'estoque' ? badge('[data-badge-estoque]') : ''}</a>`;
+  const item = n => `<a class="mais-it" href="#${n.id}" ${telaAtual === n.id ? 'aria-current="page"' : ''}>${ic(n.ic)}<span>${esc(n.rot)}</span>${n.topos ? badge('[data-badge-topos]') : ''}${n.id === 'estoque' ? badge('[data-badge-estoque]') : ''}${n.id === 'avaliacoes' ? badge('[data-badge-avaliacoes]') : ''}</a>`;
   const m = abrirModal({
     titulo: 'Mais',
     corpo: `<nav class="mais-grade" aria-label="Outras telas">${outros.map(item).join('')}</nav>
@@ -632,7 +633,7 @@ function abrirMais() {
 /** O "Mais" do celular ganha um ponto quando alguma tela de dentro dele tem aviso (topos, estoque). */
 function ligarBadgeMais() {
   const nav = $('.side-nav'), ponto = $('[data-badge-mais]'); if (!nav || !ponto) return;
-  const conta = () => { ponto.hidden = !$$('.side-nav [data-badge-topos], .side-nav [data-badge-estoque]').some(b => !b.hidden && b.textContent.trim()); };
+  const conta = () => { ponto.hidden = !$$('.side-nav [data-badge-topos], .side-nav [data-badge-estoque], .side-nav [data-badge-avaliacoes]').some(b => !b.hidden && b.textContent.trim()); };
   new MutationObserver(conta).observe(nav, { subtree: true, attributes: true, attributeFilter: ['hidden'], childList: true, characterData: true });
   conta();
 }
@@ -1166,7 +1167,7 @@ function rotear(forcar = false) {
     const el = $('#conteudo');
     document.title = `${NAV.find(n => n.id === tela)?.rot || 'Painel'} — Backoffice Rita Bolos`;
     if (tela !== 'topos') sairTvTopos();
-    ({ painel: telaPainel, hoje: telaHoje, pedidos: telaPedidos, producao: telaProducao, topos: telaTopos, relatorio: telaRelatorio, prejuizos: telaPrejuizos, estoque: telaEstoque, cardapio: telaCardapio, stories: telaStories, ajustes: telaAjustes })[tela](el, sub);
+    ({ painel: telaPainel, hoje: telaHoje, pedidos: telaPedidos, producao: telaProducao, topos: telaTopos, relatorio: telaRelatorio, prejuizos: telaPrejuizos, estoque: telaEstoque, cardapio: telaCardapio, stories: telaStories, avaliacoes: telaAvaliacoes, ajustes: telaAjustes })[tela](el, sub);
     window.scrollTo(0, 0);
   }
   if (pedidoId && !ehProdutor()) abrirGaveta(pedidoId); else fecharGaveta(true);
@@ -1760,7 +1761,7 @@ async function desenharStories({ sabores, ini, fim, top = 5, qtd = false, tema =
 
   // como encomendar, colado no fim da área segura
   const zap = loja.whatsapp_exibicao ? formatarTel(loja.whatsapp_exibicao) || loja.whatsapp_exibicao : '';
-  const site = String(loja.url_site || '').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const site = String(loja.url_site || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, '');   // "ritabolos.com"
   g.font = sans(800, 40);
   const pedir = [`Encomendas pelo WhatsApp ${zap}`, `Encomendas: ${zap}`].find(t => g.measureText(t).width <= L - 2 * M) || `Encomendas: ${zap}`;
   const rodape = [zap && { t: pedir, f: sans(800, 40), cor: T.rodape, h: 56 }, site && { t: site, f: sans(700, 34), cor: T.site, h: 50 }].filter(Boolean);
@@ -4564,10 +4565,13 @@ function modelosMensagem(p, urlRecibo, pix, cfg = null) {
       : { id: 'pronto', rot: 'Pedido pronto', txt: `${ola}\n\nSeu pedido ${ped} está *pronto para retirada*!${p.hora_retirada || d ? ` Combinamos ${quando}.` : ''}${local ? `\n${local}` : ''}${saldo > 0 ? `\n\nFalta pagar *${v(saldo)}*: pode ser na retirada.` : '\n\nEstá tudo pago, é só vir buscar.'}` }),
     saldo > 0 && faltaSinal <= 0 && { id: 'saldo', rot: 'Saldo a pagar', txt: `${ola}\n\nO restante do seu pedido ${ped} é *${v(saldo)}*. Pode pagar ${e ? 'na entrega' : 'na retirada'} ou mandar o comprovante por aqui.${comPix}` },
     urlRecibo && { id: 'recibo', rot: 'Enviar recibo', txt: `${resumo}\n\n*Recibo:* ${urlRecibo}` },
+    // pedido retirado ou entregue: o link para avaliar (só com o banco pronto: sql/avaliacoes.sql)
+    urlRecibo && ['retirado', 'entregue'].includes(p.status) && cfg && 'avaliacoes_site' in cfg
+      && { id: 'avaliar', rot: 'Pedir avaliação', txt: `${ola}\n\nObrigada pelo pedido ${ped}! Conta pra gente o que achou? Leva um minutinho: ${linkAvaliacao(urlRecibo)}` },
     { id: 'livre', rot: 'Escrever do zero', txt: `${ola}\n\n` }
   ].filter(Boolean);
   // Começa pelo que mais faz sentido agora
-  const sugerido = (p.status === 'recebido' && faltaSinal > 0 && 'sinal') || (p.status === 'pronto' && 'pronto')
+  const sugerido = (p.status === 'recebido' && faltaSinal > 0 && 'sinal') || (p.status === 'pronto' && 'pronto') || (['retirado', 'entregue'].includes(p.status) && 'avaliar')
     || ((d === hojeISO() || d === hojeISO(1)) && !st.finalizado && 'retirada') || 'oi';
   return { modelos, sugerido: modelos.some(m => m.id === sugerido) ? sugerido : 'oi' };
 }
@@ -5849,7 +5853,7 @@ async function ajLoja(box) {
       ${inTa('lPausa', 'Mensagem quando os pedidos estiverem pausados', c.mensagem_pausa || '', { attrs: 'maxlength="300" style="min-height:60px" placeholder="Ex.: Estamos de férias até 10/01. Voltamos logo!"' })}
       <div class="grid2">${inTxt('lNome', 'Nome da loja', c.nome_loja, { attrs: 'maxlength="60"' })}${inTxt('lSlogan', 'Slogan', c.slogan || '', { attrs: 'maxlength="80"' })}</div>
       <div class="grid2">${inTxt('lWa', 'WhatsApp da loja (DDD + número)', formatarTel(c.whatsapp_numero), { attrs: ATTR_TEL.replace('99999-9999', '3845-1550'), dica: 'É o número que recebe os pedidos do site.' })}${inTxt('lWaEx', 'WhatsApp como aparece no site', formatarTel(c.whatsapp_exibicao) || c.whatsapp_exibicao || '', { attrs: ATTR_TEL.replace('99999-9999', '3845-1550'), dica: 'Em branco, usa o mesmo número de cima.' })}</div>
-      ${inTxt('lUrl', 'Endereço do site', c.url_site || '', { attrs: 'type="url" placeholder="https://ritabolos.com.br/"', dica: 'Usado no link do recibo que vai no WhatsApp.' })}
+      ${inTxt('lUrl', 'Endereço do site', c.url_site || '', { attrs: 'type="url" placeholder="https://www.ritabolos.com/"', dica: 'Usado no link do recibo que vai no WhatsApp.' })}
       ${'whatsapp_api_ativa' in c ? `<p class="secao-t linha">WhatsApp automático</p>
       ${inChk('lWaAuto', 'Enviar confirmação de pedido e mudanças de status pelo WhatsApp da empresa', !!c.whatsapp_api_ativa)}
       <p class="ajuste-dica">Envia aos clientes que autorizaram os avisos. Quando o cliente precisa iniciar uma conversa, recebe o modelo aprovado; os detalhes completos seguem após a resposta.</p>
@@ -7536,6 +7540,123 @@ async function modalItemEstoque(it = null) {
 }
 
 /* =========================================================
+   AVALIAÇÕES (#avaliacoes, sql/avaliacoes.sql)
+   O cliente avalia pelo link do WhatsApp depois de retirar ou receber o pedido. Cada avaliação chega
+   como nova; a Administração publica no site ou oculta. A aba do site só aparece ligada aqui.
+========================================================= */
+const SITUACOES_AV = [['nova', 'Novas'], ['publicada', 'No site'], ['oculta', 'Ocultas'], ['todas', 'Todas']];
+const PALAVRAS_NOTA = ['', 'Não gostei', 'Podia ser melhor', 'Bom', 'Muito bom', 'Amei'];
+let avaliacoesLista = [], avaliacoesFiltro = null;
+const estrelasAv = n => `<span class="aval-estrelas" role="img" aria-label="${n} de 5 estrelas">${[1, 2, 3, 4, 5].map(i => ic('estrela', i <= n ? 'ic' : 'ic vazia')).join('')}</span>`;
+/** Como o nome sai no site: "Maria Aparecida dos Santos" → "Maria S." (o mesmo que o banco faz). */
+function nomeNoSite(nome) {
+  const p = String(nome || '').trim().split(/\s+/).filter(Boolean), cap = s => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+  return !p.length ? 'Cliente' : p.length === 1 ? cap(p[0]) : `${cap(p[0])} ${p[p.length - 1].charAt(0).toUpperCase()}.`;
+}
+/** Contador do menu: avaliações que chegaram e ninguém publicou nem ocultou. */
+async function badgeAvaliacoes() {
+  if (!isAdmin()) return;
+  const n = await api.admin.avaliacoes.novas().catch(() => 0);
+  $$('[data-badge-avaliacoes]').forEach(b => { b.textContent = n > 99 ? '99+' : n; b.hidden = !n; b.title = `${n} ${n === 1 ? 'avaliação nova' : 'avaliações novas'}`; });
+}
+async function telaAvaliacoes(el) {
+  el.innerHTML = cabecalho('Avaliações', '', 'O que os clientes contam depois de retirar ou receber o pedido. Você escolhe quais aparecem no site.')
+    + `<div id="avCorpo"><div class="skel" style="height:96px;margin-bottom:14px"></div><div class="skel" style="height:220px"></div></div>`;
+  if (!await api.admin.avaliacoes.disponivel()) {
+    if (telaAtual !== 'avaliacoes') return;
+    $('#avCorpo').innerHTML = `<p class="aviso-box">Para os clientes avaliarem os pedidos, rode o arquivo <code>sql/avaliacoes.sql</code> no Supabase (SQL Editor). Depois, abra esta tela de novo.
+      A partir daí, a mensagem de "retirado" e de "entregue" leva o link para avaliar.</p>`;
+    return;
+  }
+  try { [avaliacoesLista] = await Promise.all([api.admin.avaliacoes.listar(), configLoja(true)]); }
+  catch (e) {
+    if (telaAtual !== 'avaliacoes') return;
+    $('#avCorpo').innerHTML = `<div class="vazio"><h2>Não foi possível carregar</h2><p>${esc(e.message)}</p></div>`;
+    return;
+  }
+  if (telaAtual === 'avaliacoes') desenharAvaliacoes();
+}
+function desenharAvaliacoes() {
+  const corpo = $('#avCorpo'); if (!corpo) return;
+  const lista = avaliacoesLista, cfg = cacheLoja || {}, ligada = cfg.avaliacoes_site === true;
+  const conta = s => (s === 'todas' ? lista.length : lista.filter(a => a.situacao === s).length);
+  if (!avaliacoesFiltro || !conta(avaliacoesFiltro)) avaliacoesFiltro = conta('nova') ? 'nova' : 'todas';
+  const noSite = conta('publicada'), media = lista.length ? lista.reduce((s, a) => s + a.nota, 0) / lista.length : 0;
+  const umaCasa = n => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const site = `<div class="card aval-site">
+      <input type="checkbox" class="switch" id="avSite" ${ligada ? 'checked' : ''} aria-describedby="avSiteTxt">
+      <div><label for="avSite"><strong>Mostrar a aba Avaliações no site</strong></label>
+        <p id="avSiteTxt">${ligada
+          ? `Ligada: o site mostra ${noSite ? `as ${noSite} avaliações publicadas` : 'as avaliações publicadas (nenhuma ainda)'} numa página própria e um resumo no início. <a href="${esc(urlSite())}#avaliacoes" target="_blank" rel="noopener">Ver no site</a>`
+          : 'Desligada: o site não mostra nenhuma avaliação. Os clientes continuam avaliando e você já pode escolher quais publicar.'}</p></div>
+    </div>`;
+  const tile = (cor, icone, rot, valor, sub) => `<div class="kpi" style="${corVars(cor)}"><span class="kpi-ic">${ic(icone)}</span>
+      <span class="kpi-t"><span>${rot}</span><strong>${valor}</strong>${sub ? `<span class="delta neutro">${sub}</span>` : ''}</span></div>`;
+  const kpis = lista.length ? `<div class="card kpi-strip">
+      ${tile('#C9A15A', 'estrela', 'Nota média', umaCasa(media), `de 5, em ${lista.length} ${lista.length === 1 ? 'avaliação' : 'avaliações'}`)}
+      ${tile('#B37951', 'sino', 'Novas', conta('nova'), conta('nova') ? 'esperando você' : 'nenhuma esperando')}
+      ${tile('#1F6E63', 'externo', 'No site', noSite, ligada ? 'aparecem no site' : 'a aba está desligada')}
+    </div>` : '';
+  const filtro = `<div class="chips aval-filtro" role="group" aria-label="Mostrar">${SITUACOES_AV.map(([v, rot]) =>
+    `<button type="button" class="chip" data-av-filtro="${v}" aria-pressed="${v === avaliacoesFiltro}">${rot} · ${conta(v)}</button>`).join('')}</div>`;
+  const vis = lista.filter(a => avaliacoesFiltro === 'todas' || a.situacao === avaliacoesFiltro);
+  const cartao = a => {
+    const tags = [a.situacao === 'nova' ? `<span class="tag sinal">${ic('sino')}Nova</span>` : a.situacao === 'publicada' ? `<span class="tag pago">${ic('ok')}No site</span>` : '<span class="tag cinza">Oculta</span>',
+      a.pode_publicar ? '' : '<span class="tag pend">O cliente não autorizou mostrar no site</span>'].join('');
+    const pedido = a.pedido_id ? `<button type="button" class="link" data-av-pedido="${esc(a.pedido_id)}">Pedido ${esc(a.pedido_codigo || '')}</button>` : `<span>Pedido ${esc(a.pedido_codigo || '')}</span>`;
+    const publicar = `<button type="button" class="btn sm primary" data-av-sit="publicada" data-av="${esc(a.id)}" ${a.pode_publicar ? '' : 'disabled title="O cliente não autorizou mostrar esta avaliação no site"'}>${ic('externo')}Publicar no site</button>`;
+    const acoes = a.situacao === 'publicada'
+      ? `<button type="button" class="btn sm ghost" data-av-sit="oculta" data-av="${esc(a.id)}">Tirar do site</button>`
+      : a.situacao === 'nova' ? `${publicar}<button type="button" class="btn sm ghost" data-av-sit="oculta" data-av="${esc(a.id)}">Não publicar</button>` : publicar;
+    return `<article class="card aval-card" aria-label="${esc(`${a.nota} estrelas, ${a.cliente_nome || 'cliente'}`)}">
+      <div class="aval-topo">${estrelasAv(a.nota)}<span class="aval-nota">${a.nota} de 5 · ${esc(PALAVRAS_NOTA[a.nota] || '')}</span>${tags}<span class="aval-quando">${esc(tempoAtras(a.criado_em))}${a.atualizado_em && a.atualizado_em > a.criado_em ? ' · mudou depois' : ''}</span></div>
+      ${a.comentario ? `<p class="aval-txt">${esc(a.comentario)}</p>` : '<p class="aval-txt sem">Sem comentário, só a nota.</p>'}
+      <p class="aval-quem"><strong>${esc(a.cliente_nome || 'Cliente')}</strong>${pedido}<span>No site aparece como “${esc(nomeNoSite(a.cliente_nome))}”${a._itens ? ` · ${esc(a._itens)}` : ''}</span></p>
+      <div class="aval-acoes">${acoes}<button type="button" class="btn icon sm ghost" data-av-del="${esc(a.id)}" aria-label="Excluir a avaliação de ${esc(a.cliente_nome || 'cliente')}" title="Excluir">${ic('lixo')}</button></div>
+    </article>`;
+  };
+  corpo.innerHTML = site + kpis + (lista.length
+    ? filtro + (vis.length ? `<div class="aval-lista">${vis.map(cartao).join('')}</div>` : `<div class="vazio"><p>Nenhuma avaliação aqui.</p></div>`)
+    : `<div class="vazio">${ic('estrela')}<h2>Nenhuma avaliação ainda</h2>
+        <p>Quando um pedido for marcado como retirado ou entregue, a mensagem do WhatsApp leva o link para o cliente avaliar. As avaliações aparecem aqui.</p></div>`);
+}
+document.addEventListener('change', async e => {
+  if (e.target.id !== 'avSite') return;
+  const ligar = e.target.checked;
+  e.target.disabled = true;
+  try {
+    await api.admin.configuracoes.salvar({ avaliacoes_site: ligar });
+    cacheLoja = null; await configLoja();
+    toast(ligar ? 'A aba Avaliações apareceu no site.' : 'A aba Avaliações saiu do site.');
+  } catch (err) { e.target.checked = !ligar; erroToast(err); }
+  finally { e.target.disabled = false; if (telaAtual === 'avaliacoes') desenharAvaliacoes(); }
+});
+document.addEventListener('click', async e => {
+  const f = e.target.closest('[data-av-filtro]');
+  if (f) { avaliacoesFiltro = f.dataset.avFiltro; desenharAvaliacoes(); return; }
+  const ped = e.target.closest('[data-av-pedido]');
+  if (ped) { verPedido(ped.dataset.avPedido); return; }
+  const sit = e.target.closest('[data-av-sit]');
+  if (sit) {
+    await ocupado(sit, async () => {
+      const nova = await api.admin.avaliacoes.definirSituacao(sit.dataset.av, sit.dataset.avSit);
+      avaliacoesLista = avaliacoesLista.map(a => (a.id === nova.id ? { ...a, ...nova } : a));
+      toast(nova.situacao === 'publicada' ? 'Avaliação publicada no site.' : 'Avaliação fora do site.');
+    });
+    desenharAvaliacoes(); badgeAvaliacoes();
+    return;
+  }
+  const del = e.target.closest('[data-av-del]');
+  if (del) {
+    const a = avaliacoesLista.find(x => x.id === del.dataset.avDel); if (!a) return;
+    if (!await confirmar('Excluir a avaliação?', `A avaliação de ${a.cliente_nome || 'cliente'} (${a.nota} de 5) some daqui e do site. O cliente pode avaliar de novo pelo mesmo link.`, { botao: 'Excluir', perigo: true })) return;
+    try { await api.admin.avaliacoes.remover(a.id); avaliacoesLista = avaliacoesLista.filter(x => x.id !== a.id); toast('Avaliação excluída.'); }
+    catch (err) { erroToast(err); }
+    desenharAvaliacoes(); badgeAvaliacoes();
+  }
+});
+
+/* =========================================================
    AVISOS (sino da barra de cima), criados pelo banco (sql/topos.sql).
    Ex.: "O topo do pedido RB-01005 está pronto". Ficam até alguém da equipe marcar como visto.
 ========================================================= */
@@ -7566,13 +7687,17 @@ function ligarAvisos() {
     }
     carregarAvisos();
     if (isAdmin()) badgeEstoque();   // aviso de estoque (ou um item reposto): o contador do menu muda
+    if (isAdmin() && aviso?.tipo === 'avaliacao') {   // avaliação nova: o contador do menu e, com a tela aberta, a lista
+      badgeAvaliacoes();
+      if (telaAtual === 'avaliacoes') telaAvaliacoes($('#conteudo'));
+    }
   });
 }
 function desenharAvisos() {
   const menu = $('#avisosMenu'); if (!menu) return;
   const novos = avisos.filter(a => !a.lida_em).length;
   menu.innerHTML = `<div class="av-cab"><p class="tema-menu-t">Avisos</p>${novos ? '<button type="button" class="link" data-avisos-todos>Marcar todos como vistos</button>' : ''}</div>
-    ${avisos.length ? avisos.map(a => `<button type="button" class="aviso-it ${a.lida_em ? '' : 'novo'}" data-aviso="${esc(a.id)}">${ic(a.tipo === 'topo_pronto' ? 'topo' : /^estoque/.test(a.tipo) ? 'estoque' : 'sino')}
+    ${avisos.length ? avisos.map(a => `<button type="button" class="aviso-it ${a.lida_em ? '' : 'novo'}" data-aviso="${esc(a.id)}">${ic(a.tipo === 'topo_pronto' ? 'topo' : /^estoque/.test(a.tipo) ? 'estoque' : a.tipo === 'avaliacao' ? 'estrela' : 'sino')}
       <span><strong>${esc(a.titulo)}${a.lida_em ? '' : '<i class="av-ponto" aria-label="novo"></i>'}</strong><small>${esc(a.texto || '')}</small><em>${esc(tempoAtras(a.criado_em))}</em></span></button>`).join('')
       : `<p class="av-vazio">Nenhum aviso por enquanto. Quando um topo ficar pronto${isAdmin() ? ' ou um item do estoque estiver acabando' : ''}, ele aparece aqui.</p>`}`;
 }
@@ -7603,6 +7728,9 @@ function abrirDoAviso(a) {
   if (a.estoque_item_id && isAdmin()) {
     estoqueAbrir = a.estoque_item_id;
     if (telaAtual === 'estoque') carregarEstoque(); else location.hash = '#estoque';
+  } else if (a.tipo === 'avaliacao' && isAdmin()) {
+    avaliacoesFiltro = 'nova';
+    if (telaAtual === 'avaliacoes') telaAvaliacoes($('#conteudo')); else location.hash = '#avaliacoes';
   } else if (a.pedido_id) verPedido(a.pedido_id);
   else if (a.topo_id && podeTopos()) abrirTopo(a.topo_id);
 }

@@ -149,6 +149,13 @@ body.cupom .bloco.aviso { border: 1px dashed #000; padding: 6px; }
   body.cupom .bloco.aviso { border: 2px solid #000; }
 }
 .det.ref img { display: block; max-width: 100%; width: 160px; height: auto; max-height: 200px; object-fit: contain; border-radius: 10px; margin-top: 6px; border: 1px solid rgba(0,0,0,.1); }
+/* convite para avaliar (pedido retirado ou entregue, sql/avaliacoes.sql); não sai na impressão */
+.avaliar { display: flex; align-items: center; gap: 12px; margin-top: 18px; padding: 14px 16px; border-radius: 12px; background: var(--mint-50); color: var(--ink); text-decoration: none; border: 1px solid #BFE3D6; }
+.avaliar svg { width: 30px; height: 30px; flex: none; fill: #C9A15A; }
+.avaliar strong { display: block; font-size: 15.5px; }
+.avaliar span { font-size: 13.5px; color: var(--ink-2); }
+.avaliar:focus-visible { outline: 3px solid #51AB9D; outline-offset: 2px; }
+@media print { .avaliar { display: none !important; } }
 .bloco.pix b { font-size: 1.15em; letter-spacing: .03em; }
 @media print { .det.ref { break-inside: avoid; } .det.ref img { width: 40mm; max-height: 50mm; border-radius: 0; } }
 
@@ -363,9 +370,21 @@ async function iniciar() {
     const opts = { urlLogo: api.urlImagem(pedido.loja?.logo_path), interno, mostrarInterno: false, pix: pixDe(cfg), kits };
     render(pedido, opts); configurarBarra(pedido, opts);
     if (qs.has('imprimir')) setTimeout(imprimirRecibo, 400);
+    if (token) convidarAvaliacao(api, token, demo);
   } catch (e) {
     estado('Não foi possível abrir o recibo', e.message || 'Tente novamente em instantes.');
   }
+}
+/** Pedido retirado ou entregue: o convite para avaliar, antes do rodapé (só quando o banco já tem as avaliações). */
+async function convidarAvaliacao(api, token, demo) {
+  try {
+    const av = await api.avaliacoes.doPedido(token), rodape = area.querySelector('.rodape');
+    if (!av || av.indisponivel || !av.pode_avaliar || !rodape) return;
+    const url = `avaliar.html?t=${encodeURIComponent(token)}${demo ? '&demo' : ''}`, a = av.avaliacao;
+    rodape.insertAdjacentHTML('beforebegin', `<a class="avaliar" href="${esc(url)}">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.4c.4 0 .8.2 1 .6l2.6 5.3 5.8.9c.9.1 1.3 1.2.6 1.9l-4.2 4.1 1 5.8c.2.9-.8 1.6-1.6 1.2L12 19.4l-5.2 2.8c-.8.4-1.8-.3-1.6-1.2l1-5.8-4.2-4.1c-.7-.7-.3-1.8.6-1.9l5.8-.9L11 3c.2-.4.6-.6 1-.6z"/></svg>
+      <span><strong>${a ? `Você avaliou com ${a.nota} ${a.nota === 1 ? 'estrela' : 'estrelas'}` : 'Como foi o seu pedido?'}</strong>${a ? 'Toque para ver ou mudar a sua avaliação.' : 'Toque para avaliar. Leva um minutinho.'}</span></a>`);
+  } catch (e) { /* sem o convite, o recibo continua igual */ }
 }
 iniciar();
 </script>

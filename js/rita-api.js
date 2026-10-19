@@ -269,6 +269,8 @@ export function linkRecibo(token, baseSite) {
   const base = (baseSite || (typeof location !== 'undefined' ? location.href : '')).replace(/[#?].*$/, '').replace(/[^/]*$/, '');
   return `${base}recibo.html?t=${encodeURIComponent(token)}`;
 }
+/** Onde o cliente avalia o pedido (avaliar.html, ao lado do recibo), a partir do link do recibo: o mesmo código. */
+export const linkAvaliacao = urlRecibo => String(urlRecibo || '').replace(/(^|\/)recibo\.html\?/, '$1avaliar.html?');
 
 /** Mensagem do WhatsApp montada a partir do pedido gravado (preços do servidor). cfg: configurações da loja (para o Pix). */
 export function montarMensagemWhatsApp(pedido, urlRecibo, cfg) {
@@ -362,6 +364,9 @@ export function montarMensagemStatus(pedido, status, urlRecibo, cfg) {
     if (p.observacao_cliente) l.push('', `*Observação:* ${p.observacao_cliente}`);
   }
   if (urlRecibo && !paraOutro && !['retirado', 'entregue', 'cancelado'].includes(s.codigo)) l.push('', `Acompanhe o pedido: ${urlRecibo}`);
+  // depois de retirado ou entregue, o convite para avaliar (s\u00f3 quando o banco j\u00e1 tem as avalia\u00e7\u00f5es: sql/avaliacoes.sql)
+  if (urlRecibo && ['retirado', 'entregue'].includes(s.codigo) && cfg && 'avaliacoes_site' in cfg)
+    l.push('', `Conta pra gente o que achou? Leva um minutinho: ${linkAvaliacao(urlRecibo)}`);
   return l.join('\n').replace(/\u00a0/g, ' ');
 }
 
@@ -665,7 +670,7 @@ export function criarApi(supabase, opcoes = {}) {
   }
 
   /* Entregas (sql/entregas.sql). Enquanto o script não roda, a tabela não existe e os pedidos seguem sem entrega. */
-  let semEntregas = false, semStories = false;
+  let semEntregas = false, semStories = false, semAvaliacoes = false;
   const urlStory = path => (path ? supabase.storage.from('stories').getPublicUrl(path).data.publicUrl : null);
   const comUrls = st => ({ ...st, url: urlStory(st.arquivo_path), miniatura: urlStory(st.miniatura_path || st.arquivo_path) });
   const extensao = tipo => ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' })[tipo] || 'jpg';
@@ -787,6 +792,28 @@ export function criarApi(supabase, opcoes = {}) {
         const [p, entrega] = await Promise.all([rpc('consultar_pedido', { p_token: token }),
           supabase.rpc('entrega_publica', { p_token: token }).then(r => (r.error ? null : r.data), () => null)]);
         return p ? { ...p, entrega: entrega || null } : p;
+      }
+    },
+
+    /* Avaliação do pedido pelo cliente (sql/avaliacoes.sql), pelo mesmo token do recibo */
+    avaliacoes: {
+      /**
+       * O pedido e a avaliação já feita: { codigo, nome, data_retirada, status, pode_avaliar, itens: [nome], avaliacao }.
+       * null: link errado. { indisponivel: true }: o banco ainda não tem as avaliações.
+       */
+      async doPedido(token) {
+        const { data, error } = await supabase.rpc('avaliacao_do_pedido', { p_token: token });
+        if (error) { if (faltaNoBanco(error)) return { indisponivel: true }; throw new ErroApi(error, 'avaliação'); }
+        return data;
+      },
+      /** Grava (ou muda) a avaliação. podePublicar: o cliente deixa mostrar no site. Devolve o mesmo que doPedido. */
+      enviar: (token, { nota, comentario = null, podePublicar = true }) =>
+        rpc('avaliar_pedido', { p_token: token, p_nota: nota, p_comentario: comentario, p_pode_publicar: podePublicar }),
+      /** As publicadas, para o site: { total, media, notas: { 5: n, ... }, avaliacoes: [{ nota, comentario, nome, data, itens }] }; null sem o script. */
+      async publicadas(limite = 60) {
+        const { data, error } = await supabase.rpc('avaliacoes_publicadas', { p_limite: limite });
+        if (error) { if (faltaNoBanco(error)) return null; throw new ErroApi(error, 'avaliações'); }
+        return data;
       }
     },
 
@@ -1068,6 +1095,32 @@ export function criarApi(supabase, opcoes = {}) {
           if (error) console.warn('stories: os arquivos ficaram no Storage', error);
           return true;
         }
+      },
+      /*
+       * Avaliações dos pedidos (sql/avaliacoes.sql). situacao: 'nova' (acabou de chegar), 'publicada' (aparece no site)
+       * ou 'oculta'. Quem publica, oculta ou apaga: a Administração; o que o cliente escreveu ninguém da loja altera.
+       */
+      avaliacoes: {
+        /** false enquanto o sql/avaliacoes.sql não foi rodado */
+        async disponivel() {
+          if (!semAvaliacoes) {
+            const { error } = await supabase.from('avaliacoes').select('id').limit(1);
+            if (error && faltaNoBanco(error)) semAvaliacoes = true;
+          }
+          return !semAvaliacoes;
+        },
+        /** Todas, da mais nova para a mais antiga. */
+        listar: async () => conferir(await supabase.from('avaliacoes').select('*').order('criado_em', { ascending: false }), 'avaliações'),
+        /** Quantas chegaram e ninguém publicou nem ocultou ainda (0 sem o script). */
+        async novas() {
+          if (semAvaliacoes) return 0;
+          const { count, error } = await supabase.from('avaliacoes').select('id', { count: 'exact', head: true }).eq('situacao', 'nova');
+          if (error) { if (faltaNoBanco(error)) semAvaliacoes = true; return 0; }
+          return count || 0;
+        },
+        /** Publica no site, oculta ou volta para nova. */
+        definirSituacao: async (id, situacao) => conferir(await supabase.from('avaliacoes').update({ situacao }).eq('id', id).select().single(), 'avaliações'),
+        remover: async (id) => { conferir(await supabase.from('avaliacoes').delete().eq('id', id), 'avaliações'); return true; }
       },
       /*
        * Topos e personalizados (sql/topos.sql): pedidos próprios, feitos por quem produz os topos.
