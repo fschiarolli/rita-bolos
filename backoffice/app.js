@@ -1584,6 +1584,7 @@ async function telaRelatorio(el, sub) {
    STORIES: os sabores de bolo mais pedidos da semana numa imagem de
    1080 × 1920 (o tamanho dos stories), com o logo, as fontes e as cores
    da loja e o bolo desenhado com as cores de cada sabor, como no site.
+   O 1º ganha destaque: o bolo grande no papel rendado, com o nome na fita do logo.
    No celular, "Compartilhar" abre a lista de apps (Instagram > Stories).
 ========================================================= */
 // cores de cada sabor: as mesmas do site (index.html, FLAVORS)
@@ -1607,8 +1608,8 @@ function coresSabor(nome) {
   return cores.length ? cores : ['#F5E2A2'];
 }
 const tom = (hex, p) => { const n = parseInt(hex.slice(1), 16); return '#' + [n >> 16, (n >> 8) & 255, n & 255].map(x => Math.round(p < 0 ? x * (1 + p) : x + (255 - x) * p).toString(16).padStart(2, '0')).join(''); };
-/** O bolo do site (index.html, artCake) em SVG, com as cores do sabor. */
-function svgBolo(nome, prato) {
+/** O bolo do site (index.html, artCake) em SVG, com as cores do sabor; px: o tamanho em que vai ser desenhado (sai nítido). */
+function svgBolo(nome, prato, px = 256) {
   const cores = coresSabor(nome), a = cores[0], b = cores[1] || cores[0], cob = a, massa = '#EBC78F', n = semAcento(nome);
   let d = `<ellipse cx="33" cy="54" rx="24" ry="4.2" fill="${prato}"/>
     <path d="M50 25 56 20v26l-6 5z" fill="${tom(massa, -.14)}"/><path d="M50 41 56 36v4l-6 5z" fill="${tom(a, -.18)}"/><path d="M50 32 56 27v4l-6 5z" fill="${tom(b, -.18)}"/>
@@ -1623,7 +1624,7 @@ function svgBolo(nome, prato) {
   if (/morango|frutas vermelhas/.test(n)) d += `<path d="M35 12c3.4 0 5.4 2.1 4.9 5-.6 3.2-3.2 5.6-4.9 5.6s-4.3-2.4-4.9-5.6c-.5-2.9 1.5-5 4.9-5z" fill="#E0445E"/>
     <path d="M32 12.6c1-1.6 2-2.3 3-2.3s2 .7 3 2.3c-1 .4-2 .6-3 .6s-2-.2-3-.6z" fill="#4E9A62"/>
     <circle cx="33.6" cy="16" r=".55" fill="#FBE3A0"/><circle cx="36.5" cy="17.4" r=".55" fill="#FBE3A0"/><circle cx="35" cy="19.4" r=".55" fill="#FBE3A0"/>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64">${d}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 64 64">${d}</svg>`;
 }
 const carregarImagem = src => new Promise((ok, falha) => { const i = new Image(); i.onload = () => ok(i); i.onerror = falha; i.src = src; });
 let fontesMarca = null;
@@ -1632,24 +1633,28 @@ function carregarFontesMarca() {
   fontesMarca = fontesMarca || new Promise(ok => {
     const l = document.createElement('link');
     l.rel = 'stylesheet';
-    l.href = 'https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Nunito:wght@700;800;900&display=swap';
+    l.href = 'https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Nunito:wght@700;800;900&display=swap';
     l.onload = l.onerror = () => ok();
     document.head.appendChild(l);
     setTimeout(ok, 6000);
-  }).then(() => Promise.all(['400 96px "DM Serif Display"', 'italic 400 96px "DM Serif Display"', '700 36px Nunito', '800 36px Nunito', '900 36px Nunito']
+  }).then(() => Promise.all(['400 96px "DM Serif Display"', '700 36px Nunito', '800 36px Nunito', '900 36px Nunito']
     .map(f => document.fonts.load(f).catch(() => null))));
   return fontesMarca;
 }
+/* Cores dos stories: só as do logo (chocolate, pêssego, fita turquesa, verde-água, caramelo e petróleo).
+   toalha: o papel rendado embaixo do 1º bolo (furos: a renda);
+   fita: a frente, a dobra e as pontas, como a fita do logo. */
 const TEMAS_STORIES = {
-  chocolate: { rot: 'Chocolate', fundo: ['#4A2A1C', '#21110A'], brilhos: [['232,144,168', .32], ['226,194,122', .22]], titulo: '#FBF1E6', destaque: '#F4AFC2',
-    olho: '#E2C27A', data: '#E9D9C8', cartao: '#FBF1E6', texto: '#3A1F14', trilho: '#EADCCB', barra: '#B9476A', posicao: '#6E4B3A',
-    rodape: '#E9D9C8', anel: '#E2C27A', prato: '#E2CDB8', confeitos: ['#E890A8', '#E2C27A', '#FBF1E6', '#7DC4B0'] },
-  creme: { rot: 'Creme', fundo: ['#FBF3EA', '#F0DCC8'], brilhos: [['232,144,168', .3], ['125,196,176', .22]], titulo: '#3A1F14', destaque: '#B9476A',
-    olho: '#2B7465', data: '#6E4B3A', cartao: '#FFFFFF', texto: '#3A1F14', trilho: '#F1E6DA', barra: '#B9476A', posicao: '#6E4B3A',
-    rodape: '#6E4B3A', anel: '#B9476A', prato: '#EADFD2', confeitos: ['#E890A8', '#C9A15A', '#7DC4B0', '#4A2A1C'] }
+  chocolate: { rot: 'Chocolate', fundo: '#58210F', titulo: '#F5D4AA', data: '#A1DFD0', nome: '#F5D4AA', posicao: '#A1DFD0', qtd: '#A1DFD0',
+    pontos: '#B37951', rodape: '#F5D4AA', site: '#A1DFD0', toalha: '#FBEAD3', furos: '#EBCDA8', prato: '#E8CBA5',
+    fita: ['#51AB9D', '#2B7465', '#3E9284'], fitaTexto: '#58210F', granulado: ['#A1DFD0', '#51AB9D', '#F5D4AA', '#B37951'] },
+  creme: { rot: 'Creme', fundo: '#F5D4AA', titulo: '#58210F', data: '#104744', nome: '#58210F', posicao: '#2B7465', qtd: '#104744',
+    pontos: '#B37951', rodape: '#58210F', site: '#104744', toalha: '#FFF9F1', furos: '#F1DCBF', prato: '#F1DBBE',
+    fita: ['#51AB9D', '#2B7465', '#3E9284'], fitaTexto: '#58210F', granulado: ['#51AB9D', '#58210F', '#B37951', '#A1DFD0'] }
 };
-const MEDALHAS = [['#F6D57A', '#C8962A'], ['#EDEDED', '#A9A9A9'], ['#E8AE7C', '#A86A3A']];   // ouro, prata, bronze
 const STORY_L = 1080, STORY_A = 1920;
+/** O Instagram cobre o alto (o perfil) e o pé (o campo de resposta) dos stories: o que importa fica entre essas faixas. */
+const STORY_TOPO = 250, STORY_FIM = 1670, STORY_M = 80;
 function periodoTxt(ini, fim) {
   const [, m1, d1] = ini.split('-').map(Number), [, m2, d2] = fim.split('-').map(Number);
   return m1 === m2 ? `${d1} a ${d2} de ${MESES_LONGOS[m2 - 1]}` : `${d1} de ${MESES_LONGOS[m1 - 1]} a ${d2} de ${MESES_LONGOS[m2 - 1]}`;
@@ -1659,113 +1664,199 @@ function retanguloRedondo(g, x, y, w, h, r) {
   g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
 }
 const espacamento = (g, v) => { if ('letterSpacing' in g) g.letterSpacing = v; };
-/** Texto que cabe na largura: diminui a letra; se precisar, quebra em duas linhas; em último caso, corta com "…". */
-function textoQueCabe(g, texto, fonte, tam, largura, duasLinhas) {
-  for (let t = tam; t >= tam * .74; t -= 2) { g.font = fonte(t); if (g.measureText(texto).width <= largura) return { t, linhas: [texto] }; }
+/** Texto que cabe na largura: diminui a letra (até a fração "minimo"); se precisar, quebra em duas linhas (de preferência depois
+    de um "+", entre dois sabores: "Ouro Branco" não se separa); em último caso, corta com "…". */
+function textoQueCabe(g, texto, fonte, tam, largura, duasLinhas, minimo = .74) {
+  for (let t = tam; t >= tam * minimo; t -= 2) { g.font = fonte(t); if (g.measureText(texto).width <= largura) return { t, linhas: [texto] }; }
   const palavras = texto.split(' ');
   if (duasLinhas && palavras.length > 1) {
     for (let t = tam; t >= tam * .58; t -= 2) {
       g.font = fonte(t);
-      let melhor = null;
+      let melhor = null, noMais = null;
       for (let k = 1; k < palavras.length; k++) {
         const a = palavras.slice(0, k).join(' '), b = palavras.slice(k).join(' '), m = Math.max(g.measureText(a).width, g.measureText(b).width);
-        if (m <= largura && (!melhor || m < melhor.m)) melhor = { m, linhas: [a, b] };
+        if (m > largura) continue;
+        if (!melhor || m < melhor.m) melhor = { m, linhas: [a, b] };
+        if (a.endsWith('+') && (!noMais || m < noMais.m)) noMais = { m, linhas: [a, b] };
       }
-      if (melhor) return { t, linhas: melhor.linhas };
+      if (noMais || melhor) return { t, linhas: (noMais || melhor).linhas };
     }
   }
-  const t = Math.round(tam * .74); g.font = fonte(t);
+  const t = Math.round(tam * minimo); g.font = fonte(t);
   let corte = texto;
   while (corte.length > 1 && g.measureText(corte + '…').width > largura) corte = corte.slice(0, -1);
   return { t, linhas: [corte.trimEnd() + '…'] };
 }
-/** Desenha a imagem dos stories. top: quantos sabores; qtd: mostrar quantos bolos; tema: chocolate ou creme. */
+/** Papel rendado: um círculo com a borda em ondas (como a do selo do logo) e uma volta de furinhos. */
+function toalhaRendada(g, cx, cy, r, cor, furos) {
+  const n = Math.max(16, Math.round(2 * Math.PI * r / 46)), rb = Math.PI * r / n * 1.12;
+  g.fillStyle = cor;
+  g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
+  for (let k = 0; k < n; k++) { const a = k / n * Math.PI * 2; g.beginPath(); g.arc(cx + r * Math.cos(a), cy + r * Math.sin(a), rb, 0, Math.PI * 2); g.fill(); }
+  if (!furos) return;
+  g.fillStyle = furos;
+  for (let k = 0; k < n; k++) {
+    const a = (k + .5) / n * Math.PI * 2, rf = r - rb * .3;
+    g.beginPath(); g.arc(cx + rf * Math.cos(a), cy + rf * Math.sin(a), Math.max(4, rb * .22), 0, Math.PI * 2); g.fill();
+  }
+}
+/** A fita do logo: a frente (x, y, largura, altura) e, atrás dela, mais baixas, as pontas em V com a dobra. */
+function desenharFita(g, x, y, w, h, [frente, dobra, ponta]) {
+  const d = Math.round(h * .26), pw = Math.round(h * .7), v = Math.round(h * .28);
+  for (const lado of [-1, 1]) {
+    const borda = lado < 0 ? x : x + w, dentro = borda - lado * d, fora = borda + lado * pw;
+    g.fillStyle = ponta; g.beginPath();
+    g.moveTo(dentro, y + d); g.lineTo(fora, y + d); g.lineTo(fora - lado * v, y + d + h / 2); g.lineTo(fora, y + d + h); g.lineTo(dentro, y + d + h);
+    g.closePath(); g.fill();
+    g.fillStyle = dobra; g.beginPath(); g.moveTo(borda, y + h); g.lineTo(dentro, y + h); g.lineTo(dentro, y + h + d); g.closePath(); g.fill();
+  }
+  g.fillStyle = frente; g.fillRect(x, y, w, h);
+}
+/** "Ninho + Morango": o "+" fica com a palavra de antes na quebra de linha (a linha termina com ele: avisa que continua). */
+const colarMais = t => String(t || '').replace(/ \+ /g, '\u00a0+ ');
+/** Granulado em volta do alto da toalha do 1º: [ângulo, distância (em raios), giro]. */
+const GRANULADO_STORIES = [[-152, 1.22, .5], [-133, 1.36, -.7], [-114, 1.22, 1], [-97, 1.38, -.2], [-80, 1.22, .6], [-62, 1.36, -.9],
+  [-45, 1.22, .2], [-27, 1.32, .8]];
+/**
+ * Desenha a imagem dos stories. top: quantos sabores; qtd: mostrar quantos bolos; tema: chocolate ou creme.
+ * Em cima, à esquerda, o título, com o selo do logo no canto. No meio, o 1º: o bolo grande no papel rendado, com o nome
+ * na fita do logo. Embaixo, os outros, como num cardápio (posição, bolo, nome e, se pedir, o pontilhado até a quantidade),
+ * e como encomendar. O tamanho do 1º é o que sobra entre o título e a lista.
+ */
 async function desenharStories({ sabores, ini, fim, top = 5, qtd = false, tema = 'chocolate' }) {
   await carregarFontesMarca();
   const T = TEMAS_STORIES[tema] || TEMAS_STORIES.chocolate, loja = (await configLoja()) || {}, lista = sabores.slice(0, top);
+  const [primeiro, ...resto] = lista, poucos = resto.length <= 2;
+  const BASE = poucos ? { icone: 132, nome: 68, pos: 52, qtd: 38, vao: 26 } : { icone: 96, nome: 54, pos: 44, qtd: 34, vao: 12 };
+  const svg = (s, px) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgBolo(s.sabor, T.prato, px));
   const [logo, ...bolos] = await Promise.all([carregarImagem(LOGO).catch(() => null),
-    ...lista.map(x => carregarImagem('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgBolo(x.sabor, T.prato))).catch(() => null))]);
+    ...lista.map((s, i) => carregarImagem(svg(s, i ? BASE.icone : 520)).catch(() => null))]);
   const SERIF = '"DM Serif Display", Georgia, "Times New Roman", serif', SANS = 'Nunito, "Segoe UI", Arial, sans-serif';
-  const c = document.createElement('canvas'); c.width = STORY_L; c.height = STORY_A;
+  const serif = t => `400 ${t}px ${SERIF}`, sans = (peso, t) => `${peso} ${t}px ${SANS}`;
+  const L = STORY_L, M = STORY_M;
+  const c = document.createElement('canvas'); c.width = L; c.height = STORY_A;
   const g = c.getContext('2d');
-  // fundo, brilhos e granulados (sempre nos mesmos lugares: a imagem sai igual a cada vez)
-  const fundo = g.createLinearGradient(0, 0, 0, STORY_A); fundo.addColorStop(0, T.fundo[0]); fundo.addColorStop(1, T.fundo[1]);
-  g.fillStyle = fundo; g.fillRect(0, 0, STORY_L, STORY_A);
-  for (const [x, y, r, [rgb, a]] of [[110, 250, 600, T.brilhos[0]], [1010, 1560, 700, T.brilhos[1]]]) {
-    const rg = g.createRadialGradient(x, y, 0, x, y, r); rg.addColorStop(0, `rgba(${rgb},${a})`); rg.addColorStop(1, `rgba(${rgb},0)`);
-    g.fillStyle = rg; g.fillRect(x - r, y - r, r * 2, r * 2);
-  }
-  let semente = 11;
-  const sorte = () => { semente = (semente * 16807) % 2147483647; return (semente - 1) / 2147483646; };
-  for (let k = 0; k < 90; k++) {
-    const x = sorte() * STORY_L, y = sorte() * STORY_A, giro = sorte() * Math.PI, alfa = .3 + sorte() * .4, cor = T.confeitos[Math.floor(sorte() * T.confeitos.length)];
-    if ((x > 90 && x < 990 && y > 440 && y < 1690) || Math.hypot(x - 540, y - 322) < 150) continue;   // longe do logo, do título e do ranking
-    g.save(); g.translate(x, y); g.rotate(giro); g.globalAlpha = alfa; g.fillStyle = cor; retanguloRedondo(g, -15, -4.5, 30, 9, 4.5); g.fill(); g.restore();
-  }
-  // logo
-  const lx = 540, ly = 322, lr = 94;
-  g.save(); g.shadowColor = 'rgba(0,0,0,.28)'; g.shadowBlur = 34; g.shadowOffsetY = 8;
-  g.beginPath(); g.arc(lx, ly, lr + 9, 0, Math.PI * 2); g.fillStyle = T.anel; g.fill(); g.restore();
-  g.beginPath(); g.arc(lx, ly, lr, 0, Math.PI * 2); g.fillStyle = '#FFFFFF'; g.fill();
-  if (logo) { g.save(); g.beginPath(); g.arc(lx, ly, lr, 0, Math.PI * 2); g.clip(); g.drawImage(logo, lx - lr, ly - lr, lr * 2, lr * 2); g.restore(); }
-  // título
-  g.textAlign = 'center'; g.textBaseline = 'alphabetic';
-  g.fillStyle = T.olho; g.font = `900 32px ${SANS}`; espacamento(g, '7px');
-  g.fillText(lista.length >= 3 ? `TOP ${lista.length} DA SEMANA` : 'RANKING DA SEMANA', lx, 494); espacamento(g, '0px');
-  g.fillStyle = T.titulo; g.font = `400 98px ${SERIF}`; g.fillText('Os sabores', lx, 590);
-  g.fillStyle = T.destaque; g.font = `italic 400 98px ${SERIF}`; g.fillText('mais pedidos', lx, 684);
-  g.fillStyle = T.data; g.font = `700 36px ${SANS}`; g.fillText(periodoTxt(ini, fim), lx, 748);
-  // o ranking: os três primeiros maiores; com até três sabores, todos grandes
-  const n = lista.length, grande = n <= 3, maximo = lista[0]?.bolos || 1;
-  const alturas = lista.map((_, i) => (grande ? 206 : i < 3 ? 172 : 136)), vao = grande ? 28 : 18;
-  const total = alturas.reduce((a, b) => a + b, 0) + vao * Math.max(0, n - 1);
-  let y = 800 + Math.max(0, (1676 - 800 - total) / 2);
-  lista.forEach((s, i) => {
-    const h = alturas[i], x0 = 70, w = 940, cy = y + h / 2;
-    g.save(); g.shadowColor = 'rgba(0,0,0,.22)'; g.shadowBlur = 30; g.shadowOffsetY = 10;
-    g.fillStyle = T.cartao; retanguloRedondo(g, x0, y, w, h, 36); g.fill(); g.restore();
-    // a posição: medalha nos três primeiros
-    const r = Math.round(h * .3), bx = x0 + 34 + r, med = MEDALHAS[i];
-    if (med) { const mg = g.createLinearGradient(bx - r, cy - r, bx + r, cy + r); mg.addColorStop(0, med[0]); mg.addColorStop(1, med[1]); g.fillStyle = mg; }
-    else g.fillStyle = T.posicao;
-    g.beginPath(); g.arc(bx, cy, r, 0, Math.PI * 2); g.fill();
-    g.fillStyle = med ? '#3A1F14' : '#FBF1E6'; g.font = `400 ${Math.round(r * 1.2)}px ${SERIF}`; g.textAlign = 'center';
-    g.fillText(String(i + 1), bx, cy + r * .42);
-    // o bolo, com as cores do sabor
-    const tam = Math.round(h * .8), ix = bx + r + 12;
-    if (bolos[i]) g.drawImage(bolos[i], ix, cy - tam / 2 - h * .05, tam, tam);
-    // o sabor (e, se pedir, quantos bolos)
-    const tx = ix + tam + 14, tw = x0 + w - 36 - tx;
-    const nome = textoQueCabe(g, s.sabor, t => `400 ${t}px ${SERIF}`, Math.round(h * (grande ? .27 : .3)), tw, h >= 160);
-    const tl = nome.t * 1.08, fq = Math.round(h * .155), alturaTexto = nome.linhas.length * tl + (qtd ? fq * 1.5 : 0);
-    let ty = cy - alturaTexto / 2 + nome.t * .82;
-    g.textAlign = 'left'; g.fillStyle = T.texto; g.font = `400 ${nome.t}px ${SERIF}`;
-    nome.linhas.forEach(l => { g.fillText(l, tx, ty); ty += tl; });
-    if (qtd) {
-      const rot = `${s.bolos} ${s.bolos === 1 ? 'bolo' : 'bolos'}`;
-      g.fillStyle = T.barra; g.font = `800 ${fq}px ${SANS}`;
-      const by = ty - tl + fq * 1.25 + 6;
-      g.fillText(rot, tx, by);
-      const x1 = tx + g.measureText(rot).width + 18, x2 = tx + tw;
-      if (x2 - x1 > 60) {
-        g.fillStyle = T.trilho; retanguloRedondo(g, x1, by - fq * .45, x2 - x1, 12, 6); g.fill();
-        g.fillStyle = T.barra; retanguloRedondo(g, x1, by - fq * .45, Math.max(12, (x2 - x1) * s.bolos / maximo), 12, 6); g.fill();
-      }
-    }
-    // o primeiro ganha o selo
-    if (i === 0) {
-      g.font = `900 24px ${SANS}`; espacamento(g, '3px');
-      const selo = 'O MAIS PEDIDO', pw = g.measureText(selo).width + 36, px = x0 + w - 34 - pw, py = y - 22;
-      g.fillStyle = T.barra; retanguloRedondo(g, px, py, pw, 44, 22); g.fill();
-      g.fillStyle = '#FFFFFF'; g.textAlign = 'center'; g.fillText(selo, px + pw / 2 + 1.5, py + 31); espacamento(g, '0px');
-    }
-    y += h + vao;
-  });
-  // como encomendar
+  /** Altura das maiúsculas: o texto fica no meio do que o cerca por ela. */
+  const cap = fonte => { g.font = fonte; return g.measureText('H').actualBoundingBoxAscent || parseFloat(fonte.match(/(\d+)px/)[1]) * .7; };
+  g.fillStyle = T.fundo; g.fillRect(0, 0, L, STORY_A);
+  g.textBaseline = 'alphabetic'; g.textAlign = 'left';
+
+  // o selo do logo, inteiro (sem cortar a fita), um pouco torto, no canto
+  const lw = 220, lh = logo ? lw * logo.height / logo.width : 0, lx = L - M - lw / 2 + 8, ly = STORY_TOPO + lh / 2 - 10;
+  if (logo) { g.save(); g.translate(lx, ly); g.rotate(-.08); g.drawImage(logo, -lw / 2, -lh / 2, lw, lh); g.restore(); }
+
+  // o título, à esquerda; as duas primeiras linhas passam ao lado do selo
+  const titulo = lista.length === 1 ? ['O sabor', 'mais pedido', 'da semana'] : ['Os sabores', 'mais pedidos', 'da semana'];
+  espacamento(g, '-1px');
+  let fT = 106; g.font = serif(fT);
+  const livre = lx - lw / 2 - 36 - M, maior = Math.max(...titulo.slice(0, 2).map(t => g.measureText(t).width));
+  if (maior > livre) fT = Math.floor(fT * livre / maior);
+  let y = STORY_TOPO + cap(serif(fT));
+  g.font = serif(fT); g.fillStyle = T.titulo;
+  titulo.forEach((t, i) => { if (i) y += fT * 1.02; g.fillText(t, M, y); });
+  espacamento(g, '0px');
+  y += 68; g.font = sans(800, 42); g.fillStyle = T.data; g.fillText(periodoTxt(ini, fim), M, y);
+  const topoHeroi = y + 40;
+
+  // como encomendar, colado no fim da área segura
   const zap = loja.whatsapp_exibicao ? formatarTel(loja.whatsapp_exibicao) || loja.whatsapp_exibicao : '';
   const site = String(loja.url_site || '').replace(/^https?:\/\//, '').replace(/\/+$/, '');
-  const rodape = [zap && `Encomendas: ${zap}`, site].filter(Boolean).join('   ·   ');
-  if (rodape) { g.textAlign = 'center'; g.fillStyle = T.rodape; g.font = `800 32px ${SANS}`; g.fillText(rodape, lx, 1736); }
+  g.font = sans(800, 40);
+  const pedir = [`Encomendas pelo WhatsApp ${zap}`, `Encomendas: ${zap}`].find(t => g.measureText(t).width <= L - 2 * M) || `Encomendas: ${zap}`;
+  const rodape = [zap && { t: pedir, f: sans(800, 40), cor: T.rodape, h: 56 }, site && { t: site, f: sans(700, 34), cor: T.site, h: 50 }].filter(Boolean);
+  const altRodape = rodape.reduce((s, r) => s + r.h, 0);
+  let yr = STORY_FIM - altRodape;
+  rodape.forEach(r => { yr += r.h; g.font = r.f; g.fillStyle = r.cor; g.fillText(r.t, M, yr - 10); });
+  const fimLista = STORY_FIM - altRodape - (rodape.length ? 60 : 0);
+
+  // os outros sabores, como num cardápio: a posição, o bolo, o nome e (se pedir) o pontilhado até a quantidade.
+  // e: a escala da lista (diminui quando ela deixaria o 1º pequeno demais)
+  const medirLista = e => {
+    const LIN = Object.fromEntries(Object.entries(BASE).map(([k, v]) => [k, Math.round(v * e)]));
+    g.font = sans(900, LIN.pos);
+    const xIcone = M + g.measureText('5º').width + 20, xNome = xIcone + LIN.icone * 46 / 64 + 26;   // o bolo ocupa de 10 a 56 dos 64 do desenho
+    const itens = resto.map((s, j) => {
+      g.font = sans(800, LIN.qtd);
+      const q = qtd ? `${s.bolos} ${s.bolos === 1 ? 'bolo' : 'bolos'}` : '', wq = q ? g.measureText(q).width : 0;
+      return { pos: j + 2, q, wq, texto: colarMais(s.sabor), largura: L - M - xNome - (q ? wq + 56 : 0) };
+    });
+    // todos os nomes no mesmo tamanho: o maior em que cada um cabe numa linha (até 80%); o que não cabe nem assim quebra em duas
+    const umaLinha = it => { for (let t = LIN.nome; t >= LIN.nome * .8; t--) { g.font = serif(t); if (g.measureText(it.texto).width <= it.largura) return t; } return 0; };
+    const cabem = itens.map(umaLinha).filter(Boolean), tNome = cabem.length ? Math.min(...cabem) : Math.round(LIN.nome * .8);
+    const linhas = itens.map(it => {
+      const nome = textoQueCabe(g, it.texto, serif, tNome, it.largura, true, 1);
+      return { ...it, nome, h: Math.max(LIN.icone * .78, nome.linhas.length * nome.t * 1.08) };
+    });
+    return { LIN, xIcone, xNome, linhas, topo: fimLista - linhas.reduce((s, l) => s + l.h, 0) - LIN.vao * Math.max(0, linhas.length - 1) };
+  };
+
+  // o 1º: o nome na fita (com "1º" na frente); a fita é mais larga que a toalha
+  const fFita = 68, larguraFita = L - 2 * (Math.round(fFita * 1.62 * .7) + 34);
+  const fUm = t => sans(900, Math.round(t * .6)), antesDoNome = t => { g.font = fUm(t); return g.measureText('1º').width + t * .3; };   // o "1º" e o espaço até o nome
+  const nomeFita = textoQueCabe(g, colarMais(primeiro.sabor), serif, fFita, larguraFita - 2 * 40 - antesDoNome(fFita), true, .66), um = antesDoNome(nomeFita.t);
+  const hFita = Math.round(nomeFita.linhas.length > 1 ? nomeFita.t * 2.7 : nomeFita.t * 1.62), dFita = Math.round(hFita * .26);
+  const altQtd1 = qtd ? 70 : 0;
+  // a altura do 1º para cada raio da toalha: o granulado em cima, a toalha, a fita (na borda de baixo dela) e a quantidade
+  const altura1 = r => r * 1.27 + r * 1.07 + hFita * .2 + dFita + altQtd1;
+  const raio = topoLista => {
+    const disponivel = (resto.length ? topoLista - 70 : fimLista - 30) - topoHeroi;
+    let r = 260; while (r > 110 && altura1(r) > disponivel) r -= 2;
+    return { r, disponivel };
+  };
+  let menu = medirLista(1), heroi = raio(menu.topo);
+  for (let e = .92; heroi.r < 170 && e > .7; e -= .06) { menu = medirLista(e); heroi = raio(menu.topo); }
+  const { LIN, xIcone, xNome, linhas } = menu, { r, disponivel } = heroi;
+  const cx = L / 2, cy = topoHeroi + Math.max(0, (disponivel - altura1(r)) / 2) + r * 1.27;
+  // o granulado, a toalha e o bolo
+  GRANULADO_STORIES.forEach(([a, d, giro], k) => {
+    const ang = a * Math.PI / 180, x = cx + Math.cos(ang) * r * d, yy = cy + Math.sin(ang) * r * d, esc = r / 230;
+    g.save(); g.translate(x, yy); g.rotate(ang + Math.PI / 2 + giro); g.fillStyle = T.granulado[k % T.granulado.length];
+    retanguloRedondo(g, -19 * esc, -6 * esc, 38 * esc, 12 * esc, 6 * esc); g.fill(); g.restore();
+  });
+  toalhaRendada(g, cx, cy, r, T.toalha, T.furos);
+  const S = r * 1.72;
+  if (bolos[0]) g.drawImage(bolos[0], cx - S * 33 / 64, cy - r * .1 - S * 37 / 64, S, S);
+  // a fita, sobre o pé da toalha
+  g.font = serif(nomeFita.t);
+  const larguraTexto = Math.max(...nomeFita.linhas.map((t, k) => g.measureText(t).width + (k ? 0 : um)));
+  const wFita = Math.min(larguraFita, Math.max(larguraTexto + 2 * 40, r * 1.9)), xFita = cx - wFita / 2, yFita = cy + r * 1.07 - hFita * .8;
+  desenharFita(g, xFita, yFita, wFita, hFita, T.fita);
+  const capN = cap(serif(nomeFita.t)), entre = nomeFita.t * 1.06;
+  nomeFita.linhas.forEach((t, k) => {
+    const base = yFita + hFita / 2 + capN / 2 - (nomeFita.linhas.length - 1) * entre / 2 + k * entre;
+    g.font = serif(nomeFita.t); const wt = g.measureText(t).width + (k ? 0 : um);
+    let x = cx - wt / 2;
+    g.fillStyle = T.fitaTexto;
+    if (!k) { g.font = fUm(nomeFita.t); g.fillText('1º', x, base); x += um; }
+    g.font = serif(nomeFita.t); g.fillText(t, x, base);
+  });
+  if (qtd) {
+    const pe = yFita + hFita + dFita;
+    g.font = sans(800, 42); g.fillStyle = T.qtd; g.textAlign = 'center';
+    g.fillText(`${primeiro.bolos} ${primeiro.bolos === 1 ? 'bolo' : 'bolos'}`, cx, pe + 56);
+    g.textAlign = 'left';
+  }
+
+  // a lista
+  let yl = menu.topo;
+  linhas.forEach((l, j) => {
+    const meio = yl + l.h / 2;
+    g.font = sans(900, LIN.pos); g.fillStyle = T.posicao; g.fillText(`${l.pos}º`, M, meio + cap(sans(900, LIN.pos)) / 2);
+    if (bolos[j + 1]) g.drawImage(bolos[j + 1], xIcone - LIN.icone * 10 / 64, meio - LIN.icone * 37 / 64, LIN.icone, LIN.icone);
+    const capL = cap(serif(l.nome.t)), entreL = l.nome.t * 1.08;
+    const base = meio + capL / 2 - (l.nome.linhas.length - 1) * entreL / 2;
+    g.font = serif(l.nome.t); g.fillStyle = T.nome;
+    l.nome.linhas.forEach((t, k) => g.fillText(t, xNome, base + k * entreL));
+    if (l.q) {
+      const yq = base + (l.nome.linhas.length - 1) * entreL;
+      g.font = serif(l.nome.t);
+      const x1 = xNome + g.measureText(l.nome.linhas[l.nome.linhas.length - 1]).width + 24, x2 = L - M - l.wq - 22, n = Math.floor((x2 - x1) / 18);
+      g.fillStyle = T.pontos;
+      for (let k = 0; k <= n && n > 0; k++) { g.beginPath(); g.arc(x1 + k * (x2 - x1) / n, yq - 9, 3.4, 0, Math.PI * 2); g.fill(); }
+      g.font = sans(800, LIN.qtd); g.fillStyle = T.qtd; g.textAlign = 'right'; g.fillText(l.q, L - M, yq); g.textAlign = 'left';
+    }
+    yl += l.h + LIN.vao;
+  });
   return c;
 }
 const CHAVE_TEMA_STORIES = 'ritabolos.stories.tema';
@@ -1813,7 +1904,8 @@ async function modalStories() {
       arquivo = new File([blob], nome, { type: 'image/png' });
       if (url) URL.revokeObjectURL(url);
       url = URL.createObjectURL(blob);
-      m.$('.st-img').innerHTML = `<img src="${url}" alt="Prévia da imagem: os sabores mais pedidos da semana">`;
+      const ranking = r.sabores.slice(0, conf.top).map((s, i) => `${i + 1}º ${s.sabor}${conf.qtd ? ` (${s.bolos} ${s.bolos === 1 ? 'bolo' : 'bolos'})` : ''}`).join(', ');
+      m.$('.st-img').innerHTML = `<img src="${url}" alt="${esc(`Prévia da imagem dos sabores mais pedidos de ${periodoTxt(r.ini, r.fim)}: ${ranking}`)}">`;
       botoes(true);
     } catch (e) { if (minha === vez) erroToast(e); }
   };
