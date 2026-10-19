@@ -1046,18 +1046,21 @@ function modalConta() {
             <select class="sel" id="impFormato"><option value="etiqueta" ${impressaoAuto().formato !== 'pedido' ? 'selected' : ''}>Etiqueta para a caixa</option><option value="pedido" ${impressaoAuto().formato === 'pedido' ? 'selected' : ''}>Pedido completo</option></select>
             <button type="button" class="btn ghost sm" data-imp-teste>${ic('imprimir')}Testar</button></div>
           <p class="dica">Ligue só no computador da térmica, com o backoffice aberto. Para sair direto, sem a janela de impressão, abra o Chrome com <code>--kiosk-printing</code> e deixe a térmica como impressora padrão.</p></div>
-        <div class="imp-auto"><p class="secao-t" style="margin:4px 0 8px">Etiquetas na Niimbot (Bluetooth)</p>
-          ${inChk('nbUsar', 'Imprimir as etiquetas na Niimbot', confNiimbot().usar)}
-          <div class="nb-corpo" id="nbCorpo" ${confNiimbot().usar ? '' : 'hidden'}>
+        <div class="imp-auto"><p class="secao-t" style="margin:4px 0 8px">Etiquetas</p>
+          <label class="sr" for="etOnde">Onde saem as etiquetas</label>
+          <select class="sel" id="etOnde" style="margin-bottom:8px">${ONDE_ETIQUETA.map(([v, t]) => `<option value="${v}" ${v === confNiimbot().onde ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+          <p class="dica" data-so-termica>Sai uma etiqueta comprida por pedido, com todos os bolos, na térmica de 80 mm.</p>
+          <div class="nb-corpo" id="nbCorpo" ${confNiimbot().onde === 'termica' ? 'hidden' : ''}>
             <label class="sr" for="nbCont">O que sai em cada etiqueta</label>
             <select class="sel" id="nbCont" style="margin-bottom:8px">${CONTEUDOS_ETIQUETA.map(([v, t]) => `<option value="${v}" ${v === (confNiimbot().conteudo || 'producao') ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
             <div class="imp-linha"><label class="sr" for="nbTam">Tamanho da etiqueta</label>
               <select class="sel" id="nbTam">${TAMANHOS_ETIQUETA.map(([v, t]) => `<option value="${v}" ${v === confNiimbot().tamanho ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
-              <button type="button" class="btn ghost sm" data-nb-conectar>${niimbotConectada() ? 'Reconectar' : 'Conectar'}</button>
+              <button type="button" class="btn ghost sm" data-nb-conectar data-so-niimbot>${niimbotConectada() ? 'Reconectar' : 'Conectar'}</button>
               <button type="button" class="btn ghost sm" data-nb-teste>${ic('imprimir')}Testar</button></div>
-            <p class="nb-status">${ic('imprimir')}<span id="nbStatus">${niimbotConectada() ? `Conectada: ${esc(niim.nome)}` : 'Desconectada'}</span></p>
+            <p class="nb-status" data-so-niimbot>${ic('imprimir')}<span id="nbStatus">${niimbotConectada() ? `Conectada: ${esc(niim.nome)}` : 'Desconectada'}</span></p>
             <div class="nb-previa" id="nbPrevia" aria-label="Prévia da etiqueta"></div>
-            <p class="dica">Vale para o botão Etiqueta do pedido e para a impressão automática (com "Etiqueta para a caixa"). Ligue a Niimbot, toque em Conectar e escolha a impressora na lista. Funciona no Chrome do computador e do Android (no iPhone, não).</p>
+            <p class="dica" data-so-niimbot>Vale para o botão Etiqueta do pedido e para a impressão automática (com "Etiqueta para a caixa"). Ligue a Niimbot, toque em Conectar e escolha a impressora na lista. Funciona no Chrome do computador e do Android (no iPhone, não).</p>
+            <p class="dica" data-so-rolo>Vale para o botão Etiqueta do pedido e para a impressão automática (com "Etiqueta para a caixa"): sai uma etiqueta por bolo. Na primeira vez, nas Preferências de impressão da impressora (no Windows), escolha o papel do tamanho da etiqueta (crie um, se não tiver). Na janela de impressão do Chrome, escolha a impressora de etiquetas, com Margens: Nenhuma.</p>
           </div></div>
         <a class="btn ghost block" href="${esc(urlSite())}" target="_blank" rel="noopener">${ic('externo')}Abrir o site</a>
         <div style="display:flex;gap:8px"><a class="btn ghost" style="flex:1" href="${esc(urlPote())}" target="_blank" rel="noopener">${ic('pote')}Página do bolo no pote</a>
@@ -1101,19 +1104,26 @@ function modalConta() {
     c.style.width = `${Math.min(280, wMm * 5.2)}px`; c.setAttribute('role', 'img'); c.setAttribute('aria-label', `Prévia da etiqueta do pedido ${pedidoPrevia.codigo}`);
     box.replaceChildren(c);
   };
-  m.$('#nbUsar')?.addEventListener('change', e => {
-    salvarConfNiimbot({ usar: e.target.checked });
-    m.$('#nbCorpo').hidden = !e.target.checked;
+  const mostrarOnde = onde => {
+    m.$('#nbCorpo').hidden = onde === 'termica';
+    for (const o of ['niimbot', 'rolo', 'termica']) m.$$(`[data-so-${o}]`).forEach(e => { e.hidden = o !== onde; });
+  };
+  mostrarOnde(confNiimbot().onde);
+  m.$('#etOnde')?.addEventListener('change', e => {
+    salvarConfNiimbot({ onde: e.target.value });
+    mostrarOnde(e.target.value);
     atualizarIndicadorNiimbot();
-    if (e.target.checked) { carregarNiimblue().catch(() => {}); previa(); }   // já deixa o módulo pronto para conectar
+    if (e.target.value === 'niimbot') carregarNiimblue().catch(() => {});   // já deixa o módulo pronto para conectar
+    previa();
   });
-  m.$('#nbTam')?.addEventListener('change', e => { salvarConfNiimbot({ tamanho: e.target.value }); previa(); });
+  m.$('#nbTam')?.addEventListener('change', e => { salvarConfNiimbot({ tamanho: e.target.value, tamanhoEscolhido: true }); previa(); });
   m.$('#nbCont')?.addEventListener('change', e => { salvarConfNiimbot({ conteudo: e.target.value }); previa(); });
   m.$('[data-nb-conectar]')?.addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
     await conectarNiimbot(); toast(`Niimbot conectada (${niim.nome}).`); previa();
   }));
-  m.$('[data-nb-teste]')?.addEventListener('click', ev => ocupado(ev.currentTarget, async () => { await etiquetaNiimbot(pedidoPrevia || await pedidoDeTeste()); }));
-  if (confNiimbot().usar) { carregarNiimblue().catch(() => {}); previa(); }
+  m.$('[data-nb-teste]')?.addEventListener('click', ev => ocupado(ev.currentTarget, async () => { await imprimirEtiquetaDoPedido(pedidoPrevia || await pedidoDeTeste()); }));
+  if (confNiimbot().usar) carregarNiimblue().catch(() => {});
+  previa();
   m.$('[data-copiar-pote]')?.addEventListener('click', async () => {
     const url = new URL(urlPote(), location.href).href;
     try { await navigator.clipboard.writeText(url); toast('Link da página do bolo no pote copiado. É só colar para o cliente.'); }
@@ -3467,13 +3477,22 @@ async function imprimirEtiqueta(p) {
    backoffice está aberto (ao recarregar, tenta reconectar sozinho; se não der, avisa para tocar em Conectar).
 ========================================================= */
 const NIIMBLUELIB_URL = 'https://cdn.jsdelivr.net/npm/@mmote/niimbluelib@0.47.0/dist/umd/niimbluelib.min.js';
-const TAMANHOS_ETIQUETA = [['50x30', '50 × 30 mm'], ['40x30', '40 × 30 mm'], ['50x20', '50 × 20 mm'], ['40x40', '40 × 40 mm'], ['50x50', '50 × 50 mm'],
+const TAMANHOS_ETIQUETA = [['60x40', '60 × 40 mm'], ['50x30', '50 × 30 mm'], ['40x30', '40 × 30 mm'], ['50x20', '50 × 20 mm'], ['40x40', '40 × 40 mm'], ['50x50', '50 × 50 mm'],
   ['30x20', '30 × 20 mm'], ['40x12', '40 × 12 mm (D11, D110)'], ['30x15', '30 × 15 mm (D11, D110)']];
 const CHAVE_NIIMBOT = 'ritabolos.niimbot';
+/** Onde saem as etiquetas neste aparelho: na impressora de etiquetas pelo driver (MeColour GD-41 e parecidas: uma página do
+    tamanho da etiqueta, pela janela de impressão), na Niimbot (Bluetooth) ou na térmica de 80 mm (uma etiqueta comprida por pedido). */
+const ONDE_ETIQUETA = [['rolo', 'Impressora de etiquetas (USB, como a MeColour GD-41)'], ['niimbot', 'Niimbot (Bluetooth)'], ['termica', 'Térmica de 80 mm (uma etiqueta comprida por pedido)']];
+/** usar: a Niimbot está em uso. O tamanho só vale o salvo quando foi escolhido na lista (antes, o 50 × 30 do padrão era
+    gravado junto com o resto); quem não escolheu onde imprimir fica na Niimbot, se usava, ou na impressora de etiquetas. */
 function confNiimbot() {
-  try { return { usar: false, tamanho: '50x30', conteudo: 'producao', ...JSON.parse(localStorage.getItem(CHAVE_NIIMBOT) || '{}') }; } catch (e) { return { usar: false, tamanho: '50x30', conteudo: 'producao' }; }
+  let c = {};
+  try { c = JSON.parse(localStorage.getItem(CHAVE_NIIMBOT) || '{}') || {}; } catch (e) { /* sem armazenamento */ }
+  const onde = ONDE_ETIQUETA.some(([v]) => v === c.onde) ? c.onde : c.usar ? 'niimbot' : 'rolo';
+  return { conteudo: 'producao', ...c, onde, usar: onde === 'niimbot', tamanho: (c.tamanhoEscolhido && c.tamanho) || '60x40' };
 }
-function salvarConfNiimbot(c) { try { localStorage.setItem(CHAVE_NIIMBOT, JSON.stringify({ ...confNiimbot(), ...c })); } catch (e) { /* sem armazenamento */ } }
+/** Grava só o que mudou (onde, usar e o tamanho do padrão saem de confNiimbot, não ficam gravados). */
+function salvarConfNiimbot(c) { try { localStorage.setItem(CHAVE_NIIMBOT, JSON.stringify({ ...JSON.parse(localStorage.getItem(CHAVE_NIIMBOT) || '{}'), ...c })); } catch (e) { /* sem armazenamento */ } }
 let niim = null;                       // { lib, client, nome }
 let filaNiimbot = Promise.resolve();
 const niimbotConectada = () => !!niim?.client?.isConnected();
@@ -3941,21 +3960,26 @@ function desenharBoloEstreita(k, d) {
   // o nome inteiro ou "Maria Santos", se der; senão, encurta mais
   desenharLinhas(k, escolherTamanho(k, [[[s => montar(s, 'inteiro'), s => montar(s, 'curto')], 0.75], [[montar], 0.6]], H - M * 0.8) || montar(0.6), M * 0.45);
 }
-/** Tamanho da etiqueta em pontos para a impressora conectada (ou 203 dpi, para a prévia). */
+/** Tamanho da etiqueta em pontos para a impressora conectada (ou 203 dpi, para a prévia). deitada: a etiqueta é mais larga que a
+    cabeça de impressão, mas a altura cabe (60 × 40 na B1 e na B21, de 48 mm): ela passa de lado e o desenho sai girado. */
 function medidasEtiqueta(meta) {
-  const [wMm, hMm] = confNiimbot().tamanho.split('x').map(Number), dpi = meta?.dpi || 203, pxmm = dpi / 25.4;
-  let W = Math.round(wMm * pxmm), H = Math.round(hMm * pxmm);
+  const [wMm, hMm] = confNiimbot().tamanho.split('x').map(Number), dpi = meta?.dpi || 203, pxmm = dpi / 25.4, cabeca = meta?.printheadPixels;
+  let W = Math.round(wMm * pxmm), H = Math.round(hMm * pxmm), deitada = false;
   // a cabeça de impressão limita a largura (B1: 48 mm) ou, nas D11/D110 (imprimem de lado), a altura
-  if (meta?.printheadPixels) { if ((meta.printDirection || 'top') === 'top') W = Math.min(W, meta.printheadPixels); else H = Math.min(H, meta.printheadPixels); }
-  return { W, H, pxmm };
+  if (cabeca) {
+    if ((meta.printDirection || 'top') !== 'top') H = Math.min(H, cabeca);
+    else if (W > cabeca && H <= cabeca) deitada = true;
+    else W = Math.min(W, cabeca);
+  }
+  return { W, H, pxmm, deitada };
 }
 /** Manda as etiquetas para a Niimbot num trabalho só. aoAvancar(feitas, total); parar(): true interrompe. */
 async function imprimirNaNiimbot(etiquetas, { aoAvancar, parar } = {}) {
   const { lib, client } = niim;
   const meta = client.getModelMetadata() || {};
-  const { W, H, pxmm } = medidasEtiqueta(meta), loja = await configLoja() || {};
+  const { W, H, pxmm, deitada } = medidasEtiqueta(meta), loja = await configLoja() || {};
   await carregarFontesMarca();   // a etiqueta sai na Nunito da marca
-  const direcao = meta.printDirection || 'top';
+  const direcao = meta.printDirection || 'top', girar = deitada ? 'left' : direcao;   // 'left': o desenho vai de lado para a impressora
   const tarefa = client.getPrintTaskType() || (direcao === 'left' ? 'D110' : 'B1');
   const task = client.protocol.newPrintTask(tarefa, {
     totalPages: etiquetas.length, density: meta.densityDefault || 3, labelType: lib.LabelType.WithGaps, statusPollIntervalMs: 100, statusTimeoutMs: 8000
@@ -3965,7 +3989,7 @@ async function imprimirNaNiimbot(etiquetas, { aoAvancar, parar } = {}) {
     await task.printInit();
     for (const et of etiquetas) {
       if (parar?.()) break;
-      await task.printPage(lib.ImageEncoder.encodeCanvas(canvasEtiqueta(et, W, H, pxmm, loja), lib.PageColorType.SingleColor, direcao), 1);
+      await task.printPage(lib.ImageEncoder.encodeCanvas(canvasEtiqueta(et, W, H, pxmm, loja), lib.PageColorType.SingleColor, girar), 1);
       await task.waitForPageFinished();
       feitas++;
       aoAvancar?.(feitas, etiquetas.length);
@@ -4003,19 +4027,32 @@ async function etiquetaNiimbot(p, opcoes = {}) {
   await mapaKitsLoja();   // o que vem em cada kit (para achar bolo e topo dentro dele)
   return etiquetasNiimbot(etiquetasDoPedido(p), { rotulo: `Etiqueta do pedido ${p.codigo}`, ...opcoes });
 }
-/** Várias etiquetas na térmica de 80 mm (sem Niimbot): o mesmo desenho, uma por página. */
+/** Várias etiquetas pela janela de impressão, uma por página: na impressora de etiquetas, a página é a etiqueta (203 dpi:
+    um ponto do desenho por ponto da impressora); na térmica de 80 mm, o mesmo desenho na largura do papel. */
 async function imprimirEtiquetasTermica(etiquetas) {
-  const [wMm, hMm] = confNiimbot().tamanho.split('x').map(Number), pxmm = 8, W = 72 * pxmm, H = Math.round(W * hMm / wMm);
+  const [wMm, hMm] = confNiimbot().tamanho.split('x').map(Number), rolo = confNiimbot().onde === 'rolo', pxmm = 8;
+  const W = Math.round((rolo ? wMm : 72) * pxmm), H = Math.round(rolo ? hMm * pxmm : W * hMm / wMm);
   const loja = await configLoja() || {};
   await carregarFontesMarca();
   const imgs = etiquetas.map(et => `<img src="${canvasEtiqueta(et, W, H, pxmm, loja).toDataURL('image/png')}" alt="">`).join('');
+  // cada etiqueta numa página nova (a quebra vem antes dela: depois da última sairia uma etiqueta em branco); um pouco mais
+  // baixa que a página, para o arredondamento não empurrar a imagem para a página seguinte
+  const css = rolo ? `@page { size: ${wMm}mm ${hMm}mm; margin: 0; } * { margin: 0; padding: 0; } body { background: #fff; }
+    img { display: block; width: ${wMm}mm; height: ${hMm - 0.2}mm; image-rendering: pixelated; } img + img { break-before: page; }`
+    : `@page { size: 80mm auto; margin: 0; } * { margin: 0; padding: 0; } body { width: 80mm; padding: 2mm 4mm; background: #fff; }
+    img { display: block; width: 72mm; image-rendering: pixelated; } img + img { break-before: page; }`;
   return mandarParaTermica(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiquetas</title><style>
-    @page { size: 80mm auto; margin: 0; } * { margin: 0; padding: 0; } body { width: 80mm; padding: 2mm 4mm; background: #fff; }
-    img { display: block; width: 72mm; break-after: page; page-break-after: always; image-rendering: pixelated; }
+    ${css}
   </style></head><body>${imgs}</body></html>`);
 }
-/** Botão "Etiqueta": na Niimbot, se estiver em uso neste aparelho; senão, na térmica de 80 mm. */
-const imprimirEtiquetaDoPedido = (p, opcoes) => (confNiimbot().usar ? etiquetaNiimbot(p, opcoes) : imprimirEtiqueta(p));
+/** Botão "Etiqueta": onde as etiquetas saem neste aparelho (Minha conta). */
+async function imprimirEtiquetaDoPedido(p, opcoes) {
+  const onde = confNiimbot().onde;
+  if (onde === 'niimbot') return etiquetaNiimbot(p, opcoes);
+  if (onde === 'termica') return imprimirEtiqueta(p);
+  await mapaKitsLoja();   // o que vem em cada kit (para achar bolo e topo dentro dele)
+  return imprimirEtiquetasTermica(etiquetasDoPedido(p));
+}
 /** Linhas da lista de pedidos (vw_pedidos) com os itens de cada uma, numa consulta só. */
 async function pedidosComItens(linhas) {
   const ids = linhas.map(p => p.id), porPedido = new Map(ids.map(id => [id, []]));
@@ -4036,7 +4073,7 @@ const CHAVE_LOTE = 'ritabolos.lote';
 /** O que saiu da última vez neste aparelho; na primeira, o cupom de 80 mm (ou a etiqueta, se a Niimbot estiver em uso aqui). */
 function tipoLote() {
   try { const t = localStorage.getItem(CHAVE_LOTE); if (OPCOES_LOTE.some(([v]) => v === t)) return t; } catch (e) { /* sem armazenamento */ }
-  return confNiimbot().usar ? (confNiimbot().conteudo || 'producao') : 'completo';
+  return confNiimbot().onde !== 'termica' ? (confNiimbot().conteudo || 'producao') : 'completo';
 }
 /** Os pedidos completos, como na gaveta (com as anotações fixadas), alguns de cada vez e na ordem pedida. */
 async function pedidosCompletos(ids, aoAvancar) {
@@ -4065,7 +4102,7 @@ async function modalImprimirLote(linhas, titulo = 'Imprimir pedidos') {
         <span class="lote-n"><b>${esc(p.cliente_nome)}</b><small>${esc(p.codigo)} · ${esc(p.status_nome || p.status)}</small></span>
         <em data-lote-n="${esc(p.id)}"></em></label>`).join('')}</div>
       <div data-so-etiqueta><p class="secao-t">Prévia da primeira etiqueta</p><div class="nb-previa" id="lotePrevia"></div>
-        ${naNiimbot ? '' : '<p class="ajuste-dica" style="margin:8px 0 0">Sem a Niimbot ligada neste aparelho (Minha conta), as etiquetas saem na térmica de 80 mm, uma por página.</p>'}</div>
+        <p class="ajuste-dica" style="margin:8px 0 0">${{ niimbot: 'As etiquetas saem na Niimbot.', rolo: 'As etiquetas saem na impressora de etiquetas, uma por página, pela janela de impressão.', termica: 'As etiquetas saem na térmica de 80 mm, uma por página.' }[confNiimbot().onde]} Para mudar, vá em Minha conta &gt; Etiquetas.</p></div>
       <p class="ajuste-dica" data-so-cupom style="margin:12px 0 0">Sai o cupom de cada pedido, igual ao do botão Imprimir 80 mm, na ordem da lista e numa impressão só. Cada pedido começa numa página nova: se a térmica estiver configurada para cortar a cada página, ela corta entre um e outro.</p>
       ${ehWindows() ? '<p class="ajuste-dica" data-dica-termica style="margin:8px 0 0">A térmica não aparece na janela de impressão? <button type="button" class="link" data-como-termica>Veja como instalar o driver</button>.</p>' : ''}
       <div class="lote-prog" id="loteProg" hidden><div class="lote-trilho"><i></i></div><span aria-live="polite"></span></div>`,
@@ -4186,7 +4223,7 @@ async function imprimirSeConfirmado(pedido) {
     jaImpresso(p.id, true);
     if (naNiimbot) { await etiquetaNiimbot(p, { automatico: true }); return; }
     toast(`Imprimindo ${cfg.formato === 'pedido' ? 'o pedido' : 'a etiqueta do pedido'} ${p.codigo}…`);
-    await (cfg.formato === 'pedido' ? imprimirTermica(p) : imprimirEtiqueta(p));
+    await (cfg.formato === 'pedido' ? imprimirTermica(p) : imprimirEtiquetaDoPedido(p));
   };
   if (navigator.locks?.request) await navigator.locks.request('ritabolos-impressao-auto', fazer);
   else await fazer();
