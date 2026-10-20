@@ -696,13 +696,14 @@ function ligarBuscaTopo() {
   window.addEventListener('hashchange', fechar);   // abriu um pedido ou trocou de tela: os resultados somem
 }
 
-/* ---- Temas: Automático (segue o aparelho), Claro e Escuro ----
-   As cores ficam no index.html (:root e :root[data-theme="dark"]); a escolha fica salva neste aparelho.
+/* ---- Temas: Automático (segue o aparelho), Claro, Escuro e Drácula ----
+   As cores ficam no index.html (:root, :root[data-theme="dark"] e :root[data-theme="dracula"]); a escolha fica salva neste aparelho.
    Quem tinha escolhido um tema que saiu volta para o Automático. */
 const TEMAS = [
   { id: 'auto', nome: 'Automático', desc: 'Claro ou escuro, como o aparelho', attr: null },
   { id: 'claro', nome: 'Claro', desc: 'Creme e chocolate', attr: 'light', meta: '#FBF4EC', icone: 'sol', amostra: ['#FBF4EC', '#FFFFFF', '#58210F', '#51AB9D'] },
-  { id: 'escuro', nome: 'Escuro', desc: 'Para pouca luz', attr: 'dark', meta: '#1A0D07', icone: 'lua', amostra: ['#1A0D07', '#24130B', '#F5D4AA', '#51AB9D'] }
+  { id: 'escuro', nome: 'Escuro', desc: 'Para pouca luz', attr: 'dark', meta: '#1A0D07', icone: 'lua', amostra: ['#1A0D07', '#24130B', '#F5D4AA', '#51AB9D'] },
+  { id: 'dracula', nome: 'Drácula', desc: 'Roxo, rosa e verde no escuro', attr: 'dracula', meta: '#21222C', icone: 'morcego', amostra: ['#21222C', '#282A36', '#BD93F9', '#FF79C6'] }
 ];
 const temaDe = id => TEMAS.find(t => t.id === id) || TEMAS[0];
 const temaEscolhido = () => { try { const t = localStorage.getItem('ritabolos.tema'); return TEMAS.some(x => x.id === t) ? t : 'auto'; } catch (e) { return 'auto'; } };

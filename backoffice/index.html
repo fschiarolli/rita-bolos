@@ -22,8 +22,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script>
-  /* Tema escolhido pela pessoa (claro ou escuro); sem escolha, segue o sistema. Aplicado antes de desenhar para não piscar. */
-  try { var t = { claro: 'light', escuro: 'dark' }[localStorage.getItem('ritabolos.tema')]; if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+  /* Tema escolhido pela pessoa (claro, escuro ou Drácula); sem escolha, segue o sistema. Aplicado antes de desenhar para não piscar. */
+  try { var t = { claro: 'light', escuro: 'dark', dracula: 'dracula' }[localStorage.getItem('ritabolos.tema')]; if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}
 </script>
 <style>
 /*
@@ -111,6 +111,34 @@
   --shadow-lg: 0 22px 50px -14px rgba(0, 0, 0, .75);
   color-scheme: dark;
 }
+/* Tema Drácula (escolhido em Minha conta > Tema): a paleta de draculatheme.com nos mesmos papéis do tema escuro.
+   Roxo: a ação principal; rosa: onde você está e o próximo passo; verde: o que está certo (pago, ok); ciano: entregas;
+   amarelo: as estrelas; laranja: atenção; vermelho: erro. O "comentário" (#6272A4) foi clareado para o texto
+   secundário passar de 4,5:1 sobre os cartões. */
+:root[data-theme="dracula"] {
+  --dr-fundo: #282A36; --dr-linha: #44475A; --dr-texto: #F8F8F2; --dr-comentario: #6272A4;
+  --dr-ciano: #8BE9FD; --dr-verde: #50FA7B; --dr-laranja: #FFB86C; --dr-rosa: #FF79C6; --dr-roxo: #BD93F9; --dr-vermelho: #FF5555; --dr-amarelo: #F1FA8C;
+  --bg: #21222C; --surface: var(--dr-fundo); --surface-2: #343746; --surface-3: var(--dr-linha); --glass: #21222C;
+  --ink: var(--dr-texto); --ink-2: #D6D7E6; --ink-3: #A3A9CF; --line: rgba(248, 248, 242, .09); --line-2: rgba(248, 248, 242, .17);
+  --primary: var(--dr-roxo); --on-primary: #21222C; --primary-hover: #CBA8FA; --primary-rgb: 189, 147, 249;
+  --teal: var(--dr-verde); --on-teal: #21222C; --teal-rgb: 80, 250, 123; --teal-50: rgba(80, 250, 123, .12); --mint: var(--dr-ciano);
+  --fita: var(--dr-rosa); --on-fita: #21222C; --fita-hover: #FF92D0;
+  --rose: var(--dr-laranja); --rose-600: var(--dr-laranja); --rose-50: rgba(255, 184, 108, .14); --rose-rgb: 255, 184, 108;
+  --warm-50: rgba(241, 250, 140, .08); --gold: var(--dr-amarelo); --gold-rgb: 241, 250, 140;
+  --error: var(--dr-vermelho); --error-50: rgba(255, 85, 85, .15);
+  --ent: var(--dr-ciano); --ent-50: rgba(139, 233, 253, .13); --ent-rgb: 139, 233, 253;
+  --focus: var(--dr-rosa);
+  --accent-wash: rgba(189, 147, 249, .16);
+  --destaque-a: #343746; --destaque-b: #343746;
+  --side-bg: #191A21; --side-ink: var(--dr-texto); --side-ink-2: #A3A9CF; --side-hover: rgba(189, 147, 249, .12); --side-line: rgba(248, 248, 242, .08);
+  --dot-filter: brightness(1.55) saturate(1.1);
+  --shadow-sm: none; --shadow: none;
+  --shadow-lg: 0 22px 50px -14px rgba(0, 0, 0, .75);
+  color-scheme: dark;
+}
+/* texto branco sobre o que no Drácula fica claro (verde, laranja, ciano): escuro, para ler */
+:root[data-theme="dracula"] .av-lapis, :root[data-theme="dracula"] .topo-badge, :root[data-theme="dracula"] .vista-sel .vs-n,
+:root[data-theme="dracula"] .ped-acao.ent:hover { color: #21222C; }
 :root { box-sizing: border-box; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
 html { scroll-padding-top: calc(var(--topbar) + 12px); }
 *, *::before, *::after { box-sizing: inherit; }
@@ -299,7 +327,7 @@ main.conteudo { padding: 28px 32px 48px; min-width: 0; max-width: 1240px; width:
 .trilha .sep { width: 12px; height: 12px; opacity: .6; }
 .trilha span { color: var(--ink); font-weight: 500; }
 .page-head h1 { font-family: var(--font-display); font-weight: 400; font-size: 38px; letter-spacing: -.005em; line-height: 1.05; color: var(--logo-chocolate); text-wrap: balance; }
-:root[data-theme="dark"] .page-head h1 { color: var(--ink); }
+:root[data-theme="dark"] .page-head h1, :root[data-theme="dracula"] .page-head h1 { color: var(--ink); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme]) .page-head h1 { color: var(--ink); } }
 .ph-sub { margin: 6px 0 0; color: var(--ink-2); font-size: 15px; }
 .page-head .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -1403,7 +1431,7 @@ span.gt-l-v:hover { background: none; }
 .ent-acoes .sair { flex: 1 1 100%; min-height: 50px; font-size: 15.5px; }
 .btn.ent { background: var(--ent); color: #fff; box-shadow: 0 12px 26px -12px rgba(var(--ent-rgb), .7); }
 .btn.ent:hover { filter: brightness(1.07); }
-:root[data-theme="dark"] .btn.ent { color: #0E1B26; }
+:root[data-theme="dark"] .btn.ent, :root[data-theme="dracula"] .btn.ent { color: #0E1B26; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme]) .btn.ent { color: #0E1B26; } }
 .ent-add { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line-2); font-size: 13.5px; color: var(--ink-3); }
 .ent-calc { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
@@ -1481,7 +1509,7 @@ span.gt-l-v:hover { background: none; }
 .passos li.feito button { color: var(--ink-2); }
 .passos li.atual .pt { box-shadow: inset 0 0 0 3px var(--fita), 0 0 0 5px rgba(81, 171, 157, .22); }
 .passos li.atual .pt::after { content: ''; width: 12px; height: 12px; border-radius: 50%; background: var(--logo-chocolate); }
-:root[data-theme="dark"] .passos li.atual .pt::after { background: var(--ink); }
+:root[data-theme="dark"] .passos li.atual .pt::after, :root[data-theme="dracula"] .passos li.atual .pt::after { background: var(--ink); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme]) .passos li.atual .pt::after { background: var(--ink); } }
 .passos li.atual button { color: var(--ink); font-weight: 800; }
 .passos button:hover .pt { box-shadow: inset 0 0 0 2px var(--teal); }
@@ -1540,7 +1568,7 @@ span.gt-l-v:hover { background: none; }
 .qp-n { min-width: 26px; height: 24px; padding: 0 8px; border-radius: 999px; display: inline-grid; place-items: center; background: var(--surface); font-weight: 800; font-size: 13px; color: var(--ink-2); }
 .qp-lista { display: grid; gap: 8px; }
 .qp-vazio { margin: 0; padding: 18px 8px; text-align: center; color: var(--ink-3); font-size: 13.5px; }
-.qp-card { position: relative; display: grid; gap: 5px; padding: 12px 12px 12px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); transition: border-color .14s; }
+.qp-card { position: relative; display: grid; gap: 5px; padding: 12px 12px 12px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); transition: border-color .14s; min-width: 0; }   /* nunca mais largo que a coluna */
 .qp-card:hover { border-color: rgba(var(--teal-rgb), .45); }
 .qp-card > span, .qp-card > strong { position: relative; pointer-events: none; }
 .qp-card.hoje { box-shadow: inset 3px 0 0 var(--rose-600); }
@@ -1551,9 +1579,10 @@ span.gt-l-v:hover { background: none; }
 .qp-nome { font-size: 15px; font-weight: 800; line-height: 1.25; }
 .qp-nome small { font-size: 12px; font-weight: 600; color: var(--ink-3); }
 .qp-itens { font-size: 13px; color: var(--ink-2); line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.qp-pe { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
+.qp-pe { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; margin-top: 2px; }
 .qp-pe b { font-weight: 800; font-size: 14.5px; }
-.qp-card .ped-acao { width: 100%; margin-top: 4px; }
+/* o botão do próximo passo quebra a linha quando o nome da etapa é comprido (senão empurra o cartão para a coluna do lado) */
+.qp-card .ped-acao { width: 100%; margin-top: 4px; white-space: normal; text-align: center; line-height: 1.2; padding-top: 7px; padding-bottom: 7px; }
 .tab-pe.quadro { border: 0; padding: 12px 4px 0; }
 @media (max-width: 640px) { .quadro-ped { grid-auto-columns: 86%; margin: 0 -14px; padding: 0 14px 8px; scroll-padding: 0 14px; } }
 
@@ -1597,7 +1626,8 @@ span.gt-l-v:hover { background: none; }
 /* Faixa de indicadores: em coluna estreita, o ícone sai e o número diminui (nunca corta o valor) */
 .kpi-strip > .kpi { container-type: inline-size; }
 @container (max-width: 210px) { .kpi-ic { display: none; } .kpi strong { font-size: 22px; } }
-.quadro-ped { grid-auto-columns: minmax(228px, 1fr); }
+/* Quadro de produção: do tablet para cima, colunas de 228 px (cabem as 4); no celular vale a regra de cima (86%: uma coluna por vez) */
+@media (min-width: 641px) { .quadro-ped { grid-auto-columns: minmax(228px, 1fr); } }
 
 /* Ajustes > Loja: a barra de salvar fica presa no rodapé e avisa quando há mudanças */
 .aj-salvar { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin: 18px -22px -22px; padding: 14px 22px; background: var(--surface); border-top: 1px solid var(--line); border-radius: 0 0 var(--r) var(--r); }
@@ -1663,6 +1693,7 @@ a, button, summary, label, .chip { touch-action: manipulation; }
     <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></symbol>
     <symbol id="i-sol" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
     <symbol id="i-lua" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+    <symbol id="i-morcego" viewBox="0 0 24 24"><path d="M12 9.4l-1.4-1.6-.4 2.3c-1.8-1.3-4.8-1.5-7.7-.3 1.3.8 1.9 2.2 1.7 3.8 1.2-.7 2.6-.7 3.6.3.8-.8 2.1-.9 3.2 0L12 15.6l1-1.7c1.1-.9 2.4-.8 3.2 0 1-1 2.4-1 3.6-.3-.2-1.6.4-3 1.7-3.8-2.9-1.2-5.9-1-7.7.3l-.4-2.3z"/></symbol>
     <symbol id="i-baixar" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></symbol>
     <symbol id="i-auto" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></symbol>
     <symbol id="i-casa" viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></symbol>

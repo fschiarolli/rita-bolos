@@ -7,6 +7,10 @@
 <meta name="description" content="Cardápio da Rita Bolos: bolos, docinhos, salgados, bolo no pote e kits para festa. Monte seu pedido e envie pelo WhatsApp.">
 <meta name="theme-color" content="#FBF4EC" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1E130E" media="(prefers-color-scheme: dark)">
+<script>
+  /* Aparência escolhida em Ajuda (claro, escuro ou Drácula), só neste aparelho; sem escolha, segue o celular. */
+  try { var t = { claro: 'light', escuro: 'dark', dracula: 'dracula' }[localStorage.getItem('ritabolos.site.tema')]; if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+</script>
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Rita Bolos">
@@ -96,6 +100,25 @@
   --stage: #120B08; --stage-dot-1: rgba(245,212,170,.10); --stage-dot-2: rgba(125,196,176,.10);
   color-scheme: dark;
 }
+/* Tema Drácula (Ajuda > Aparência): a paleta de draculatheme.com nos mesmos papéis do escuro. Roxo: a ação principal;
+   ciano: links e destaques; rosa: atenção; verde: WhatsApp; amarelo: estrelas. O "comentário" (#6272A4) foi clareado
+   para o texto secundário passar de 4,5:1. */
+:root[data-theme="dracula"] {
+  --dr-fundo: #282A36; --dr-linha: #44475A; --dr-texto: #F8F8F2; --dr-comentario: #6272A4;
+  --dr-ciano: #8BE9FD; --dr-verde: #50FA7B; --dr-laranja: #FFB86C; --dr-rosa: #FF79C6; --dr-roxo: #BD93F9; --dr-vermelho: #FF5555; --dr-amarelo: #F1FA8C;
+  --bg: var(--dr-fundo); --surface: #313342; --surface-2: #3A3C4E;
+  --ink: var(--dr-texto); --ink-2: #D6D7E6; --ink-3: #A3A9CF;
+  --line: rgba(248, 248, 242, .12); --plate: var(--dr-linha);
+  --primary: var(--dr-roxo); --on-primary: #21222C; --banner-cocoa: var(--dr-linha);
+  --mint-50: #323D4A; --mint-200: #415A68; --mint-400: var(--dr-ciano); --teal: var(--dr-ciano); --on-teal: #21222C;
+  --rose-50: #423347; --rose-200: #5E3E5A; --rose-400: var(--dr-rosa); --rose-600: var(--dr-rosa); --on-rose: #21222C;
+  --warm-50: #3E383B; --gold: var(--dr-amarelo); --wa: var(--dr-verde); --error: var(--dr-vermelho);
+  --shadow-1: 0 1px 2px rgba(0,0,0,.3), 0 3px 10px rgba(0,0,0,.25);
+  --shadow-2: 0 10px 30px rgba(0,0,0,.45);
+  --stage: #191A21; --stage-dot-1: rgba(189,147,249,.14); --stage-dot-2: rgba(139,233,253,.10);
+  color-scheme: dark;
+}
+:root[data-theme="dracula"] .btn-wa { color: #21222C; }   /* o verde do Drácula é claro: texto escuro para ler */
 
 /* =========================================================
    BASE
@@ -174,6 +197,7 @@ a { color: var(--teal); }
 @media (min-width: 900px) and (min-height: 660px) and (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .side { color: #F7EBDD; }
 }
+@media (min-width: 900px) and (min-height: 660px) { :root[data-theme="dracula"] .side { color: #F8F8F2; } }
 .side-logo { width: 150px; height: auto; }
 .side h1 { font-family: var(--font-display); font-weight: 400; font-size: 44px; line-height: 1.02; letter-spacing: -.01em; }
 .side p { font-size: 16.5px; line-height: 1.55; max-width: 32ch; opacity: .9; }
@@ -404,6 +428,7 @@ a { color: var(--teal); }
 .tag.gold { background: color-mix(in srgb, var(--gold) 22%, transparent); color: #7A5714; }
 :root[data-theme="dark"] .tag.gold { color: #E9C987; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tag.gold { color: #E9C987; } }
+:root[data-theme="dracula"] .tag.gold { color: var(--gold); }
 
 /* Botões de adicionar / stepper */
 .ctl { flex: none; display: flex; align-items: center; }
@@ -512,6 +537,20 @@ a { color: var(--teal); }
 .aval-como { margin: 18px 18px 0; padding: 14px 16px; border-radius: 18px; background: var(--mint-50); font-size: 14px; line-height: 1.5; color: var(--ink-2); }
 .aval-como strong { color: var(--ink); }
 .help-card { margin: 0 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 6px 16px; }
+/* Ajuda > Aparência: Automático, Claro, Escuro ou Drácula (botões de opção: dá para usar as setas do teclado) */
+.aparencia { margin: 0 18px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.ap-op { position: relative; display: grid; justify-items: center; gap: 7px; padding: 11px 4px 9px; border-radius: 16px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink-2); font-size: 12.5px; font-weight: 800; text-align: center; cursor: pointer; }
+.ap-op input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.ap-op:has(input:checked) { border-color: var(--teal); box-shadow: 0 0 0 2px color-mix(in srgb, var(--teal) 40%, transparent); color: var(--ink); }
+.ap-op:has(input:focus-visible) { outline: 3px solid var(--teal); outline-offset: 2px; }
+.ap-amostra { position: relative; width: 44px; height: 32px; border-radius: 9px; overflow: hidden; background: var(--a); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .14); }
+.ap-amostra::before { content: ""; position: absolute; inset: 6px; border-radius: 5px; background: var(--b); }
+.ap-amostra::after { content: ""; position: absolute; left: 11px; top: 11px; width: 17px; height: 3.5px; border-radius: 3px; background: var(--c); box-shadow: 0 6px 0 var(--d); }
+.ap-amostra.auto { background: linear-gradient(135deg, #FBF4EC 0 50%, #1E130E 50% 100%); }   /* metade clara, metade escura (não é enfeite) */
+.ap-amostra.auto::before { background: linear-gradient(135deg, #FFFFFF 0 50%, #2A1B14 50% 100%); }
+.ap-amostra.auto::after { background: linear-gradient(90deg, #58210F 0 50%, #F2DCC4 50% 100%); box-shadow: 0 6px 0 #2B7465; }
+.ap-dica { margin: 8px 18px 0; font-size: 12.5px; font-weight: 700; color: var(--ink-3); }
 .help-card ul { list-style: none; margin: 0; padding: 0; }
 .help-card li { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; line-height: 1.45; }
 .help-card li:last-child { border-bottom: 0; }
@@ -1008,6 +1047,17 @@ a { color: var(--teal); }
               <li><strong>Android:</strong> abra o menu do navegador (⋮) e toque em “Adicionar à tela inicial”.</li>
             </ol>
           </div>
+        </section>
+
+        <section class="section" aria-labelledby="h-aparencia">
+          <div class="section-head"><h2 class="section-title" id="h-aparencia">Aparência</h2></div>
+          <div class="aparencia" role="radiogroup" aria-labelledby="h-aparencia">
+            <label class="ap-op"><input type="radio" name="aparencia" value="auto"><span class="ap-amostra auto" aria-hidden="true"></span>Automático</label>
+            <label class="ap-op"><input type="radio" name="aparencia" value="claro"><span class="ap-amostra" aria-hidden="true" style="--a:#FBF4EC;--b:#FFFFFF;--c:#58210F;--d:#2B7465"></span>Claro</label>
+            <label class="ap-op"><input type="radio" name="aparencia" value="escuro"><span class="ap-amostra" aria-hidden="true" style="--a:#1E130E;--b:#2A1B14;--c:#F2DCC4;--d:#8FD3C0"></span>Escuro</label>
+            <label class="ap-op"><input type="radio" name="aparencia" value="dracula"><span class="ap-amostra" aria-hidden="true" style="--a:#282A36;--b:#313342;--c:#BD93F9;--d:#FF79C6"></span>Drácula</label>
+          </div>
+          <p class="ap-dica">Vale só neste aparelho. No Automático, o site acompanha o modo claro ou escuro do celular.</p>
         </section>
       </section>
 
@@ -1822,6 +1872,26 @@ async function carregarAvaliacoes() {
   try { AVAL = await API.avaliacoes.publicadas(60); } catch (e) { AVAL = null; }
   renderAvaliacoes();
 }
+
+/* =========================================================
+   APARÊNCIA (Ajuda): Automático (segue o celular), Claro, Escuro ou Drácula, guardada neste aparelho.
+   O <head> já aplica a escolha antes de desenhar; aqui ficam a troca e a cor da barra do navegador.
+========================================================= */
+const APARENCIAS = { auto: null, claro: 'light', escuro: 'dark', dracula: 'dracula' };
+const COR_BARRA = { claro: '#FBF4EC', escuro: '#1E130E', dracula: '#21222C' };
+const aparenciaSalva = () => { try { const t = localStorage.getItem('ritabolos.site.tema'); return t in APARENCIAS ? t : 'auto'; } catch (e) { return 'auto'; } };
+function aplicarAparencia(id) {
+  const attr = APARENCIAS[id] ?? null;
+  if (attr) document.documentElement.setAttribute('data-theme', attr); else document.documentElement.removeAttribute('data-theme');
+  // a barra do navegador: a cor do tema escolhido; no Automático, as duas de antes (uma para o claro, outra para o escuro)
+  $$('meta[name="theme-color"]').forEach(m => { m.dataset.original ??= m.getAttribute('content'); m.setAttribute('content', COR_BARRA[id] || m.dataset.original); });
+  $$('input[name="aparencia"]').forEach(r => { r.checked = r.value === id; });
+}
+document.addEventListener('change', e => {
+  if (e.target.name !== 'aparencia') return;
+  try { if (e.target.value === 'auto') localStorage.removeItem('ritabolos.site.tema'); else localStorage.setItem('ritabolos.site.tema', e.target.value); } catch (err) { /* vale só nesta visita */ }
+  aplicarAparencia(e.target.value);
+});
 
 /* =========================================================
    AJUDA
@@ -2844,6 +2914,7 @@ async function iniciarDados() {
    INÍCIO DO APP
 ========================================================= */
 $$('img[data-logo]').forEach(i => { i.src = IMG_LOGO; });
+aplicarAparencia(aparenciaSalva());
 ligarLinksWa(CFG.whatsapp_numero);
 setupCarousel();
 setupSearch();
