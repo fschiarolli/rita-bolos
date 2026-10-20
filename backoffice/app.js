@@ -3256,6 +3256,15 @@ document.addEventListener('keydown', e => {
   const d = e.key === 'Escape' && $('details.menu-acao[open]'); if (!d) return;
   e.stopPropagation(); d.open = false; d.querySelector('summary').focus();
 }, true);
+/* No celular os botões quebram em duas linhas e o menu aberto passava da tela ("Mais" saía pela esquerda, "Imprimir" pela
+   direita): ao abrir, ele anda para o lado o que precisar para caber, com 8 px de folga ("toggle" não sobe: escuta na captura) */
+document.addEventListener('toggle', e => {
+  const d = e.target; if (!d.matches?.('details.menu-acao') || !d.open) return;
+  const pop = d.querySelector('.menu-pop'); if (!pop) return;
+  pop.style.transform = '';
+  const r = pop.getBoundingClientRect(), dx = Math.max(8 - r.left, 0) + Math.min(innerWidth - 8 - r.right, 0);
+  if (dx) pop.style.transform = `translateX(${Math.round(dx)}px)`;
+}, true);
 /** O caminho do pedido (Recebido → … → Retirado), com o passo atual em destaque; tocar num passo muda o status. */
 function passosPedido(p) {
   const passos = statusDoPedido(p).filter(s => s.codigo !== 'cancelado');

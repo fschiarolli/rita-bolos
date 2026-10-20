@@ -545,6 +545,8 @@ a.chip { text-decoration: none; }
 .it-ref-img img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .2s; }
 .it-ref-img:hover img { transform: scale(1.05); }
 .it-ref-acoes { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+/* no celular, ao lado da foto sobra pouco: o botão quebra a linha em vez de passar da borda ("Enviar para quem faz o topo") */
+.it-ref-acoes .btn { max-width: 100%; white-space: normal; text-align: left; line-height: 1.25; padding-top: 7px; padding-bottom: 7px; }
 .it-ref-acoes > span { font-size: 13px; font-weight: 700; color: var(--ink-3); }
 .it-ref.sem { justify-content: space-between; flex-wrap: wrap; border-style: dashed; border-color: rgba(var(--rose-rgb), .5); }
 .it-ref.sem > span { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; color: var(--rose-600); }
