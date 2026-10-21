@@ -264,10 +264,27 @@ export function itensWhatsApp(itens) {
   ].filter(Boolean).join('\n')).join('\n\n');
 }
 
+/**
+ * A pasta do site (onde ficam index.html e recibo.html), do endereço cadastrado em Ajustes > Loja ou da página aberta.
+ * Aceita o endereço digitado de qualquer jeito: "https://www.ritabolos.com" (sem a barra no fim) e "www.ritabolos.com"
+ * (sem https) viram "https://www.ritabolos.com/"; "…/index.html" perde a página; "https://x.com/loja" vira "…/loja/".
+ * (Antes, sem a barra no fim, o domínio era cortado como se fosse uma página: os links saíam "https://recibo.html?t=…".)
+ */
+export function raizDoSite(base) {
+  let s = String(base || (typeof location !== 'undefined' ? location.href : '')).trim().replace(/[#?].*$/, '');
+  if (!s) return '';
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) s = 'https://' + s.replace(/^\/+/, '');
+  try {
+    const u = new URL(s);
+    let pasta = u.pathname;
+    // o último pedaço: com ponto é uma página (index.html), que sai; sem ponto é uma pasta, que ganha a barra
+    if (!pasta.endsWith('/')) pasta = /\.[a-z0-9]+$/i.test(pasta.slice(pasta.lastIndexOf('/') + 1)) ? pasta.slice(0, pasta.lastIndexOf('/') + 1) : pasta + '/';
+    return u.origin + pasta;
+  } catch (e) { return s.replace(/[^/]*$/, ''); }
+}
 /** Endereço do recibo imprimível (recibo.html na raiz do site). */
 export function linkRecibo(token, baseSite) {
-  const base = (baseSite || (typeof location !== 'undefined' ? location.href : '')).replace(/[#?].*$/, '').replace(/[^/]*$/, '');
-  return `${base}recibo.html?t=${encodeURIComponent(token)}`;
+  return `${raizDoSite(baseSite)}recibo.html?t=${encodeURIComponent(token)}`;
 }
 /** Onde o cliente avalia o pedido (avaliar.html, ao lado do recibo), a partir do link do recibo: o mesmo código. */
 export const linkAvaliacao = urlRecibo => String(urlRecibo || '').replace(/(^|\/)recibo\.html\?/, '$1avaliar.html?');
@@ -809,7 +826,7 @@ export function criarApi(supabase, opcoes = {}) {
       /** Grava (ou muda) a avaliação. podePublicar: o cliente deixa mostrar no site. Devolve o mesmo que doPedido. */
       enviar: (token, { nota, comentario = null, podePublicar = true }) =>
         rpc('avaliar_pedido', { p_token: token, p_nota: nota, p_comentario: comentario, p_pode_publicar: podePublicar }),
-      /** As publicadas, para o site: { total, media, notas: { 5: n, ... }, avaliacoes: [{ nota, comentario, nome, data, itens }] }; null sem o script. */
+      /** As publicadas, para o site: { total, media, notas: { 5: n, ... }, avaliacoes: [{ nota, comentario, nome, data }] }; null sem o script. */
       async publicadas(limite = 60) {
         const { data, error } = await supabase.rpc('avaliacoes_publicadas', { p_limite: limite });
         if (error) { if (faltaNoBanco(error)) return null; throw new ErroApi(error, 'avaliações'); }

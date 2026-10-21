@@ -57,7 +57,7 @@ test('o cliente avalia o pedido retirado; a Administração publica; o site most
   let site = await api.avaliacoes.publicadas();
   assert.equal(site.total, 4);
   assert.equal(site.avaliacoes[0].nome, 'Maria S.');
-  assert.equal(site.avaliacoes[0].itens, 'Brigadeiro');
+  assert.equal('itens' in site.avaliacoes[0], false, 'o site não recebe o que a pessoa pediu');
 
   // o cliente muda o que escreveu: volta a ser nova e sai do site
   await api.avaliacoes.enviar(token, { nota: 4, comentario: 'Muito bom, mas atrasou.' });

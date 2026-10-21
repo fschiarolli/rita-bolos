@@ -216,11 +216,9 @@ export function criarHandler({ env, fetch: buscar = fetch, agora = Date.now }: O
       // O modelo de abertura usa apenas nome, código e link. O texto completo segue após a resposta do cliente.
       let recibo = '';
       if (!aberta) {
-        try {
-          const base = new URL(cfg.url_site);
-          if (base.protocol !== 'https:') throw new Error();
-          recibo = new URL(`recibo.html?t=${encodeURIComponent(p.token)}`, base.href.replace(/[^/]*$/, '')).href;
-        } catch { throw new Falha('Cadastre o endereço HTTPS do site em Ajustes > Loja para enviar o modelo de atualização.'); }
+        // o mesmo link das mensagens (linkRecibo aceita o endereço com ou sem a barra no fim); o modelo da Meta exige https
+        recibo = cfg.url_site ? linkRecibo(p.token, cfg.url_site) : '';
+        if (!recibo.startsWith('https://')) throw new Falha('Cadastre o endereço HTTPS do site em Ajustes > Loja para enviar o modelo de atualização.');
         if (d.destinatario === 'recebedor' && telefone !== telefoneWhatsApp(p.cliente_telefone)) {
           throw new Falha('Para avisar outro recebedor pela API, ele precisa iniciar uma conversa com a loja. O recibo é enviado apenas ao cliente.');
         }

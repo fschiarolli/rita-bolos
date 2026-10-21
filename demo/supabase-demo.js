@@ -32,20 +32,20 @@ function semearStories(b) {
   b.stories = ex.map(([path, titulo, pasta], i) => ({ id: novoId(), arquivo_path: path, miniatura_path: null, titulo, pasta, largura: null, altura: null, bytes: null,
     criado_em: new Date(Date.now() - (i + 1) * 36e5).toISOString(), criado_por: USUARIO_DEMO.id }));
 }
-/** Avaliações de exemplo (igual a sql/avaliacoes.sql): de pedidos antigos, que não estão na demonstração (por isso guardam os itens). */
+/** Avaliações de exemplo (igual a sql/avaliacoes.sql): de pedidos antigos, que não estão na demonstração. */
 function semearAvaliacoes(b) {
   const dia = n => new Date(Date.now() - n * 864e5).toISOString();
   const ex = [
-    ['Fernanda Rocha', 5, 'O bolo de Ninho com morango estava perfeito: macio, bem recheado e lindo. Todo mundo na festa pediu o contato!', 'publicada', true, 'Bolo Ninho + Morango · Brigadeiro', 3],
-    ['Ricardo Alves', 5, 'Pedi o kit para o aniversário da minha filha. Chegou tudo no horário e os salgados estavam quentinhos.', 'publicada', true, 'Kit 30 pessoas', 6],
-    ['Juliana Costa', 4, 'Bolo delicioso. Só achei o chantilly um pouco doce para o meu gosto.', 'publicada', true, 'Bolo Floresta Negra', 9],
-    ['Marcos Vinícius Oliveira', 5, null, 'nova', true, 'Bolo Brigadeiro + Ninho', 1],
-    ['Patrícia Gomes', 3, 'O sabor estava ótimo, mas a retirada atrasou uns 20 minutos.', 'nova', true, 'Bolo Prestígio · Beijinho', 1],
-    ['Renata Souza', 5, 'Melhor bolo de pote da região!', 'nova', false, 'Bolo no pote Ninho com Nutella', 2]
+    ['Fernanda Rocha', 5, 'O bolo de Ninho com morango estava perfeito: macio, bem recheado e lindo. Todo mundo na festa pediu o contato!', 'publicada', true, 3],
+    ['Ricardo Alves', 5, 'Pedi o kit para o aniversário da minha filha. Chegou tudo no horário e os salgados estavam quentinhos.', 'publicada', true, 6],
+    ['Juliana Costa', 4, 'Bolo delicioso. Só achei o chantilly um pouco doce para o meu gosto.', 'publicada', true, 9],
+    ['Marcos Vinícius Oliveira', 5, null, 'nova', true, 1],
+    ['Patrícia Gomes', 3, 'O sabor estava ótimo, mas a retirada atrasou uns 20 minutos.', 'nova', true, 1],
+    ['Renata Souza', 5, 'Melhor bolo de pote da região!', 'nova', false, 2]
   ];
-  b.avaliacoes = ex.map(([cliente_nome, nota, comentario, situacao, pode_publicar, itens, dias], i) => ({ id: novoId(), pedido_id: null,
+  b.avaliacoes = ex.map(([cliente_nome, nota, comentario, situacao, pode_publicar, dias], i) => ({ id: novoId(), pedido_id: null,
     pedido_codigo: 'RB-' + String(980 + i).padStart(5, '0'), cliente_nome, nota, comentario, pode_publicar, situacao,
-    publicada_em: situacao === 'publicada' ? dia(dias - 0.5) : null, criado_em: dia(dias), atualizado_em: dia(dias), _itens: itens }));
+    publicada_em: situacao === 'publicada' ? dia(dias - 0.5) : null, criado_em: dia(dias), atualizado_em: dia(dias) }));
 }
 /** "Maria Aparecida dos Santos" → "Maria S." (o mesmo que avaliacao_nome_publico em sql/avaliacoes.sql). */
 function nomePublico(nome) {
@@ -904,11 +904,10 @@ export function criarSupabaseDemo(opcoes = {}) {
     },
     avaliacoes_publicadas: ({ p_limite = 60 } = {}) => {
       const pub = (db.avaliacoes || []).filter(a => a.situacao === 'publicada' && a.pode_publicar), data = a => a.publicada_em || a.criado_em;
-      const itens = a => a._itens || db.pedido_itens.filter(i => i.pedido_id === a.pedido_id).sort((x, y) => (x.ordem ?? 0) - (y.ordem ?? 0)).slice(0, 3).map(i => i.nome).join(' · ') || null;
       return { total: pub.length, media: pub.length ? Math.round(pub.reduce((s, a) => s + a.nota, 0) / pub.length * 10) / 10 : null,
         notas: Object.fromEntries([5, 4, 3, 2, 1].map(n => [n, pub.filter(a => a.nota === n).length])),
         avaliacoes: [...pub].sort((a, b) => String(data(b)).localeCompare(String(data(a)))).slice(0, Math.max(1, Math.min(Number(p_limite) || 60, 200)))
-          .map(a => ({ nota: a.nota, comentario: a.comentario, nome: nomePublico(a.cliente_nome), data: data(a), itens: itens(a) })) };
+          .map(a => ({ nota: a.nota, comentario: a.comentario, nome: nomePublico(a.cliente_nome), data: data(a) })) };
     },
     recibo_pedido: ({ p_pedido_id }) => { exigirEquipe(); const r = pedidoJson(p_pedido_id, true); if (!r) throw ['Pedido não encontrado.', 'P0002']; return r; },
     alterar_status_pedido: ({ p_pedido_id, p_status, p_comentario }) => {

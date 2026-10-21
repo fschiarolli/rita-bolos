@@ -1824,7 +1824,7 @@ function renderKits() {
    Só as publicadas no backoffice, e só com a aba ligada (Backoffice > Avaliações):
    desligada, nada aparece e #avaliacoes volta para o início.
 ========================================================= */
-let AVAL = null;   // { total, media, notas: { 5: n, ... }, avaliacoes: [{ nota, comentario, nome, data, itens }] }
+let AVAL = null;   // { total, media, notas: { 5: n, ... }, avaliacoes: [{ nota, comentario, nome, data }] }
 const avaliacoesLigadas = () => CFG.avaliacoes_site === true;
 /** As estrelas de uma nota; na média, meia estrela quando sobra de 0,25 a 0,75 (4,5: quatro e meia). */
 const estrelasHTML = n => {
@@ -1838,7 +1838,7 @@ function cartaoAvaliacao(a) {
   return `<article class="aval-card">
       <div class="aval-topo">${estrelasHTML(a.nota)}<span class="aval-data">${esc(mesAno(a.data))}</span></div>
       ${a.comentario ? `<p class="aval-txt">${esc(a.comentario)}</p>` : ''}
-      <p class="aval-quem"><strong>${esc(a.nome)}</strong>${a.itens ? ` · pediu ${esc(a.itens)}` : ''}</p>
+      <p class="aval-quem"><strong>${esc(a.nome)}</strong></p>
     </article>`;
 }
 /** A média e o total; completo: com quantas avaliações há de cada nota. */

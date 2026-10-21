@@ -7621,7 +7621,7 @@ function desenharAvaliacoes() {
     return `<article class="card aval-card" aria-label="${esc(`${a.nota} estrelas, ${a.cliente_nome || 'cliente'}`)}">
       <div class="aval-topo">${estrelasAv(a.nota)}<span class="aval-nota">${a.nota} de 5 · ${esc(PALAVRAS_NOTA[a.nota] || '')}</span>${tags}<span class="aval-quando">${esc(tempoAtras(a.criado_em))}${a.atualizado_em && a.atualizado_em > a.criado_em ? ' · mudou depois' : ''}</span></div>
       ${a.comentario ? `<p class="aval-txt">${esc(a.comentario)}</p>` : '<p class="aval-txt sem">Sem comentário, só a nota.</p>'}
-      <p class="aval-quem"><strong>${esc(a.cliente_nome || 'Cliente')}</strong>${pedido}<span>No site aparece como “${esc(nomeNoSite(a.cliente_nome))}”${a._itens ? ` · ${esc(a._itens)}` : ''}</span></p>
+      <p class="aval-quem"><strong>${esc(a.cliente_nome || 'Cliente')}</strong>${pedido}<span>No site aparece como “${esc(nomeNoSite(a.cliente_nome))}”</span></p>
       <div class="aval-acoes">${acoes}<button type="button" class="btn icon sm ghost" data-av-del="${esc(a.id)}" aria-label="Excluir a avaliação de ${esc(a.cliente_nome || 'cliente')}" title="Excluir">${ic('lixo')}</button></div>
     </article>`;
   };

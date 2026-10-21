@@ -5,7 +5,7 @@
 --    retirado ou entregue. Pode mudar a avaliação depois; se mudar o que escreveu, ela volta a ser "nova".
 -- 2. Cada avaliação fica nova (acabou de chegar), publicada (aparece no site) ou oculta (não aparece).
 --    Só aparece no site se o cliente deixou (pode_publicar) e a Administração publicou (Backoffice > Avaliações).
---    No site sai só o primeiro nome e a inicial do sobrenome: "Maria S.".
+--    No site sai só o primeiro nome e a inicial do sobrenome ("Maria S."), sem o que a pessoa pediu.
 -- 3. configuracoes.avaliacoes_site liga a aba "Avaliações" do site. Começa desligada.
 -- 4. Avaliação nova vira um aviso no sino do backoffice (quando o sino já existe: sql/topos.sql ou sql/estoque.sql).
 -- Quem vê as avaliações: a equipe da loja. Quem publica, oculta ou apaga: a Administração. O que o cliente escreveu
@@ -178,9 +178,7 @@ returns json language sql stable security definer set search_path = public as $$
     'avaliacoes', coalesce((
       select json_agg(x order by x.data desc) from (
         select a.nota, a.comentario, avaliacao_nome_publico(a.cliente_nome) as nome,
-               coalesce(a.publicada_em, a.criado_em) as data,
-               (select string_agg(t.nome, ' · ') from (
-                  select i.nome from pedido_itens i where i.pedido_id = a.pedido_id order by i.ordem, i.nome limit 3) t) as itens
+               coalesce(a.publicada_em, a.criado_em) as data
           from pub a
          order by coalesce(a.publicada_em, a.criado_em) desc
          limit greatest(1, least(coalesce(p_limite, 60), 200))
