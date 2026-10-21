@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Favicon da Rita Bolos: o selo recortado do logo, o bolo com calda e o coração. Grade de 32: em 16 px, 2 unidades viram 1 pixel, por isso as bordas do bolo ficam em números pares. -->
+  <circle cx="16" cy="16" r="14.3" fill="#58210F"/>
+  <circle cx="16" cy="3.08" r="2.88" fill="#58210F"/>
+  <circle cx="21.61" cy="4.36" r="2.88" fill="#58210F"/>
+  <circle cx="26.1" cy="7.94" r="2.88" fill="#58210F"/>
+  <circle cx="28.6" cy="13.12" r="2.88" fill="#58210F"/>
+  <circle cx="28.6" cy="18.88" r="2.88" fill="#58210F"/>
+  <circle cx="26.1" cy="24.06" r="2.88" fill="#58210F"/>
+  <circle cx="21.61" cy="27.64" r="2.88" fill="#58210F"/>
+  <circle cx="16" cy="28.92" r="2.88" fill="#58210F"/>
+  <circle cx="10.39" cy="27.64" r="2.88" fill="#58210F"/>
+  <circle cx="5.9" cy="24.06" r="2.88" fill="#58210F"/>
+  <circle cx="3.4" cy="18.88" r="2.88" fill="#58210F"/>
+  <circle cx="3.4" cy="13.12" r="2.88" fill="#58210F"/>
+  <circle cx="5.9" cy="7.94" r="2.88" fill="#58210F"/>
+  <circle cx="10.39" cy="4.36" r="2.88" fill="#58210F"/>
+  <rect x="6" y="18" width="20" height="8" rx="1.5" fill="#F5D4AA"/>
+  <path fill="#B37951" d="M6 19.5Q6 18 7.5 18H24.5Q26 18 26 19.5V20.5H6Z"/>
+  <rect x="8" y="19.5" width="2" height="3.5" rx="1" fill="#B37951"/>
+  <rect x="14" y="19.5" width="2" height="5" rx="1" fill="#B37951"/>
+  <rect x="20" y="19.5" width="2" height="3" rx="1" fill="#B37951"/>
+  <rect x="10" y="12" width="12" height="6" rx="1" fill="#F5D4AA"/>
+  <path fill="#B37951" d="M10 13Q10 12 11 12H21Q22 12 22 13V14H10Z"/>
+  <rect x="17" y="13" width="2" height="3" rx="1" fill="#B37951"/>
+  <path fill="#51AB9D" d="M16 12.4C13.7 10.86 12.4 9.46 12.4 7.71C12.4 6.31 13.48 5.4 14.49 5.4C15.21 5.4 15.78 5.82 16 6.52C16.22 5.82 16.79 5.4 17.51 5.4C18.52 5.4 19.6 6.31 19.6 7.71C19.6 9.46 18.3 10.86 16 12.4Z"/>
+</svg>
