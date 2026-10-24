@@ -58,6 +58,8 @@
   --destaque-a: #58210F; --destaque-b: #58210F;   /* cartão preenchido: o chocolate do logo, chapado */
   --destaque-sombra: transparent;
   --grafico: var(--teal); --grafico-rgb: var(--teal-rgb);   /* barras dos gráficos do relatório */
+  /* fatias e séries dos gráficos do Painel, nas cores do logo (a 5ª é "Outras") */
+  --g1: #1F6E63; --g2: #51AB9D; --g3: #B37951; --g4: #58210F; --g5: #E8C9A0; --serie-a: #1F6E63; --serie-b: #B37951;
   --hero-brilho: transparent;
   --dot-filter: none;
   /* menu lateral: o chocolate do bolo, com a fita turquesa no item aberto */
@@ -86,6 +88,7 @@
     --focus: #8DD9C9;
     --accent-wash: rgba(81, 171, 157, .18);
     --destaque-a: #3B2216; --destaque-b: #3B2216;
+    --g1: #A1DFD0; --g2: #51AB9D; --g3: #F5D4AA; --g4: #B37951; --g5: #6E4B3A; --serie-a: #A1DFD0; --serie-b: #F5D4AA;
     --side-bg: #120804; --side-ink: #F9E5CF; --side-ink-2: #C8A88C; --side-hover: rgba(245, 212, 170, .08); --side-line: rgba(245, 212, 170, .10);
     --dot-filter: brightness(1.55) saturate(1.1);
     --shadow-sm: none; --shadow: none;
@@ -106,6 +109,7 @@
   --focus: #8DD9C9;
   --accent-wash: rgba(81, 171, 157, .18);
   --destaque-a: #3B2216; --destaque-b: #3B2216;
+  --g1: #A1DFD0; --g2: #51AB9D; --g3: #F5D4AA; --g4: #B37951; --g5: #6E4B3A; --serie-a: #A1DFD0; --serie-b: #F5D4AA;
   --side-bg: #120804; --side-ink: #F9E5CF; --side-ink-2: #C8A88C; --side-hover: rgba(245, 212, 170, .08); --side-line: rgba(245, 212, 170, .10);
   --dot-filter: brightness(1.55) saturate(1.1);
   --shadow-sm: none; --shadow: none;
@@ -131,6 +135,7 @@
   --focus: var(--dr-rosa);
   --accent-wash: rgba(189, 147, 249, .16);
   --destaque-a: #343746; --destaque-b: #343746;
+  --g1: var(--dr-verde); --g2: var(--dr-rosa); --g3: var(--dr-laranja); --g4: var(--dr-roxo); --g5: var(--dr-comentario); --serie-a: var(--dr-ciano); --serie-b: var(--dr-laranja);
   --side-bg: #191A21; --side-ink: var(--dr-texto); --side-ink-2: #A3A9CF; --side-hover: rgba(189, 147, 249, .12); --side-line: rgba(248, 248, 242, .08);
   --dot-filter: brightness(1.55) saturate(1.1);
   --shadow-sm: none; --shadow: none;
@@ -418,6 +423,86 @@ main.conteudo { padding: 28px 32px 48px; min-width: 0; max-width: 1240px; width:
   .kpi span { white-space: normal; }
 }
 .cols { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+
+/* Painel: os gráficos dos últimos 28 dias (área, rosca, linha, colunas e os mais vendidos) */
+.pn-grade { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(300px, .82fr); grid-template-areas: "area area rosca" "linha barras top"; gap: 18px; margin-bottom: 18px; }
+.pn-grade > .card { margin: 0; display: flex; flex-direction: column; min-width: 0; }
+.pn-area { grid-area: area; } .pn-rosca { grid-area: rosca; } .pn-linha { grid-area: linha; } .pn-barras { grid-area: barras; } .pn-top { grid-area: top; }
+.pn-h { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+.pn-h h2 { font-family: var(--font-head); font-weight: 800; font-size: 17px; letter-spacing: -.01em; }
+.pn-h p { margin: 3px 0 0; font-size: 13px; color: var(--ink-3); }
+.pn-h > a { font-size: 13px; font-weight: 700; color: var(--teal); white-space: nowrap; margin-top: 2px; }
+.pn-num { display: grid; justify-items: end; gap: 3px; text-align: right; }
+.pn-num strong { font-family: var(--font-head); font-weight: 800; font-size: 26px; letter-spacing: -.02em; line-height: 1.05; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pn-num .delta { font-size: 12.5px; white-space: nowrap; }
+
+.ga { flex: 1; display: flex; flex-direction: column; min-height: 260px; padding-left: 54px; border-radius: var(--r-xs); }
+.ga-plot { position: relative; flex: 1; min-height: 200px; margin-top: 34px; touch-action: pan-y; }
+.ga-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.ga-grade { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--line-2); }
+.ga-grade span { position: absolute; right: calc(100% + 10px); top: -.75em; font-size: 12px; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ga-fundo { fill: rgba(var(--grafico-rgb), .13); }
+.ga-linha { fill: none; stroke: var(--grafico); stroke-width: 2.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.ga-mira { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--line-2); pointer-events: none; }
+.ga-ponto { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--surface); border: 3px solid var(--grafico); pointer-events: none; }
+.ga-dica { position: absolute; z-index: 1; display: grid; gap: 1px; padding: 7px 11px; border-radius: 10px; background: var(--ink); color: var(--surface); font-size: 12px; white-space: nowrap; pointer-events: none;
+  transform: translate(var(--tx, -50%), var(--ty, calc(-100% - 16px))); }
+.ga-dica b { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ga-dica.esq { --tx: calc(-100% + 18px); } .ga-dica.dir { --tx: -18px; } .ga-dica.baixo { --ty: 16px; }
+.ga-x { position: relative; height: 18px; margin-top: 10px; }
+.ga-x span { position: absolute; transform: translateX(-50%); font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.ga-x span:first-child { transform: none; } .ga-x span:last-child { transform: translateX(-100%); }
+
+.rosca { position: relative; display: grid; place-items: center; width: min(184px, 100%); aspect-ratio: 1; margin: 0 auto 16px; }
+.rosca svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.rosca circle { fill: none; stroke-width: 6.4; }
+.rosca-c { position: absolute; display: grid; text-align: center; }
+.rosca-c strong { font-family: var(--font-head); font-weight: 800; font-size: 21px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.rosca-c small { font-size: 12px; color: var(--ink-3); }
+.rosca-leg { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 7px; }
+.rosca-leg li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto; align-items: center; gap: 9px; font-size: 13.5px; }
+.rosca-leg i { width: 10px; height: 10px; border-radius: 3px; }
+.rosca-leg span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rosca-leg b { font-weight: 800; font-variant-numeric: tabular-nums; }
+.rosca-leg small { min-width: 70px; text-align: right; font-size: 12.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.pn-minis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: auto; }
+.mini { display: grid; gap: 3px; min-width: 0; padding: 11px 12px; border: 1px solid var(--line-2); border-radius: var(--r-sm); text-decoration: none; color: inherit; transition: background .14s var(--ease); }
+.mini:hover { background: var(--surface-2); }
+.mini > span { font-size: 12.5px; font-weight: 700; color: var(--ink-3); }
+.mini strong { display: flex; align-items: center; gap: 7px; font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mini strong i { width: 3px; height: 16px; border-radius: 2px; flex: none; }
+.mini small { font-size: 12px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.gl, .gc { flex: 1; display: flex; flex-direction: column; min-height: 200px; }
+.gl-plot { position: relative; flex: 1; margin-top: 22px; }
+.gl-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.gl-guia { position: absolute; top: -10px; bottom: 0; border-left: 1px solid var(--line); }
+.gl-linha { fill: none; stroke: var(--ink); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.gl-ponto { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; background: var(--ink); }
+.gl-val { position: absolute; transform: translate(-50%, calc(-100% - 8px)); font-size: 11.5px; font-weight: 700; color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gl-val.baixo { transform: translate(-50%, 8px); }   /* vale: o número vai embaixo, para não cruzar a linha */
+.gl-x { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); margin-top: 12px; font-size: 12px; color: var(--ink-3); text-align: center; }
+.gc-leg { display: flex; gap: 14px; margin: 0; font-size: 12.5px; color: var(--ink-2); }
+.gc-leg i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.gc-area { flex: 1; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); margin-top: 14px; border-bottom: 1px solid var(--line); }
+.gc-dia { display: flex; justify-content: center; align-items: flex-end; gap: 5px; min-height: 140px; }
+.gc-dia i { width: 7px; border-radius: 4px 4px 1px 1px; }
+.gc-a { background: var(--serie-a); } .gc-b { background: var(--serie-b); }
+
+.pn-tab { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13.5px; }
+.pn-tab th { padding: 9px 12px; background: var(--surface-2); font-size: 12.5px; font-weight: 700; color: var(--ink-3); text-align: left; }
+.pn-tab th:first-child { border-radius: var(--r-xs) 0 0 var(--r-xs); } .pn-tab th:last-child { border-radius: 0 var(--r-xs) var(--r-xs) 0; text-align: right; }
+.pn-tab td { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.pn-tab tr:last-child td { border-bottom: 0; }
+.pn-tab td b { display: block; font-weight: 800; }
+.pn-tab td small { font-size: 12px; color: var(--ink-3); }
+.pn-tab td:last-child { text-align: right; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 1150px) { .pn-grade { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: "area area" "rosca top" "linha barras"; } }
+@media (max-width: 760px) {
+  .pn-grade { grid-template-columns: minmax(0, 1fr); grid-template-areas: "area" "rosca" "top" "linha" "barras"; gap: 14px; margin-bottom: 14px; }
+  .ga { padding-left: 46px; min-height: 230px; }
+  .pn-num strong { font-size: 22px; }
+}
 @media (max-width: 1000px) { .cols { grid-template-columns: minmax(0, 1fr); } }
 .status-bars { display: grid; gap: 10px; }
 .status-bar { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: center; font-weight: 500; font-size: 14px; text-decoration: none; color: inherit; padding: 4px 0; }

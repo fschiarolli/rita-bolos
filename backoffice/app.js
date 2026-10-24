@@ -1312,21 +1312,151 @@ function linhaPedido(p) {
   </div>`;
 }
 
+/* Painel: os números dos últimos 28 dias para os gráficos (e os 28 de antes, para comparar).
+   shortcut: guardados por 5 minutos, porque o tempo real redesenha o Painel a cada mudança de pedido; os gráficos
+   podem ficar até 5 minutos atrás das listas. Se incomodar, limpar painelCache em ligarTempoReal. */
+let painelCache = null;
+async function dadosPainel() {
+  const hoje = hojeISO(), ini = isoMais(hoje, -27), chave = hoje + (isAdmin() ? ':adm' : '');
+  if (painelCache?.chave === chave && Date.now() - painelCache.em < 5 * 60e3) return painelCache.dados;
+  // shortcut: até 1000 pedidos por período (o limite de uma consulta); passando disso, os gráficos contam só os primeiros
+  const [atual, antes] = await Promise.all([
+    api.admin.pedidos.listar({ de: ini, ate: hoje, porPagina: 1000, ordenarPor: 'data_retirada', crescente: true }),
+    api.admin.pedidos.listar({ de: isoMais(ini, -28), ate: isoMais(ini, -1), porPagina: 1000 })
+  ]);
+  const validos = l => l.filter(p => p.status !== 'cancelado');
+  const pedidos = validos(atual.pedidos);
+  const dados = { hoje, ini, pedidos, antes: validos(antes.pedidos), itens: await itensDosPedidos(pedidos) };
+  painelCache = { chave, em: Date.now(), dados };
+  return dados;
+}
+
+/** Curva suave que não passa do ponto (monotônica): não inventa pico nem dia negativo entre dois dias. */
+function curvaSuave(pts) {
+  const n = pts.length, m = [], t = [];
+  if (n < 2) return '';
+  for (let i = 0; i < n - 1; i++) m[i] = (pts[i + 1][1] - pts[i][1]) / (pts[i + 1][0] - pts[i][0]);
+  t[0] = m[0]; t[n - 1] = m[n - 2];
+  for (let i = 1; i < n - 1; i++) t[i] = m[i - 1] * m[i] <= 0 ? 0 : (m[i - 1] + m[i]) / 2;
+  for (let i = 0; i < n - 1; i++) {
+    if (!m[i]) { t[i] = t[i + 1] = 0; continue; }
+    const a = t[i] / m[i], b = t[i + 1] / m[i], s = a * a + b * b;
+    if (s > 9) { const k = 3 / Math.sqrt(s); t[i] = k * a * m[i]; t[i + 1] = k * b * m[i]; }
+  }
+  const f = v => Math.round(v * 10) / 10;
+  let d = `M${f(pts[0][0])},${f(pts[0][1])}`;
+  for (let i = 0; i < n - 1; i++) {
+    const h = (pts[i + 1][0] - pts[i][0]) / 3;
+    d += `C${f(pts[i][0] + h)},${f(pts[i][1] + h * t[i])} ${f(pts[i + 1][0] - h)},${f(pts[i + 1][1] - h * t[i + 1])} ${f(pts[i + 1][0])},${f(pts[i + 1][1])}`;
+  }
+  return d;
+}
+const diaCurto = iso => `${DIAS_SEMANA[(new Date(iso + 'T12:00:00Z').getUTCDay() + 6) % 7]}, ${ddmm(iso)}`;
+/** Topo do eixo para contagens: par, para a linha do meio também ser um número inteiro. */
+const topoContagem = max => Math.max(2, Math.ceil(topoEixo(max, 4) / 2) * 2);
+
+/** Gráfico de área dos 28 dias: a dica segue o mouse ou as setas do teclado e começa no melhor dia. */
+function graficoArea(serie, { curto, inteiro, rotulo }) {
+  const n = serie.length, max = Math.max(...serie.map(d => d.v), 0);
+  const topo = inteiro ? topoContagem(max) : topoEixo(max), W = 1000, H = 300;
+  const linha = curvaSuave(serie.map((d, i) => [i / (n - 1) * W, H - d.v / topo * H]));
+  const melhor = serie.reduce((b, d, i) => (d.v > serie[b].v ? i : b), n - 1);
+  return `<div class="ga" tabindex="0" role="group" aria-label="${esc(rotulo)} Use as setas para ver cada dia." data-topo="${topo}" data-melhor="${melhor}">
+      <div class="ga-plot">
+        ${[1, .5, 0].map(f => `<div class="ga-grade" style="bottom:${f * 100}%"><span>${esc(curto(topo * f))}</span></div>`).join('')}
+        <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path class="ga-fundo" d="${linha}L${W},${H}L0,${H}Z"/><path class="ga-linha" d="${linha}"/></svg>
+        <span class="ga-mira" hidden></span><span class="ga-ponto" hidden></span><div class="ga-dica" hidden></div>
+      </div>
+      <div class="ga-x" aria-hidden="true">${serie.map((d, i) => (i % 7 === 0 || i === n - 1 ? `<span style="left:${i / (n - 1) * 100}%">${esc(ddmm(d.iso))}</span>` : '')).join('')}</div>
+      <p class="sr" aria-live="polite" data-ga-voz></p>
+    </div>`;
+}
+function ligarArea(box, serie, dica) {
+  if (!box) return;
+  const n = serie.length, topo = Number(box.dataset.topo), plot = box.querySelector('.ga-plot');
+  const [mira, ponto, balao, voz] = ['.ga-mira', '.ga-ponto', '.ga-dica', '[data-ga-voz]'].map(s => box.querySelector(s));
+  let atual = Number(box.dataset.melhor);
+  const mostrar = (i, falar) => {
+    atual = Math.max(0, Math.min(n - 1, i));
+    const x = atual / (n - 1) * 100, y = (1 - serie[atual].v / topo) * 100;
+    mira.style.left = ponto.style.left = balao.style.left = x + '%';
+    ponto.style.top = balao.style.top = y + '%';
+    balao.innerHTML = dica(serie[atual]);
+    balao.classList.toggle('esq', x > 78); balao.classList.toggle('dir', x < 12); balao.classList.toggle('baixo', y < 28);
+    mira.hidden = ponto.hidden = balao.hidden = false;
+    if (falar) voz.textContent = [...balao.children].map(c => c.textContent).join('. ');
+  };
+  plot.addEventListener('pointermove', e => { const r = plot.getBoundingClientRect(); mostrar(Math.round((e.clientX - r.left) / r.width * (n - 1))); });
+  box.addEventListener('keydown', e => {
+    const passo = { ArrowLeft: -1, ArrowRight: 1, Home: -n, End: n }[e.key];
+    if (passo) { e.preventDefault(); mostrar(atual + passo, true); }
+  });
+  mostrar(atual);
+}
+
+/** Rosca das categorias (até 4 e "Outras"): a cor ajuda, mas o nome, o % e o valor estão escritos ao lado. */
+function rosca(fatias, { fmt, centro, sub, rotulo }) {
+  const total = fatias.reduce((s, f) => s + f.v, 0);
+  let acum = 0;
+  const arcos = fatias.map((f, i) => {
+    const pct = f.v / total * 100, tam = Math.max(0, pct - (fatias.length > 1 ? .8 : 0));
+    const s = `<circle cx="18" cy="18" r="15.9" pathLength="100" stroke="var(--g${i + 1})" stroke-dasharray="${tam.toFixed(2)} ${(100 - tam).toFixed(2)}" stroke-dashoffset="${(-acum).toFixed(2)}"/>`;
+    acum += pct;
+    return s;
+  }).join('');
+  const pctTxt = v => (v && v / total < .005 ? "<1%" : `${Math.round(v / total * 100)}%`);
+  return `<div class="rosca" role="img" aria-label="${esc(rotulo + ': ' + fatias.map(f => `${f.rot} ${pctTxt(f.v)} (${fmt(f.v)})`).join(', '))}">
+      <svg viewBox="0 0 36 36" aria-hidden="true">${arcos}</svg>
+      <div class="rosca-c" aria-hidden="true"><strong>${esc(centro)}</strong><small>${esc(sub)}</small></div></div>
+    <ul class="rosca-leg" aria-hidden="true">${fatias.map((f, i) => `<li><i style="background:var(--g${i + 1})"></i><span>${esc(f.rot)}</span><b>${pctTxt(f.v)}</b><small>${esc(fmt(f.v))}</small></li>`).join('')}</ul>`;
+}
+/** Categorias que mais venderam: pelo valor (Administração) ou em quantos pedidos aparecem (equipe). */
+function fatiasCategorias(itens, dinheiro) {
+  const mapa = new Map();
+  for (const i of itens) {
+    const cat = String(i.categoria || '').trim() || 'Outras', x = mapa.get(cat) || { rot: cat, v: 0, pedidos: new Set() };
+    x.v += (Number(i.preco_unitario) || 0) * (Number(i.quantidade) || 0); x.pedidos.add(i.pedido_id);
+    mapa.set(cat, x);
+  }
+  const l = [...mapa.values()].map(x => ({ rot: x.rot, v: dinheiro ? Math.round(x.v * 100) / 100 : x.pedidos.size })).filter(x => x.v > 0).sort((a, b) => b.v - a.v);
+  return l.length > 5 ? [...l.slice(0, 4), { rot: 'Outras', v: l.slice(4).reduce((s, x) => s + x.v, 0) }] : l;
+}
+
+/** Linha dos 7 dias, com o valor escrito em cada ponto (sem precisar passar o mouse). */
+function graficoLinha(serie, { fmt, curto, rotulo }) {
+  const topo = topoEixo(Math.max(...serie.map(d => d.v), 0), 10), n = serie.length;
+  const X = i => (i + .5) / n * 100, Y = v => (1 - v / topo) * 100;
+  const pts = serie.map((d, i) => `${X(i) * 10},${Y(d.v) * 3}`).join(' ');
+  return `<div class="gl" role="img" aria-label="${esc(rotulo + ': ' + serie.map(d => `${diaCurto(d.iso)} ${fmt(d.v)}`).join(', '))}">
+      <div class="gl-plot" aria-hidden="true">${serie.map((d, i) => `<span class="gl-guia" style="left:${X(i)}%"></span>`).join('')}
+        <svg viewBox="0 0 1000 300" preserveAspectRatio="none"><polyline class="gl-linha" points="${pts}"/></svg>
+        ${serie.map((d, i) => `<span class="gl-ponto" style="left:${X(i)}%;top:${Y(d.v)}%"></span><span class="gl-val${d.v < (serie[i - 1]?.v ?? -1) && d.v < (serie[i + 1]?.v ?? -1) ? " baixo" : ""}" style="left:${X(i)}%;top:${Y(d.v)}%">${esc(curto(d.v))}</span>`).join('')}</div>
+      <div class="gl-x" aria-hidden="true">${serie.map(d => `<span>${esc(ddmm(d.iso))}</span>`).join('')}</div></div>`;
+}
+/** Colunas em par por dia (pelo site e pela loja), com a legenda escrita. */
+function colunasPar(serie, { a, b, rotulo }) {
+  const topo = topoContagem(Math.max(...serie.flatMap(d => [d.a, d.b]), 0)), alt = v => (v ? Math.max(3, v / topo * 100) : 0);
+  return `<div class="gc" role="img" aria-label="${esc(rotulo + ': ' + serie.map(d => `${diaCurto(d.iso)}: ${d.a} ${a}, ${d.b} ${b}`).join('; '))}">
+      <p class="gc-leg" aria-hidden="true"><span><i class="gc-a"></i>${esc(a)}</span><span><i class="gc-b"></i>${esc(b)}</span></p>
+      <div class="gc-area" aria-hidden="true">${serie.map(d => `<div class="gc-dia" title="${esc(`${diaCurto(d.iso)}: ${d.a} ${a}, ${d.b} ${b}`)}"><i class="gc-a" style="height:${alt(d.a)}%"></i><i class="gc-b" style="height:${alt(d.b)}%"></i></div>`).join('')}</div>
+      <div class="gl-x" aria-hidden="true">${serie.map(d => `<span>${esc(ddmm(d.iso))}</span>`).join('')}</div></div>`;
+}
+
 /* Ícone de cada etapa na faixa de indicadores (status criados no cadastro usam o relógio) */
 const ICONE_STATUS = { recebido: 'sino', confirmado: 'ok', em_producao: 'bolo', pronto: 'pedidos', em_rota: 'entrega' };
 async function telaPainel(el, _sub, silencioso = false) {
-  const nome = perfil.nome.split(' ')[0];
-  const acoes = `<a class="btn ghost" href="#hoje">${ic('hoje')}Tela Hoje</a><button type="button" class="btn primary" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`;
-  const cab = cabecalho('Painel', acoes, `${esc(dataLonga())} — como estão os pedidos da Rita Bolos.`);
+  const nome = perfil.nome.split(' ')[0], dinheiro = isAdmin();
+  const acoes = `<a class="btn ghost" href="#pedidos/quadro">${ic('painel')}Quadro</a><a class="btn ghost" href="#hoje">${ic('hoje')}Tela Hoje</a><button type="button" class="btn primary" data-act="novo-pedido">${ic('mais')}Novo pedido</button>`;
   if (!silencioso) {
-    el.innerHTML = cab + `<div class="hero-grid"><div class="skel" style="height:210px"></div><div class="skel" style="height:210px"></div></div>
-      <div class="skel" style="height:86px;margin-bottom:18px"></div><div class="skel" style="height:260px"></div>`;
+    el.innerHTML = cabecalho('Painel', acoes, `${esc(dataLonga())} — como estão os pedidos da Rita Bolos.`)
+      + `<div class="pn-grade">${['area', 'rosca', 'linha', 'barras', 'top'].map(c => `<div class="skel pn-${c}" style="height:${c === 'area' || c === 'rosca' ? 380 : 300}px"></div>`).join('')}</div>`;
   }
   try {
-    const [r, hoje, novos] = await Promise.all([
+    const [r, hoje, novos, d] = await Promise.all([
       api.admin.painel(),
       api.admin.pedidos.listar({ de: hojeISO(), ate: hojeISO(), apenasAbertos: true, porPagina: 50, comEntrega: true }),
-      api.admin.pedidos.listar({ status: 'recebido', porPagina: 8, ordenarPor: 'criado_em', crescente: false })
+      api.admin.pedidos.listar({ status: 'recebido', porPagina: 8, ordenarPor: 'criado_em', crescente: false }),
+      dadosPainel()
     ]);
     if (telaAtual !== 'painel') return;
     hoje.pedidos = hoje.pedidos.filter(confirmadoEmDiante);   // retiradas de hoje: só confirmados em diante
@@ -1340,29 +1470,69 @@ async function telaPainel(el, _sub, silencioso = false) {
     const sinal = r.sinais_pendentes ? ` <b>${plural(r.sinais_pendentes, 'pedido', 'pedidos')}</b> ainda ${r.sinais_pendentes === 1 ? 'aguarda' : 'aguardam'} o sinal.` : ' Todos os pedidos em aberto já têm sinal.';
     const kpi = (href, filtro, cor, icone, rot, valor) => `<a class="kpi" href="${href}"${filtro ? ` data-filtro="${esc(filtro)}"` : ''} style="${corVars(cor)}">
         <span class="kpi-ic">${ic(icone)}</span><span class="kpi-t"><span>${esc(rot)}</span><strong>${valor}</strong></span></a>`;
-    el.innerHTML = cab + `
-      <div class="hero-grid">
-        <section class="card hero">
-          <div style="position:relative;z-index:1">
 
-            <h2 class="hero-t">Olá, ${esc(nome)}!</h2>
-            <p class="hero-txt">${resumo}${sinal}</p>
-            <div class="hero-acts"><a class="btn ghost" href="#pedidos" data-filtro="recebido">${ic('pedidos')}Pedidos para confirmar</a>
-              <a class="btn ghost" href="#pedidos/quadro">${ic('painel')}Quadro de produção</a></div>
-          </div>
-          <div class="hero-stats">
-            <a href="#hoje"><span>Retiradas hoje</span><strong>${r.retiradas_hoje}</strong></a>
-            <a href="#pedidos" data-filtro="amanha"><span>Amanhã</span><strong>${r.retiradas_amanha}</strong></a>
-            <a href="#pedidos" data-filtro="novos"><span>Novos hoje</span><strong>${r.novos_hoje}</strong></a>
+    // os gráficos: valores para a Administração, quantidades para a equipe (como no Relatório)
+    const val = p => (dinheiro ? Number(p.total) || 0 : 1);
+    const fmt = v => (dinheiro ? R(v) : plural(v, 'pedido', 'pedidos')), curto = v => (dinheiro ? valorCurto(v) : String(v));
+    const serie = Array.from({ length: 28 }, (_, i) => {
+      const iso = isoMais(d.ini, i), doDia = d.pedidos.filter(p => p.data_retirada === iso);
+      return { iso, v: Math.round(doDia.reduce((s, p) => s + val(p), 0) * 100) / 100, n: doDia.length };
+    });
+    const soma = serie.reduce((s, x) => s + x.v, 0), somaAntes = d.antes.reduce((s, p) => s + val(p), 0);
+    const pct = somaAntes ? Math.round((soma - somaAntes) / somaAntes * 100) : null;
+    const delta = pct === null ? '' : pct === 0 ? '<span class="delta neutro">igual aos 28 dias anteriores</span>'
+      : `<span class="delta ${pct > 0 ? 'bom' : 'ruim'}">${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}%<span class="sr"> ${pct > 0 ? 'a mais' : 'a menos'}</span> <small>vs. 28 dias antes</small></span>`;
+    const melhor = serie.reduce((b, x) => (x.v > b.v ? x : b), serie[0]);
+    const dica = x => `<b>${esc(fmt(x.v))}</b><small>${esc(diaCurto(x.iso))}${dinheiro ? ` · ${esc(plural(x.n, 'pedido', 'pedidos'))}` : ''}</small>`;
+
+    const dataDe = new Map(d.pedidos.map(p => [p.id, p.data_retirada]));
+    const semana = Array.from({ length: 7 }, (_, i) => isoMais(d.hoje, i - 6));
+    const kg = semana.map(iso => ({ iso, v: Math.round(d.itens.filter(i => Number(i.peso_kg) > 0 && dataDe.get(i.pedido_id) === iso)
+      .reduce((s, i) => s + Math.max(1, Number(i.quantidade) || 1) * Number(i.peso_kg), 0) * 10) / 10 }));
+    const kgTotal = Math.round(kg.reduce((s, x) => s + x.v, 0) * 10) / 10;
+    const kgTxt = v => formatarPeso(v);
+    const origem = semana.map(iso => { const l = d.pedidos.filter(p => p.data_retirada === iso); return { iso, a: l.filter(p => p.origem === 'site').length, b: l.filter(p => p.origem !== 'site').length }; });
+    const doSite = origem.reduce((s, x) => s + x.a, 0), naSemana = doSite + origem.reduce((s, x) => s + x.b, 0);
+
+    const fatias = fatiasCategorias(d.itens, dinheiro);
+    const top = topProdutos(d.itens, !dinheiro).slice(0, 5);
+    const catDe = new Map(d.itens.map(i => [i.nome, i.categoria]));
+    const ticket = d.pedidos.length ? soma / d.pedidos.length : 0;
+    const mini = (href, filtro, cor, rot, valor, sub) => `<a class="mini" href="${href}"${filtro ? ` data-filtro="${filtro}"` : ''}>
+        <span>${rot}</span><strong><i style="background:var(${cor})"></i>${valor}</strong><small>${sub}</small></a>`;
+
+    el.innerHTML = cabecalho('Painel', acoes, `Olá, ${esc(nome)}! ${resumo}${sinal}`) + `
+      <div class="pn-grade">
+        <section class="card pn-area">
+          <div class="pn-h"><div><h2>${dinheiro ? 'Vendas' : 'Pedidos'}</h2><p>Últimos 28 dias, pela data de retirada</p></div>
+            <div class="pn-num"><strong>${esc(dinheiro ? valorCurto(soma) : String(soma))}</strong>${delta}</div></div>
+          ${graficoArea(serie, { curto, inteiro: !dinheiro, rotulo: `${dinheiro ? 'Vendas' : 'Pedidos'} por dia nos últimos 28 dias: ${fmt(soma)}. Melhor dia: ${diaCurto(melhor.iso)}, ${fmt(melhor.v)}.` })}
+        </section>
+        <section class="card pn-rosca">
+          <div class="pn-h"><div><h2>O que mais sai</h2><p>Por categoria, ${dinheiro ? 'em valor' : 'em pedidos'}</p></div><p>28 dias</p></div>
+          ${fatias.length ? rosca(fatias, { fmt, centro: dinheiro ? valorCurto(soma) : String(d.pedidos.length), sub: dinheiro ? 'vendidos' : 'pedidos', rotulo: 'Categorias nos últimos 28 dias' })
+            : '<p class="vazio">Nenhuma venda nos últimos 28 dias.</p>'}
+          <div class="pn-minis">
+            ${mini('#pedidos', 'saldo', '--g3', 'A receber', esc(valorCurto(r.a_receber)), `${emAberto} em aberto`)}
+            ${mini('#pedidos', 'sinal', '--g2', 'Aguardando sinal', r.sinais_pendentes, r.sinais_pendentes === 1 ? 'pedido' : 'pedidos')}
+            ${mini('#hoje', '', '--g1', 'Retiradas hoje', r.retiradas_hoje, `amanhã: ${r.retiradas_amanha}`)}
+            ${dinheiro ? mini('#relatorio', '', '--g4', 'Ticket médio', esc(valorCurto(ticket)), 'por pedido')
+              : mini('#pedidos', 'novos', '--g4', 'Novos hoje', r.novos_hoje, r.novos_hoje === 1 ? 'pedido' : 'pedidos')}
           </div>
         </section>
-        <section class="card destaque-card">
-          <p class="eyebrow">A receber</p>
-          <strong class="dc-val">${R(r.a_receber)}</strong>
-          <span class="dc-chip">${ic('pedidos')}${plural(emAberto, 'pedido em aberto', 'pedidos em aberto')}</span>
-          <p>Soma do que falta pagar nos pedidos em aberto (sinais e restantes).</p>
-          <a class="btn sm" href="#pedidos" data-filtro="saldo">Ver pedidos com saldo ${ic('seta')}</a>
-          <svg class="ic dc-art" aria-hidden="true"><use href="#i-moeda"/></svg>
+        <section class="card pn-linha">
+          <div class="pn-h"><div><h2>Bolos</h2><p>Últimos 7 dias, em kg</p></div><div class="pn-num"><strong>${esc(kgTxt(kgTotal))}</strong></div></div>
+          ${graficoLinha(kg, { fmt: kgTxt, curto: v => v.toLocaleString('pt-BR'), rotulo: 'Quilos de bolo por dia nos últimos 7 dias' })}
+        </section>
+        <section class="card pn-barras">
+          <div class="pn-h"><div><h2>Pelo site</h2><p>Últimos 7 dias</p></div><div class="pn-num"><strong>${naSemana ? Math.round(doSite / naSemana * 100) : 0}%</strong><span class="delta neutro">${doSite} de ${plural(naSemana, 'pedido', 'pedidos')}</span></div></div>
+          ${colunasPar(origem, { a: 'pelo site', b: 'pela loja', rotulo: 'Pedidos por dia nos últimos 7 dias' })}
+        </section>
+        <section class="card pn-top">
+          <div class="pn-h"><div><h2>Mais vendidos</h2><p>Últimos 28 dias</p></div>${dinheiro ? '<a href="#relatorio">Ver relatório</a>' : ''}</div>
+          ${top.length ? `<table class="pn-tab"><thead><tr><th scope="col">Produto</th><th scope="col">${dinheiro ? 'Valor' : 'Vendidos'}</th></tr></thead><tbody>
+            ${top.map(t => `<tr><td><b>${esc(t.nome)}</b>${catDe.get(t.nome) ? `<small>${esc(catDe.get(t.nome))}</small>` : ''}</td><td>${esc(dinheiro ? R(t.valor) : String(t.qtd))}</td></tr>`).join('')}</tbody></table>`
+            : '<p class="vazio">Nenhum item vendido nos últimos 28 dias.</p>'}
         </section>
       </div>
       <div class="card kpi-strip">
@@ -1375,9 +1545,10 @@ async function telaPainel(el, _sub, silencioso = false) {
         <section class="card"><div class="card-h"><div><h2>Para confirmar</h2></div><a class="btn sm ghost" href="#pedidos" data-filtro="recebido">Ver todos</a></div>
           ${novos.pedidos.length ? `<div class="lista-ped">${novos.pedidos.map(linhaPedido).join('')}</div>` : '<p class="vazio" style="padding:18px">Nenhum pedido esperando confirmação.</p>'}</section>
       </div>`;
+    ligarArea(el.querySelector('.ga'), serie, dica);
   } catch (e) {
     erroToast(e);
-    if (!silencioso) el.innerHTML = cab + `<div class="vazio"><h2>Não foi possível carregar</h2><p>${esc(e.message)}</p><button type="button" class="btn primary" onclick="location.reload()">Tentar de novo</button></div>`;
+    if (!silencioso) el.innerHTML = cabecalho('Painel', acoes) + `<div class="vazio"><h2>Não foi possível carregar</h2><p>${esc(e.message)}</p><button type="button" class="btn primary" onclick="location.reload()">Tentar de novo</button></div>`;
   }
 }
 /* =========================================================
@@ -1449,14 +1620,14 @@ function saboresDeBolo(itens, cardapio) {
   return [...mapa.values()].sort((a, b) => b.bolos - a.bolos || b.kg - a.kg || a.sabor.localeCompare(b.sabor));
 }
 /** Itens mais vendidos (valor e quantidade). */
-function topProdutos(itens) {
+function topProdutos(itens, porQtd = false) {
   const mapa = new Map();
   for (const i of itens) {
     const k = i.nome, x = mapa.get(k) || { nome: k, qtd: 0, valor: 0 };
     x.qtd += Number(i.quantidade) || 0; x.valor += (Number(i.preco_unitario) || 0) * (Number(i.quantidade) || 0);
     mapa.set(k, x);
   }
-  return [...mapa.values()].sort((a, b) => b.valor - a.valor || b.qtd - a.qtd).slice(0, 6);
+  return [...mapa.values()].sort((a, b) => (porQtd ? b.qtd - a.qtd || b.valor - a.valor : b.valor - a.valor || b.qtd - a.qtd)).slice(0, 6);
 }
 
 /* Variação contra a semana anterior: sobe/desce com ícone e texto, nunca só cor */
@@ -1471,11 +1642,15 @@ function variacao(atual, antes, { dinheiro = false, menorMelhor = false, periodo
 }
 
 /* Gráfico de colunas: vendas por dia (destaca o melhor dia, valores no topo) */
+/** Topo do eixo num valor redondo logo acima do maior (1, 1,2, 1,5, 2, 2,5, 3, 4, 5, 6, 8, 10 × potência de 10). */
+function topoEixo(max, vazio = 100) {
+  if (!max) return vazio;
+  const pot = Math.pow(10, Math.floor(Math.log10(max)));
+  return [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map(f => f * pot).find(v => v >= max * 1.08);
+}
 function graficoDias(dias) {
   const max = Math.max(...dias.map(d => d.valor), 0);
-  // topo do eixo num valor redondo logo acima do maior dia (1, 1,2, 1,5, 2, 2,5, 3, 4, 5, 6, 8, 10 × potência de 10)
-  const pot = max ? Math.pow(10, Math.floor(Math.log10(max))) : 100;
-  const topo = max ? [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map(f => f * pot).find(v => v >= max * 1.08) : 100;
+  const topo = topoEixo(max);
   const melhor = max ? dias.findIndex(d => d.valor === max) : -1;
   const linhas = [1, .5, 0].map(f => `<div class="g-linha" style="bottom:${f * 100}%"><span>${valorCurto(topo * f)}</span></div>`).join('');
   return `<div class="g-colunas" role="img" aria-label="Vendas por dia: ${esc(dias.map(d => `${d.rot} ${R(d.valor)}`).join(', '))}">
