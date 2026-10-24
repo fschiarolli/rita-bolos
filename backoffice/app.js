@@ -1400,7 +1400,7 @@ function rosca(fatias, { fmt, centro, sub, rotulo }) {
   let acum = 0;
   const arcos = fatias.map((f, i) => {
     const pct = f.v / total * 100, tam = Math.max(0, pct - (fatias.length > 1 ? .8 : 0));
-    const s = `<circle cx="18" cy="18" r="15.9" pathLength="100" stroke="var(--g${i + 1})" stroke-dasharray="${tam.toFixed(2)} ${(100 - tam).toFixed(2)}" stroke-dashoffset="${(-acum).toFixed(2)}"/>`;
+    const s = `<circle cx="18" cy="18" r="15" pathLength="100" stroke="var(--g${i + 1})" stroke-dasharray="${tam.toFixed(2)} ${(100 - tam).toFixed(2)}" stroke-dashoffset="${(-acum).toFixed(2)}"/>`;
     acum += pct;
     return s;
   }).join('');
