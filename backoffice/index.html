@@ -572,6 +572,45 @@ a.chip { text-decoration: none; }
 .aval-site strong { display: block; font-size: 15.5px; }
 .aval-site p { margin: 3px 0 0; color: var(--ink-2); font-size: 13.5px; line-height: 1.5; }
 .aval-site a { font-weight: 700; }
+
+/* Cartão fidelidade: as estrelas são o selo do logo (cheio: a fita turquesa com o coração de chocolate) */
+.fid-selos { display: inline-flex; gap: 4px; vertical-align: middle; }
+.fid-selos svg { width: 26px; height: 26px; flex: none; }
+.fid-selos svg g { fill: var(--surface-3); } .fid-selos svg path { fill: var(--line-2); }
+.fid-selos svg.cheio g { fill: var(--logo-fita); } .fid-selos svg.cheio path { fill: var(--logo-chocolate); }
+.fid-regras { margin-bottom: 18px; }
+.fid-liga { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 18px; }
+.fid-liga label { cursor: pointer; } .fid-liga .switch { margin-top: 2px; }
+.fid-liga strong { display: block; font-size: 15.5px; }
+.fid-liga p { margin: 3px 0 0; color: var(--ink-2); font-size: 13.5px; line-height: 1.5; }
+.fid-salvar { display: flex; justify-content: flex-end; margin-top: 6px; }
+.fid-lista .card-h { flex-wrap: wrap; }
+.fid-busca { max-width: 260px; }
+.fid-clientes { list-style: none; margin: 0 -22px -22px; padding: 0; border-top: 1px solid var(--line); }
+.fid-clientes li { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 14px 22px; border-bottom: 1px solid var(--line); }
+.fid-clientes li:last-child { border-bottom: 0; }
+.fid-clientes li.premio { background: var(--accent-wash); }
+.fid-quem, .fid-cartao { display: grid; gap: 3px; min-width: 0; }
+.fid-quem b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fid-quem small, .fid-cartao small { color: var(--ink-3); font-size: 12.5px; }
+.premio .fid-cartao small { color: var(--teal); font-weight: 800; }
+.fid-acoes { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.fid-gav .fid-selos svg { width: 30px; height: 30px; }
+.fid-gav-txt { margin: 10px 0 2px; font-weight: 700; }
+.fid-gav .btn { margin-top: 10px; }
+.fid-hist-topo { display: grid; gap: 6px; margin-bottom: 16px; }
+.fid-hist-topo p { margin: 0; }
+.fid-hist-t { font-size: 15px; font-weight: 800; margin: 0 0 8px; }
+.fid-hist { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.fid-hist li { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.fid-hist span { display: grid; gap: 2px; min-width: 0; }
+.fid-hist small { color: var(--ink-3); font-size: 12.5px; }
+@media (max-width: 760px) {
+  .fid-clientes { margin: 0 -16px -16px; }
+  .fid-clientes li { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px 16px; }
+  .fid-acoes { justify-content: flex-start; }
+  .fid-busca { max-width: none; width: 100%; }
+}
 .aval-filtro { margin-bottom: 14px; }
 .aval-lista { display: grid; gap: 12px; }
 .aval-card { padding: 16px 18px; }

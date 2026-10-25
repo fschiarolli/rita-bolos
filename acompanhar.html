@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#58210F">
+<title>Acompanhar pedido — Rita Bolos</title>
+<link rel="icon" href="favicon.ico" sizes="32x32">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+/*
+  Acompanhamento do pedido pelo cliente.
+    acompanhar.html?t=TOKEN        -> link que vai no WhatsApp (o mesmo código do recibo)
+    acompanhar.html?t=TOKEN&demo   -> na demonstração
+  Mostra a etapa (atualiza sozinha), quando e onde retirar, o pagamento, os itens e o cartão fidelidade.
+  Sem o sql/acompanhar-pedido.sql, as etapas aparecem sem o horário; sem o sql/fidelidade.sql, sem o cartão.
+  As cores e fontes são as do site (index.html e avaliar.html).
+*/
+:root {
+  --font-display: 'DM Serif Display', Georgia, 'Times New Roman', serif;
+  --font-ui: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --chocolate: #58210F; --pessego: #F5D4AA; --fita: #51AB9D; --agua: #A1DFD0;
+  --bg: #FBF4EC; --surface: #FFFFFF; --surface-2: #F5EBDF; --surface-3: #EDDDCB;
+  --ink: #3A1F14; --ink-2: #6E4B3A; --ink-3: #85675A;
+  --primary: #58210F; --on-primary: #FBF4EC;
+  --teal: #2B7465; --mint-50: #E8F4EF; --star-off: #E4D6C6;
+  --error: #B3261E; --wa: #13803F;
+  --campo: #58210F; --campo-ink: #FBEBD8; --campo-ink-2: #E7C9A6;
+  --raio: 18px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1E130E; --surface: #2A1B14; --surface-2: #352319; --surface-3: #432D21;
+    --ink: #F7EBDD; --ink-2: #D9C4B1; --ink-3: #B8A08E;
+    --primary: #F2DCC4; --on-primary: #2A1B14; --teal: #8FD3C0; --mint-50: #1D2E28; --star-off: #4A3529;
+    --error: #FF8A80; --wa: #2FB765;
+    --campo: #4A1C0C;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  min-height: 100vh; min-height: 100dvh; background: var(--bg); color: var(--ink);
+  font: 400 16px/1.5 var(--font-ui); -webkit-font-smoothing: antialiased;
+  padding: calc(18px + env(safe-area-inset-top, 0px)) 16px calc(32px + env(safe-area-inset-bottom, 0px));
+}
+button { font: inherit; color: inherit; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.pagina { max-width: 36rem; margin: 0 auto; }
+a { color: var(--teal); text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--teal); outline-offset: 3px; border-radius: 6px; }
+
+.marca { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; text-decoration: none; color: inherit; }
+.marca img { width: 52px; height: auto; }
+.marca strong { display: block; font-family: var(--font-display); font-weight: 400; font-size: 21px; line-height: 1.1; }
+.marca span { font-size: 13px; font-weight: 700; color: var(--ink-2); }
+
+/* o topo: a etapa do pedido num campo de chocolate */
+.campo { background: var(--campo); color: var(--campo-ink); border-radius: 24px; padding: 26px 22px 22px; }
+.campo h1 { font-family: var(--font-display); font-weight: 400; font-size: clamp(30px, 8.6vw, 42px); line-height: 1.05; letter-spacing: -.015em; margin: 0; text-wrap: balance; }
+.campo h1:focus { outline: none; }
+.campo .sobre { margin: 10px 0 0; color: var(--campo-ink-2); font-size: 16px; max-width: 30rem; }
+.progresso { display: flex; gap: 6px; margin: 22px 0 8px; }
+.progresso i { flex: 1; height: 8px; border-radius: 999px; background: rgba(245, 212, 170, .2); }
+.progresso i.feito { background: var(--fita); }
+.progresso i.agora { background: var(--pessego); }
+.etapa-txt { margin: 0; font-size: 14px; font-weight: 800; color: var(--campo-ink-2); }
+.quando { display: grid; gap: 2px; margin-top: 20px; padding: 16px 18px; border-radius: 16px; background: rgba(245, 212, 170, .12); }
+.quando span { font-size: 14px; font-weight: 700; color: var(--campo-ink-2); }
+.quando strong { font-size: 21px; font-weight: 900; line-height: 1.2; text-transform: none; }
+.campo.cancelado { background: var(--surface-3); color: var(--ink); }
+.campo.cancelado .sobre { color: var(--ink-2); }
+
+/* as seções */
+.secao { margin-top: 14px; background: var(--surface); border-radius: var(--raio); padding: 20px 20px; }
+.secao h2 { margin: 0 0 12px; font-size: 18px; font-weight: 900; letter-spacing: -.005em; }
+
+/* a linha do tempo */
+.linha { list-style: none; margin: 0; padding: 0; }
+.linha li { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; padding-bottom: 18px; }
+.linha li:last-child { padding-bottom: 0; }
+.linha li:not(:last-child)::before { content: ''; position: absolute; left: 13.5px; top: 30px; bottom: 2px; width: 3px; border-radius: 3px; background: var(--surface-3); }
+.linha li.feito:not(:last-child)::before { background: var(--fita); }
+.marco { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--ink-3); }
+.marco svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.feito .marco { background: var(--fita); color: #fff; }
+.agora .marco { background: var(--primary); }
+.agora .marco::after { content: ''; width: 10px; height: 10px; border-radius: 50%; background: var(--bg); }
+.linha b { display: block; font-weight: 800; line-height: 1.3; padding-top: 4px; }
+.linha .futuro b { color: var(--ink-3); font-weight: 700; }
+.linha small { display: block; font-size: 14px; color: var(--ink-2); margin-top: 1px; }
+.linha .hora { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: no-preference) {
+  .agora .marco { animation: pulsa 2.4s ease-in-out infinite; }
+  @keyframes pulsa { 0%, 100% { box-shadow: 0 0 0 0 rgba(81, 171, 157, .45); } 50% { box-shadow: 0 0 0 8px rgba(81, 171, 157, 0); } }
+}
+
+/* retirada, pagamento e itens */
+.local { margin: 0; font-size: 16px; }
+.acao { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin-top: 8px; font-weight: 800; }
+.acao svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.valores { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; margin: 0; }
+.valores dt { color: var(--ink-2); }
+.valores dd { margin: 0; text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; }
+.valores .total { font-size: 18px; font-weight: 900; color: var(--ink); }
+.situacao { display: inline-flex; align-items: center; gap: 7px; margin: 14px 0 0; padding: 9px 14px; border-radius: 12px; font-weight: 800; font-size: 15px; background: var(--mint-50); color: var(--teal); }
+.situacao.falta { background: var(--surface-2); color: var(--ink); }
+.pix { margin-top: 14px; padding: 16px; border-radius: 14px; background: var(--surface-2); }
+.pix p { margin: 0 0 4px; font-size: 14.5px; color: var(--ink-2); }
+.pix .chave { display: block; font-size: 18px; font-weight: 900; color: var(--ink); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 20px; border-radius: 999px; border: 0; font-weight: 900; font-size: 16px; cursor: pointer; text-decoration: none; touch-action: manipulation; transition: transform .12s ease, background-color .15s ease; }
+.btn:active { transform: scale(.98); }
+.btn-primario { background: var(--primary); color: var(--on-primary); margin-top: 12px; }
+.btn-primario:hover { background: #6E2E17; }
+.btn-wa { background: var(--wa); color: #fff; width: 100%; }
+.itens { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.itens li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+.itens span { overflow-wrap: anywhere; }
+.itens b { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mais { margin: 14px 0 0; font-weight: 800; }
+
+/* o cartão fidelidade: um cartão de carimbos, com o selo do logo em cada estrela */
+.cartao-fid { margin-top: 14px; border-radius: var(--raio); padding: 22px 20px; background: var(--pessego); color: #3A1F14; }
+.cartao-fid h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 26px; line-height: 1.1; }
+.cartao-fid .regra { margin: 6px 0 16px; font-size: 15px; color: #5C3A28; }
+.carimbos { display: grid; grid-template-columns: repeat(var(--n, 5), minmax(0, 1fr)); gap: 8px; max-width: 360px; }
+.carimbo { aspect-ratio: 1; display: grid; place-items: center; }
+.carimbo svg { width: 100%; height: 100%; }
+.carimbo .s-fundo { fill: rgba(88, 33, 15, .12); }
+.carimbo .s-marca { fill: rgba(88, 33, 15, .28); }
+.carimbo.cheio .s-fundo { fill: var(--fita); }
+.carimbo.cheio .s-marca { fill: var(--chocolate); }
+@media (prefers-reduced-motion: no-preference) {
+  .carimbo.cheio.novo svg { animation: carimba .5s cubic-bezier(.2, .9, .3, 1.4) both; animation-delay: calc(var(--i) * 90ms); }
+  @keyframes carimba { from { transform: scale(1.6) rotate(-14deg); opacity: 0; } to { transform: none; opacity: 1; } }
+}
+.fid-txt { margin: 16px 0 0; font-size: 16px; font-weight: 800; }
+.fid-txt + .fid-txt { margin-top: 4px; font-weight: 600; color: #5C3A28; }
+.premio { margin: 16px 0 0; padding: 14px 16px; border-radius: 14px; background: var(--chocolate); color: #FBEBD8; font-weight: 800; }
+.premio strong { display: block; font-family: var(--font-display); font-weight: 400; font-size: 22px; color: var(--pessego); }
+
+.rodape { margin-top: 22px; text-align: center; font-size: 14px; color: var(--ink-3); }
+.rodape p { margin: 6px 0 0; }
+.links { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; margin-top: 16px; font-weight: 800; font-size: 15px; }
+.links a { display: inline-flex; align-items: center; min-height: 44px; }
+.estado { text-align: center; padding: 18px 4px; }
+.estado h1 { font-family: var(--font-display); font-weight: 400; font-size: 28px; margin: 0 0 8px; }
+.estado p { margin: 0 auto; max-width: 26rem; color: var(--ink-2); }
+.carregando { width: 34px; height: 34px; border-radius: 50%; border: 4px solid var(--surface-2); border-top-color: var(--teal); margin: 40px auto 14px; animation: gira .8s linear infinite; }
+@keyframes gira { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .carregando { animation: none; } .btn { transition: none; } }
+@media (min-width: 600px) { body { padding-top: 40px; } .campo { padding: 32px 30px 28px; } .secao, .cartao-fid { padding: 24px 26px; } }
+</style>
+</head>
+<body>
+<main class="pagina">
+  <a class="marca" href="./" aria-label="Rita Bolos, ir para o site"><img src="imagens/marca/rita-bolos.png" alt="" width="52" height="47"><span><strong>Rita Bolos</strong><span>Bolos e sobremesas</span></span></a>
+  <div id="area"><div class="carregando" aria-hidden="true"></div><p class="estado" role="status">Carregando o pedido…</p></div>
+  <p class="sr-only" id="aviso" aria-live="polite"></p>
+</main>
+
+<script type="module">
+import { conectar, formatarPreco as R, pixDe, localRetirada } from './js/rita-api.js';
+
+const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const area = document.getElementById('area'), aviso = document.getElementById('aviso');
+const qs = new URLSearchParams(location.search), token = (qs.get('t') || '').trim(), demo = qs.has('demo');
+const comDemo = url => url + (demo ? (url.includes('?') ? '&demo' : '?demo') : '');
+const ICONE = {
+  certo: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  mapa: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg>',
+  copiar: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>'
+};
+/* O selo do logo (a borda recortada do favicon) com o coração no meio: cada estrela do cartão é um carimbo dele. */
+const SELO = (() => {
+  const n = 14, raio = 15.8, s = Math.sin(Math.PI / n), rb = raio * s / (1 + s), rc = raio - rb;
+  const bolinhas = Array.from({ length: n }, (_, i) => { const a = i / n * 2 * Math.PI - Math.PI / 2; return `<circle cx="${(16 + rc * Math.cos(a)).toFixed(2)}" cy="${(16 + rc * Math.sin(a)).toFixed(2)}" r="${rb.toFixed(2)}"/>`; }).join('');
+  return `<svg viewBox="0 0 32 32" aria-hidden="true"><g class="s-fundo"><circle cx="16" cy="16" r="14.3"/>${bolinhas}</g>
+    <path class="s-marca" d="M16 23.2c-3.9-2.6-7-5.3-7-8.6 0-2.3 1.7-4 3.8-4 1.4 0 2.5.7 3.2 1.9.7-1.2 1.8-1.9 3.2-1.9 2.1 0 3.8 1.7 3.8 4 0 3.3-3.1 6-7 8.6z"/></svg>`;
+})();
+
+/* O que a etapa quer dizer para quem está esperando o bolo */
+const TITULOS = {
+  recebido: 'Recebemos seu pedido', confirmado: 'Pedido confirmado', em_producao: 'Seu pedido está sendo feito',
+  pronto: 'Está pronto! Pode vir buscar', em_rota: 'Saiu para entrega', retirado: 'Pedido retirado. Bom apetite!',
+  entregue: 'Pedido entregue. Bom apetite!', cancelado: 'Este pedido foi cancelado'
+};
+const FRASES = {
+  recebido: 'Assim que o sinal for pago, a Rita confirma e o pedido entra na agenda.',
+  confirmado: 'O sinal chegou e o seu pedido está garantido na agenda.',
+  em_producao: 'A Rita já está preparando tudo com carinho.',
+  pronto: 'Está tudo embalado esperando por você no horário marcado.',
+  em_rota: 'O pedido está a caminho do endereço de entrega.',
+  retirado: 'Obrigada pela preferência. Volte sempre!',
+  entregue: 'Obrigada pela preferência. Volte sempre!',
+  cancelado: 'Se tiver alguma dúvida, fale com a Rita pelo WhatsApp.'
+};
+const dataLonga = iso => new Date(iso + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+function horaDe(ts) {
+  const d = new Date(ts), hoje = new Date(), ontem = new Date(Date.now() - 864e5);
+  const mesmo = (a, b) => a.toDateString() === b.toDateString();
+  const h = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  if (mesmo(d, hoje)) return `hoje, ${h}`;
+  if (mesmo(d, ontem)) return `ontem, ${h}`;
+  return `${d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }).replace('.', '')}, ${h}`;
+}
+const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+
+let api = null, cfg = null, pedido = null, etapas = null, fid = null, statusMostrado = null, carimbosVistos = null;
+function estado(titulo, texto) { area.innerHTML = `<div class="estado"><h1>${esc(titulo)}</h1><p>${esc(texto)}</p></div>`; }
+
+/** As etapas que valem para este pedido: na retirada sem as da entrega, na entrega sem "Retirado". */
+function etapasDoPedido() {
+  const entrega = !!pedido.entrega, status = etapas?.status || pedido.status;
+  const lista = (etapas?.etapas || []).filter(e => e.codigo !== 'cancelado'
+    && !(entrega ? e.codigo === 'retirado' : ['em_rota', 'entregue'].includes(e.codigo)))
+    .map(e => (e.codigo === 'pronto' && entrega ? { ...e, nome: 'Pronto para entrega', descricao: 'Esperando a hora de sair para a entrega.' } : e));
+  return { lista, status, atual: lista.findIndex(e => e.codigo === status) };
+}
+
+function desenhar() {
+  const { lista, status, atual } = etapasDoPedido();
+  const cancelado = status === 'cancelado', fim = atual >= 0 && lista[atual].finalizado, entrega = !!pedido.entrega;
+  const nome = String(pedido.cliente_nome || '').trim().split(/\s+/)[0];
+  const etapa = lista[atual];
+  const titulo = TITULOS[status] || (status === 'pronto' && entrega ? 'Pronto para sair' : etapa?.nome || pedido.status_nome || 'Seu pedido');
+  const frase = (status === 'pronto' && entrega) ? 'Está tudo embalado esperando a hora de sair para a entrega.' : FRASES[status] || etapa?.descricao || '';
+  const dia = pedido.data_retirada ? `${dataLonga(pedido.data_retirada)}${pedido.hora_retirada ? `, às ${String(pedido.hora_retirada).slice(0, 5)}` : ''}` : '';
+
+  // o topo
+  let html = `<section class="campo${cancelado ? ' cancelado' : ''}" aria-labelledby="tEtapa">
+      <h1 id="tEtapa" tabindex="-1">${esc(titulo)}</h1>
+      <p class="sobre">${nome ? `${esc(nome)}, ` : ''}${esc(frase ? frase.charAt(0).toLowerCase() + frase.slice(1) : '')} <span style="white-space:nowrap">Pedido ${esc(pedido.codigo)}.</span></p>
+      ${!cancelado && lista.length && atual >= 0 ? `<div class="progresso" aria-hidden="true">${lista.map((e, i) => `<i class="${i < atual || fim ? 'feito' : i === atual ? 'agora' : ''}"></i>`).join('')}</div>
+        <p class="etapa-txt">${fim ? 'Todas as etapas concluídas' : `Etapa ${atual + 1} de ${lista.length}: ${esc(etapa.nome)}`}</p>` : ''}
+      ${!cancelado && !fim && dia ? `<div class="quando"><span>${entrega ? 'Entrega' : 'Retirada'}</span><strong>${esc(dia.charAt(0).toUpperCase() + dia.slice(1))}</strong></div>` : ''}
+    </section>`;
+
+  // a linha do tempo
+  if (!cancelado && lista.length) {
+    html += `<section class="secao" aria-labelledby="tLinha"><h2 id="tLinha">Por onde o pedido passou</h2><ol class="linha">
+      ${lista.map((e, i) => {
+        const cls = i < atual || (fim && i === atual) ? 'feito' : i === atual ? 'agora' : 'futuro';
+        const quando = e.quando && cls !== 'futuro' ? `<small class="hora">${esc(horaDe(e.quando))}</small>` : '';
+        return `<li class="${cls}"${cls === 'agora' ? ' aria-current="step"' : ''}><span class="marco">${cls === 'feito' ? ICONE.certo : ''}</span>
+          <span><b>${esc(e.nome)}<span class="sr-only">${cls === 'feito' ? ' (concluída)' : cls === 'agora' ? ' (etapa atual)' : ' (ainda não)'}</span></b>${cls === 'agora' && e.descricao ? `<small>${esc(e.descricao)}</small>` : ''}${quando}</span></li>`;
+      }).join('')}</ol></section>`;
+  }
+
+  // onde retirar / para onde vai
+  if (!cancelado && !fim) {
+    const local = entrega ? null : localRetirada(cfg);
+    const ent = pedido.entrega;
+    const endEntrega = ent ? [ent.endereco, ent.complemento, ent.bairro, ent.cidade].filter(Boolean).join(', ') : '';
+    if (local || endEntrega) html += `<section class="secao" aria-labelledby="tLocal"><h2 id="tLocal">${entrega ? 'Onde vamos entregar' : 'Onde retirar'}</h2>
+      <p class="local">${esc(entrega ? endEntrega : local.texto || 'No endereço da loja')}</p>
+      ${!entrega && local?.mapa ? `<a class="acao" href="${esc(local.mapa)}" target="_blank" rel="noopener">${ICONE.mapa}Abrir no mapa</a>` : ''}</section>`;
+  }
+
+  // pagamento
+  const total = Number(pedido.total) || 0, sinal = Number(pedido.valor_sinal) || 0, pago = Number(pedido.valor_pago) || 0;
+  const faltaSinal = Math.max(sinal - pago, 0), faltaTudo = Math.max(total - pago, 0), pix = pixDe(cfg);
+  if (!cancelado) {
+    html += `<section class="secao" aria-labelledby="tPag"><h2 id="tPag">Pagamento</h2>
+      <dl class="valores"><dt>Total do pedido</dt><dd class="total">${esc(R(total))}</dd>
+        ${sinal ? `<dt>Sinal${pedido.percentual_sinal != null ? ` (${esc(Number(pedido.percentual_sinal).toLocaleString('pt-BR'))}%)` : ''}</dt><dd>${esc(R(sinal))}</dd>` : ''}
+        <dt>Já pago</dt><dd>${esc(R(pago))}</dd></dl>
+      ${faltaTudo <= 0 ? `<p class="situacao">${ICONE.certo.replace('<svg', '<svg width="18" height="18" style="fill:none;stroke:currentColor;stroke-width:3"')}Pedido pago</p>`
+        : fim ? `<p class="situacao falta">Falta pagar ${esc(R(faltaTudo))}</p>`
+        : faltaSinal > 0 ? `<p class="situacao falta">Falta o sinal de ${esc(R(faltaSinal))} para confirmar</p>`
+        : `<p class="situacao">Sinal pago. ${entrega ? 'Na entrega' : 'Na retirada'}, faltam ${esc(R(faltaTudo))}</p>`}
+      ${faltaSinal > 0 && pix && !fim ? `<div class="pix"><p>Pix${pix.tipo ? ` (${esc(pix.tipo)})` : ''}${pix.nome ? ` em nome de ${esc(pix.nome)}` : ''}</p><span class="chave" id="pixChave">${esc(pix.chave)}</span>
+        <button type="button" class="btn btn-primario" id="copiarPix">${ICONE.copiar.replace('<svg', '<svg width="18" height="18" style="fill:none;stroke:currentColor;stroke-width:2.2"')}Copiar a chave Pix</button>
+        <p style="margin:10px 0 0">Depois de pagar, mande o comprovante para a Rita no WhatsApp.</p></div>` : ''}
+    </section>`;
+  }
+
+  // os itens
+  const itens = pedido.itens || [];
+  if (itens.length) html += `<section class="secao" aria-labelledby="tItens"><h2 id="tItens">Seu pedido</h2><ul class="itens">
+      ${itens.map(i => `<li><span>${esc(`${Number(i.quantidade) || 1}× ${i.nome}${Number(i.peso_kg) > 0 ? ` ${String(i.peso_kg).replace('.', ',')} kg` : ''}`)}</span><b>${esc(R(i.subtotal ?? (i.preco_unitario * i.quantidade)))}</b></li>`).join('')}</ul>
+      <p class="mais"><a href="${esc(comDemo(`recibo.html?t=${encodeURIComponent(token)}`))}">Ver o recibo completo</a></p></section>`;
+
+  // o cartão fidelidade
+  html += cartaoFidelidade();
+
+  // contato e links
+  const zap = cfg?.whatsapp_exibicao, num = String(cfg?.whatsapp_numero || zap || '').replace(/\D/g, '');
+  const avaliar = fim && cfg && 'avaliacoes_site' in cfg;
+  html += `<footer class="rodape">
+      ${num ? `<a class="btn btn-wa" href="https://wa.me/${num.length <= 11 ? '55' + num : num}?text=${encodeURIComponent(`Olá! Sobre o pedido ${pedido.codigo}:`)}" target="_blank" rel="noopener">Falar com a Rita no WhatsApp</a>` : ''}
+      <p class="links">${avaliar ? `<a href="${esc(comDemo(`avaliar.html?t=${encodeURIComponent(token)}`))}">Avaliar o pedido</a>` : ''}<a href="${esc(comDemo('./'))}">Fazer outro pedido</a></p>
+      ${!fim && !cancelado ? `<p>Esta página se atualiza sozinha. Última conferência: ${esc(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }))}${zap ? ` · ${esc(zap)}` : ''}</p>` : ''}
+    </footer>`;
+
+  area.innerHTML = html;
+  document.title = `${titulo} · Pedido ${pedido.codigo} — Rita Bolos`;
+  area.querySelector('#copiarPix')?.addEventListener('click', async ev => {
+    const bt = ev.currentTarget, rotulo = bt.innerHTML;
+    try { await navigator.clipboard.writeText(pix.chave); bt.textContent = 'Chave copiada'; aviso.textContent = 'Chave Pix copiada.'; }
+    catch (e) { const r = document.createRange(); r.selectNodeContents(area.querySelector('#pixChave')); getSelection().removeAllRanges(); getSelection().addRange(r); bt.textContent = 'Selecionada: copie com o dedo'; }
+    setTimeout(() => { bt.innerHTML = rotulo; }, 2600);
+  });
+  if (statusMostrado && statusMostrado !== status) aviso.textContent = `O pedido mudou: ${titulo}.`;
+  statusMostrado = status;
+}
+
+function cartaoFidelidade() {
+  if (!fid?.ativa) return '';
+  const meta = Number(fid.meta) || 5, cheias = Math.min(Number(fid.estrelas) || 0, meta);
+  const novos = carimbosVistos === null ? cheias : Math.max(0, cheias - carimbosVistos);   // os que acabaram de encher ganham o carimbo animado
+  carimbosVistos = cheias;
+  const este = fid.este_pedido, premio = fid.premio || 'um prêmio da Rita Bolos';
+  let txt;
+  if (fid.premios >= 1) txt = '';
+  else txt = `<p class="fid-txt">${esc(plural(cheias, 'estrela', 'estrelas'))} de ${meta}. Faltam ${esc(R(fid.falta))} para a próxima.</p>`;
+  const somar = este && !este.contou && !este.cancelado ? `<p class="fid-txt">Este pedido soma ${esc(R(este.total))} quando for ${pedido.entrega ? 'entregue' : 'retirado'}.</p>` : '';
+  return `<section class="cartao-fid" aria-labelledby="tFid">
+      <h2 id="tFid">Seu cartão fidelidade</h2>
+      <p class="regra">A cada ${esc(R(fid.valor).replace(',00', ''))} em pedidos, uma estrela. Com ${meta}, você ganha ${esc(premio.charAt(0).toLowerCase() + premio.slice(1))}.</p>
+      <div class="carimbos" style="--n:${meta}" role="img" aria-label="${esc(`${cheias} de ${meta} estrelas`)}">
+        ${Array.from({ length: meta }, (_, i) => `<span class="carimbo${i < cheias ? ' cheio' : ''}${i < cheias && i >= cheias - novos ? ' novo' : ''}" style="--i:${i}">${SELO}</span>`).join('')}</div>
+      ${fid.premios >= 1 ? `<p class="premio"><strong>Você ganhou ${esc(premio.charAt(0).toLowerCase() + premio.slice(1))}!</strong>Avise a Rita no próximo pedido para resgatar.</p>` : txt}
+      ${somar}
+    </section>`;
+}
+
+async function carregar(primeira) {
+  const [p, e] = await Promise.all([api.pedidos.consultar(token), api.pedidos.etapas(token).catch(() => null)]);
+  if (!p) return false;
+  pedido = p; etapas = e;
+  if (primeira || (e?.status && e.status !== statusMostrado)) fid = await api.fidelidade.doPedido(token).catch(() => null);
+  return true;
+}
+
+async function iniciar() {
+  if (!token) { estado('Link incompleto', 'Abra o acompanhamento pelo link que a Rita Bolos mandou no WhatsApp.'); return; }
+  try {
+    if (demo) {
+      const [{ criarApi }, { criarSupabaseDemo }] = await Promise.all([import('./js/rita-api.js'), import('./demo/supabase-demo.js')]);
+      api = criarApi(criarSupabaseDemo({ anonimo: true }));
+    } else {
+      const c = await import('./js/config.js');
+      api = await conectar(c.SUPABASE_URL, c.SUPABASE_PUBLISHABLE_KEY || c.SUPABASE_ANON_KEY, { anonimo: true });
+    }
+  } catch (e) { estado('Não foi possível conectar', 'Confira a internet e tente de novo.'); return; }
+  try {
+    const [achou, cardapio] = await Promise.all([carregar(true), api.cardapio.obter().catch(() => null)]);
+    cfg = cardapio?.configuracoes || null;
+    if (!achou) { estado('Pedido não encontrado', 'Confira se o link está completo ou fale com a Rita pelo WhatsApp.'); return; }
+  } catch (e) { estado('Não foi possível abrir o pedido', e.message || 'Tente novamente em instantes.'); return; }
+  desenhar();
+  // ao vivo: confere de novo a cada 45 segundos com a página aberta, e na hora em que o cliente volta para ela
+  const conferir = async () => {
+    if (document.hidden) return;
+    try { const antes = statusMostrado; if (await carregar(false) && (etapas?.status || pedido.status) !== antes) desenhar(); else atualizarHora(); } catch (e) { /* tenta de novo na próxima */ }
+  };
+  const atualizarHora = () => { const r = area.querySelector('.rodape p:last-child'); if (r && /Última conferência/.test(r.textContent)) r.textContent = r.textContent.replace(/\d{2}:\d{2}/, new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })); };
+  setInterval(conferir, 45000);
+  document.addEventListener('visibilitychange', conferir);
+}
+iniciar();
+</script>
+</body>
+</html>

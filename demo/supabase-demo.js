@@ -135,6 +135,9 @@ export function criarSupabaseDemo(opcoes = {}) {
     if (!b.stories) semearStories(b);   // imagens para os stories (igual a sql/stories.sql)
     if (!b.avaliacoes) semearAvaliacoes(b);   // avaliações dos pedidos (igual a sql/avaliacoes.sql): a aba do site começa desligada
     if (cf && !('avaliacoes_site' in cf)) cf.avaliacoes_site = false;
+    // cartão fidelidade (igual a sql/fidelidade.sql): começa desligado
+    if (cf && !('fidelidade_ativa' in cf)) Object.assign(cf, { fidelidade_ativa: false, fidelidade_valor: 100, fidelidade_estrelas: 5, fidelidade_premio: null, fidelidade_desde: null });
+    b.fidelidade_resgates = b.fidelidade_resgates || [];
     (b.pedidos || []).forEach(p => { if (p.taxa_entrega == null) p.taxa_entrega = 0; });
     if (cf && !('entrega_origem' in cf)) Object.assign(cf, LOJA_ENTREGA, { entrega_taxa_minima: 8, entrega_km_incluidos: 3, entrega_valor_km: 1.5, entrega_raio_km: 15 });
     if (cf && !('endereco_retirada' in cf)) cf.endereco_retirada = null;   // igual a sql/endereco-retirada.sql (em branco: vale o da entrega)
@@ -431,6 +434,11 @@ export function criarSupabaseDemo(opcoes = {}) {
     if (tabela === 'stories' && !adminLoja()) {   // a galeria de stories: só a Administração
       if (q.op === 'insert' || q.op === 'upsert') return erro('new row violates row-level security policy for table "stories"', '42501');
       return finalizar([], q, 0);
+    }
+    if (tabela === 'fidelidade_resgates') {   // a equipe vê; a Administração desfaz; resgatar só pela função resgatar_premio
+      if (q.op === 'select') { if (!equipe()) return erro('permission denied for table fidelidade_resgates', '42501'); }
+      else if (q.op === 'delete') { if (!adminLoja()) return finalizar([], q, 0); }
+      else return erro('permission denied for table fidelidade_resgates', '42501');
     }
     if (tabela === 'avaliacoes') {   // a equipe vê; a Administração só muda a situação ou apaga; o cliente avalia pelas funções
       if (q.op === 'select') { if (!equipe()) return finalizar([], q, 0); }
@@ -856,8 +864,65 @@ export function criarSupabaseDemo(opcoes = {}) {
       itens: db.pedido_itens.filter(i => i.pedido_id === p.id).sort((x, y) => (x.ordem ?? 0) - (y.ordem ?? 0)).map(i => i.nome),
       avaliacao: a ? { nota: a.nota, comentario: a.comentario, pode_publicar: a.pode_publicar, situacao: a.situacao, atualizado_em: a.atualizado_em } : null };
   }
+  /** As etapas do pedido com quando cada uma aconteceu (o mesmo que etapas_do_pedido em sql/acompanhar-pedido.sql). */
+  function etapasDoPedido(token) {
+    const t = String(token ?? '').trim(), p = t && db.pedidos.find(x => x.token === t);
+    if (!p) return null;
+    const hist = db.pedido_historico.filter(h => h.pedido_id === p.id);
+    const quando = c => hist.filter(h => h.status_novo === c).map(h => h.alterado_em).sort().pop() || (c === 'recebido' ? p.criado_em : null);
+    return { status: p.status, etapas: [...db.status_pedido].filter(s => s.ativo !== false || s.codigo === p.status).sort((a, b) => a.ordem - b.ordem)
+      .map(s => ({ codigo: s.codigo, nome: s.nome, descricao: s.descricao, cor: s.cor, finalizado: !!s.finalizado, quando: quando(s.codigo) })) };
+  }
+  /* Cartão fidelidade (o mesmo que sql/fidelidade.sql) */
+  const telFid = t => { let d = String(t || '').replace(/\D/g, ''); if ([12, 13].includes(d.length) && d.startsWith('55')) d = d.slice(2); return d || null; };
+  const contaFid = p => !!status(p.status).finalizado && p.status !== 'cancelado' && (!cfg().fidelidade_desde || p.data_retirada >= cfg().fidelidade_desde);
+  function cartaoFid(telefone) {
+    const c = cfg(), tel = telFid(telefone);
+    if (!c.fidelidade_ativa) return { ativa: false };
+    const meus = tel ? db.pedidos.filter(p => contaFid(p) && telFid(p.cliente_telefone) === tel) : [];
+    const gasto = r2(meus.reduce((s, p) => s + Number(p.total || 0), 0)), valor = Number(c.fidelidade_valor) || 100, meta = Number(c.fidelidade_estrelas) || 5;
+    const usadas = (db.fidelidade_resgates || []).filter(r => r.telefone === tel).reduce((s, r) => s + r.estrelas, 0);
+    const ganhas = Math.floor(gasto / valor), saldo = Math.max(ganhas - usadas, 0);
+    return { ativa: true, telefone: tel, valor, meta, premio: c.fidelidade_premio, desde: c.fidelidade_desde, gasto, pedidos: meus.length, estrelas: saldo,
+      premios: Math.floor(saldo / meta), falta: r2(valor - (gasto - ganhas * valor)), resgatados: Math.floor(usadas / meta) };
+  }
+  function fidDoCliente(telefone) {
+    exigirEquipe();
+    const tel = telFid(telefone);
+    return { ...cartaoFid(tel), historico: (db.fidelidade_resgates || []).filter(r => r.telefone === tel).sort((a, b) => (b.criado_em > a.criado_em ? 1 : -1))
+      .map(r => ({ id: r.id, premio: r.premio, estrelas: r.estrelas, criado_em: r.criado_em, pedido_id: r.pedido_id, observacao: r.observacao, por: nomeAdmin(r.resgatado_por) })) };
+  }
   const RPC = {
     obter_cardapio: () => obterCardapio(),
+    // Acompanhamento e cartão fidelidade (sql/acompanhar-pedido.sql e sql/fidelidade.sql)
+    etapas_do_pedido: ({ p_token }) => etapasDoPedido(p_token),
+    fidelidade_do_pedido: ({ p_token }) => {
+      const p = db.pedidos.find(x => x.token === String(p_token ?? '').trim()); if (!p) return null;
+      const { telefone, ...c } = cartaoFid(p.cliente_telefone);
+      return c.ativa ? { ...c, este_pedido: { total: p.total, contou: !!status(p.status).finalizado && p.status !== 'cancelado', cancelado: p.status === 'cancelado' } } : c;
+    },
+    fidelidade_do_cliente: ({ p_telefone }) => fidDoCliente(p_telefone),
+    fidelidade_clientes: ({ p_limite = 300 } = {}) => {
+      exigirEquipe();
+      if (!cfg().fidelidade_ativa) return [];
+      const tels = [...new Set(db.pedidos.filter(contaFid).map(p => telFid(p.cliente_telefone)).filter(Boolean))];
+      return tels.map(tel => {
+        const c = cartaoFid(tel), ult = db.pedidos.filter(p => contaFid(p) && telFid(p.cliente_telefone) === tel).sort((a, b) => (b.data_retirada > a.data_retirada ? 1 : -1))[0];
+        return { telefone: tel, nome: ult.cliente_nome, gasto: c.gasto, pedidos: c.pedidos, ultimo: ult.data_retirada, estrelas: c.estrelas, premios: c.premios, falta: c.falta, resgatados: c.resgatados };
+      }).sort((a, b) => b.estrelas - a.estrelas || b.gasto - a.gasto).slice(0, Math.max(1, Math.min(Number(p_limite) || 300, 2000)));
+    },
+    resgatar_premio: ({ p_telefone, p_pedido_id = null, p_observacao = null }) => {
+      exigirEquipe();
+      const tel = telFid(p_telefone), c = cartaoFid(tel);
+      if (!tel) throw 'Este pedido não tem telefone do cliente.';
+      if (!c.ativa) throw 'O cartão fidelidade está desligado.';
+      if (c.premios < 1) { const f = c.meta - c.estrelas; throw `Ainda faltam ${f} ${f === 1 ? 'estrela' : 'estrelas'} para o prêmio.`; }
+      const nome = db.pedidos.filter(p => telFid(p.cliente_telefone) === tel).sort((a, b) => (b.data_retirada > a.data_retirada ? 1 : -1))[0]?.cliente_nome || null;
+      db.fidelidade_resgates.push({ id: novoId(), telefone: tel, cliente_nome: nome, estrelas: c.meta, premio: c.premio, pedido_id: p_pedido_id,
+        observacao: String(p_observacao || '').trim() || null, resgatado_por: usuarioId(), criado_em: agora() });
+      salvar();
+      return fidDoCliente(tel);
+    },
     criar_pedido: ({ p_pedido }) => { const { id, repetido } = criarPedido(p_pedido); return { ...pedidoJson(id, false), token: db.pedidos.find(p => p.id === id).token, repetido }; },
     criar_pedido_com_whatsapp: ({ p_pedido }) => {
       const r = RPC.criar_pedido({ p_pedido });

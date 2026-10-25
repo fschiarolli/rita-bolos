@@ -1022,12 +1022,17 @@ a { color: var(--teal); }
         <ol class="steps">
           <li><span><strong>Monte sua sacola</strong><span>Toque no + para adicionar. Nos bolos você escolhe o peso, a massa e, se quiser, um 2º recheio.</span></span></li>
           <li><span><strong>Escolha a retirada</strong><span>Na sacola, toque em Continuar e informe nome, data e horário.</span></span></li>
-          <li><span><strong>Confirme e envie</strong><span>O pedido fica registrado e a mensagem chega pronta no WhatsApp da Rita. Depois é só combinar o pagamento do sinal.</span></span></li>
+          <li><span><strong>Confirme e envie</strong><span>O pedido fica registrado e a mensagem chega pronta no WhatsApp da Rita, com o link para você acompanhar cada etapa. Depois é só combinar o pagamento do sinal.</span></span></li>
         </ol>
 
         <section class="section" id="rulesSec" aria-labelledby="h-rules">
           <div class="section-head"><h2 class="section-title" id="h-rules">Bom saber</h2></div>
           <div class="help-card"><ul id="bomSaber"></ul></div>
+        </section>
+
+        <section class="section" id="fidSec" aria-labelledby="h-fid" hidden>
+          <div class="section-head"><h2 class="section-title" id="h-fid">Cartão fidelidade</h2></div>
+          <div class="help-card" style="padding:14px 16px"><p id="fidTxt" style="margin:0"></p></div>
         </section>
 
         <section class="section" aria-labelledby="h-contact">
@@ -1901,6 +1906,10 @@ const ICONE_AVISO = { balanca: 'scale', presente: 'gift', camadas: 'layers', moe
 function renderAjuda() {
   const itens = (DADOS.avisos || []).filter(a => a.secao === 'bom_saber');
   $('#rulesSec').hidden = !itens.length;
+  // cartão fidelidade (sql/fidelidade.sql): a regra, quando a Rita ligou
+  const fid = CFG.fidelidade_ativa === true, meta = Number(CFG.fidelidade_estrelas) || 5;
+  $('#fidSec').hidden = !fid;
+  if (fid) $('#fidTxt').textContent = `A cada ${fmt(Number(CFG.fidelidade_valor) || 100).replace(',00', '')} em pedidos retirados, você ganha uma estrela. Com ${meta}, ganha ${CFG.fidelidade_premio ? CFG.fidelidade_premio.charAt(0).toLowerCase() + CFG.fidelidade_premio.slice(1) : 'um prêmio'}. Acompanhe o seu cartão pelo link do pedido.`;
   $('#bomSaber').innerHTML = itens.map(a => `<li>${icon(ICONE_AVISO[a.icone] || 'info')}<span>${a.titulo ? `<strong>${esc(a.titulo)}</strong> ` : ''}${esc(a.texto)}</span></li>`).join('');
 }
 
@@ -1933,7 +1942,7 @@ function renderCart() {
     const u = ultimoPedido();
     box.innerHTML = `${u ? `<div class="last-order"><span class="lo-ic">${icon('check')}</span><div><strong>Último pedido: ${esc(u.codigo)}</strong>
         <span>Retirada em ${esc(formatPickupDate(u.data, u.hora) || '—')}, total ${fmt(u.total)}</span>
-        <span class="lo-acts"><a href="${esc(waAtualizar(u.waUrl))}" ${waAlvo(waAtualizar(u.waUrl))}>Enviar no WhatsApp</a><a href="${esc(u.recibo)}" target="_blank" rel="noopener">Ver recibo</a></span></div></div>` : ''}
+        <span class="lo-acts"><a href="${esc(waAtualizar(u.waUrl))}" ${waAlvo(waAtualizar(u.waUrl))}>Enviar no WhatsApp</a><a href="${esc(u.acompanhar || String(u.recibo || '').replace('recibo.html?', 'acompanhar.html?'))}" target="_blank" rel="noopener">Acompanhar</a></span></div></div>` : ''}
       <div class="empty"><span class="empty-art">${ART.bag()}</span><h2>Sua sacola está vazia</h2>
       <p>Escolha bolos, docinhos e salgados no cardápio. O que você adicionar aparece aqui.</p>
       <a class="btn btn-primary" href="#cardapio/${esc(CAT_ORDER[0] || '')}">Ver cardápio</a></div>`;
@@ -2552,7 +2561,8 @@ function pedidoRegistrado(pedido, ctx, aba) {
   const msg = U.montarMensagemWhatsApp(pedido, urlRecibo, CFG);
   const waUrl = waLink(pedido.loja?.whatsapp_numero || CFG.whatsapp_numero, msg);
   const abriu = !!aba?.ir(waUrl);
-  store(ULTIMO_KEY, JSON.stringify({ codigo: pedido.codigo, token: pedido.token, waUrl, recibo: urlRecibo, total: pedido.total,
+  const urlAcompanhar = U.linkAcompanhar(urlRecibo);
+  store(ULTIMO_KEY, JSON.stringify({ codigo: pedido.codigo, token: pedido.token, waUrl, recibo: urlRecibo, acompanhar: urlAcompanhar, total: pedido.total,
     data: pedido.data_retirada, hora: pedido.hora_retirada || ctx.pt, em: Date.now() }));
   cart = []; cartChanged();
   $('#sheet').innerHTML = `<div class="grabber" aria-hidden="true"></div>
@@ -2564,7 +2574,7 @@ function pedidoRegistrado(pedido, ctx, aba) {
       ${pixHTML(pedido.valor_sinal)}
       <div class="stack">
         <a class="btn btn-wa btn-block" href="${esc(waUrl)}" ${waAlvo(waUrl)}>${icon('wa')}${CFG.whatsapp_api_ativa ? 'Falar com a Rita / enviar comprovante' : abriu ? 'Abrir o WhatsApp de novo' : 'Enviar pelo WhatsApp'}</a>
-        <a class="btn btn-ghost btn-block" href="${esc(urlRecibo)}" target="_blank" rel="noopener">Ver recibo do pedido</a>
+        <a class="btn btn-ghost btn-block" href="${esc(urlAcompanhar)}" target="_blank" rel="noopener">Acompanhar o pedido</a>
         <button type="button" class="btn btn-ghost btn-block" data-act="new-order">Voltar ao início</button>
       </div></div></div>`;
   setTimeout(() => $('#sheetTitle')?.focus(), 30);

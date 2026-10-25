@@ -288,6 +288,8 @@ export function linkRecibo(token, baseSite) {
 }
 /** Onde o cliente avalia o pedido (avaliar.html, ao lado do recibo), a partir do link do recibo: o mesmo código. */
 export const linkAvaliacao = urlRecibo => String(urlRecibo || '').replace(/(^|\/)recibo\.html\?/, '$1avaliar.html?');
+/** Onde o cliente acompanha o pedido (acompanhar.html, ao lado do recibo), a partir do link do recibo: o mesmo código. */
+export const linkAcompanhar = urlRecibo => String(urlRecibo || '').replace(/(^|\/)recibo\.html\?/, '$1acompanhar.html?');
 
 /** Mensagem do WhatsApp montada a partir do pedido gravado (preços do servidor). cfg: configurações da loja (para o Pix). */
 export function montarMensagemWhatsApp(pedido, urlRecibo, cfg) {
@@ -316,7 +318,7 @@ export function montarMensagemWhatsApp(pedido, urlRecibo, cfg) {
     ...(pix ? ['', pix] : []),
     '',
     `*ATENÇÃO:* Pedido só será confirmado mediante envio do comprovante de pagamento de pelo menos ${pct}% do valor total.`);
-  if (urlRecibo) l.push('', '----------------------------', '*RECIBO DO PEDIDO:*', urlRecibo);
+  if (urlRecibo) l.push('', '----------------------------', '*ACOMPANHE O PEDIDO:*', linkAcompanhar(urlRecibo));
   return l.join('\n').replace(/\u00a0/g, ' ');
 }
 
@@ -380,7 +382,7 @@ export function montarMensagemStatus(pedido, status, urlRecibo, cfg) {
     if (itens) l.push('', '*Itens do pedido:*', itens);
     if (p.observacao_cliente) l.push('', `*Observação:* ${p.observacao_cliente}`);
   }
-  if (urlRecibo && !paraOutro && !['retirado', 'entregue', 'cancelado'].includes(s.codigo)) l.push('', `Acompanhe o pedido: ${urlRecibo}`);
+  if (urlRecibo && !paraOutro && !['retirado', 'entregue', 'cancelado'].includes(s.codigo)) l.push('', `Acompanhe o pedido: ${linkAcompanhar(urlRecibo)}`);
   // depois de retirado ou entregue, o convite para avaliar (s\u00f3 quando o banco j\u00e1 tem as avalia\u00e7\u00f5es: sql/avaliacoes.sql)
   if (urlRecibo && ['retirado', 'entregue'].includes(s.codigo) && cfg && 'avaliacoes_site' in cfg)
     l.push('', `Conta pra gente o que achou? Leva um minutinho: ${linkAvaliacao(urlRecibo)}`);
@@ -809,6 +811,27 @@ export function criarApi(supabase, opcoes = {}) {
         const [p, entrega] = await Promise.all([rpc('consultar_pedido', { p_token: token }),
           supabase.rpc('entrega_publica', { p_token: token }).then(r => (r.error ? null : r.data), () => null)]);
         return p ? { ...p, entrega: entrega || null } : p;
+      },
+      /**
+       * As etapas do pedido, para acompanhar.html: { status, etapas: [{ codigo, nome, descricao, cor, finalizado, quando }] }.
+       * Sem o sql/acompanhar-pedido.sql: as etapas ativas da loja, sem o horário (quando: null); o status vem do consultar.
+       */
+      async etapas(token) {
+        const { data, error } = await supabase.rpc('etapas_do_pedido', { p_token: token });
+        if (!error) return data;
+        if (!faltaNoBanco(error)) throw new ErroApi(error, 'etapas do pedido');
+        const lista = conferir(await supabase.from('status_pedido').select('codigo, nome, descricao, cor, finalizado, ativo').order('ordem'), 'etapas');
+        return { status: null, etapas: lista.filter(e => e.ativo !== false).map(({ ativo, ...e }) => ({ ...e, quando: null })) };
+      }
+    },
+
+    /* Cartão fidelidade do cliente (sql/fidelidade.sql), pelo mesmo token do recibo */
+    fidelidade: {
+      /** { ativa, valor, meta, premio, gasto, estrelas, premios, falta, este_pedido: { total, contou, cancelado } }; null sem o script ou com link errado. */
+      async doPedido(token) {
+        const { data, error } = await supabase.rpc('fidelidade_do_pedido', { p_token: token });
+        if (error) { if (faltaNoBanco(error)) return null; throw new ErroApi(error, 'cartão fidelidade'); }
+        return data;
       }
     },
 
@@ -1117,6 +1140,26 @@ export function criarApi(supabase, opcoes = {}) {
        * Avaliações dos pedidos (sql/avaliacoes.sql). situacao: 'nova' (acabou de chegar), 'publicada' (aparece no site)
        * ou 'oculta'. Quem publica, oculta ou apaga: a Administração; o que o cliente escreveu ninguém da loja altera.
        */
+      /** Cartão fidelidade (sql/fidelidade.sql): a equipe vê os cartões e resgata o prêmio; a Administração desfaz um resgate. */
+      fidelidade: {
+        /** O cartão de um cliente (pelo telefone) e os prêmios já resgatados; null sem o script. */
+        async cartao(telefone) {
+          const { data, error } = await supabase.rpc('fidelidade_do_cliente', { p_telefone: telefone });
+          if (error) { if (faltaNoBanco(error)) return null; throw new ErroApi(error, 'cartão fidelidade'); }
+          return data;
+        },
+        /** Os clientes com estrelas, de quem tem prêmio para quem está começando; null sem o script. */
+        async clientes(limite = 300) {
+          const { data, error } = await supabase.rpc('fidelidade_clientes', { p_limite: limite });
+          if (error) { if (faltaNoBanco(error)) return null; throw new ErroApi(error, 'cartão fidelidade'); }
+          return data;
+        },
+        /** Resgata um prêmio (as estrelas da meta saem do cartão). Devolve o cartão atualizado. */
+        resgatar: (telefone, { pedidoId = null, observacao = null } = {}) =>
+          rpc('resgatar_premio', { p_telefone: telefone, p_pedido_id: pedidoId, p_observacao: observacao }),
+        /** Desfaz um resgate (a Administração): as estrelas voltam para o cartão. */
+        desfazer: async (id) => { conferir(await supabase.from('fidelidade_resgates').delete().eq('id', id), 'cartão fidelidade'); return true; }
+      },
       avaliacoes: {
         /** false enquanto o sql/avaliacoes.sql não foi rodado */
         async disponivel() {
@@ -1358,7 +1401,7 @@ export function criarApi(supabase, opcoes = {}) {
       }
     },
 
-    util: { formatarPreco, formatarPeso, formatarData, novaChave, linkWhatsApp, abrirWhatsApp, alvoWhatsApp, linkCompartilhavel, detalhesItemWhatsApp, itensWhatsApp, linkRecibo, montarMensagemWhatsApp, montarMensagemStatus, prepararAba, separarReferencia, juntarReferencia, ehTopper, PIX, pixDe, textoPix,
+    util: { formatarPreco, formatarPeso, formatarData, novaChave, linkWhatsApp, abrirWhatsApp, alvoWhatsApp, linkCompartilhavel, detalhesItemWhatsApp, itensWhatsApp, linkRecibo, linkAcompanhar, montarMensagemWhatsApp, montarMensagemStatus, prepararAba, separarReferencia, juntarReferencia, ehTopper, PIX, pixDe, textoPix,
       formatarCep, textoEndereco, linkWaze, linkMapa, quemRecebe, buscarCep, localizarEndereco, distanciaDeCarro, taxaPelaDistancia, calcularTaxaEntrega, origemEntrega, temRegraEntrega, excessoDePeso }
   };
 }

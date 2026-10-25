@@ -482,6 +482,7 @@ const NAV = [
   { id: 'cardapio', rot: 'Cardápio', ic: 'bolo', admin: true },
   { id: 'stories', rot: 'Stories', ic: 'stories', admin: true },
   { id: 'avaliacoes', rot: 'Avaliações', ic: 'estrela', admin: true },
+  { id: 'fidelidade', rot: 'Fidelidade', ic: 'presente' },
   { id: 'ajustes', rot: 'Ajustes', ic: 'config', admin: true }
 ];
 /** Quem vê cada item do menu: Topos para a Administração e quem produz personalizados (que só vê Topos). */
@@ -1168,7 +1169,7 @@ function rotear(forcar = false) {
     const el = $('#conteudo');
     document.title = `${NAV.find(n => n.id === tela)?.rot || 'Painel'} — Backoffice Rita Bolos`;
     if (tela !== 'topos') sairTvTopos();
-    ({ painel: telaPainel, hoje: telaHoje, pedidos: telaPedidos, producao: telaProducao, topos: telaTopos, relatorio: telaRelatorio, prejuizos: telaPrejuizos, estoque: telaEstoque, cardapio: telaCardapio, stories: telaStories, avaliacoes: telaAvaliacoes, ajustes: telaAjustes })[tela](el, sub);
+    ({ painel: telaPainel, hoje: telaHoje, pedidos: telaPedidos, producao: telaProducao, topos: telaTopos, relatorio: telaRelatorio, prejuizos: telaPrejuizos, estoque: telaEstoque, cardapio: telaCardapio, stories: telaStories, avaliacoes: telaAvaliacoes, fidelidade: telaFidelidade, ajustes: telaAjustes })[tela](el, sub);
     window.scrollTo(0, 0);
   }
   if (pedidoId && !ehProdutor()) abrirGaveta(pedidoId); else fecharGaveta(true);
@@ -4578,6 +4579,8 @@ function renderGaveta(p) {
           <button type="button" class="btn icon sm ghost" data-gav="tirar-pgto" data-id="${esc(g2.id)}" aria-label="Remover pagamento de ${esc(R(g2.valor))}">${ic('lixo')}</button></div>`).join('')}</div>` : ''}
       </section>
 
+      <div id="gavFid"></div>
+
       <section class="card"><div class="card-h"><h2>Observações internas</h2></div>
         <form id="fObs" novalidate>
           <label class="sr" for="obsTxt">Nova observação</label>
@@ -4600,6 +4603,7 @@ function renderGaveta(p) {
     ${rodapeGaveta(p)}`;
   g.querySelector('.gav-b').scrollTop = rolagem;
   if (isAdmin()) toposDaGaveta(p);
+  fidelidadeDaGaveta(p);
   $('#fObs').addEventListener('submit', e => {
     e.preventDefault();
     const txt = $('#obsTxt').value.trim();
@@ -4639,6 +4643,8 @@ document.addEventListener('click', async e => {
     case 'editar': modalEditarPedido(p); break;
     case 'entrega': modalEntrega(p); break;
     case 'pagar': modalPagamento(p); break;
+    case 'fid-resgatar': modalResgate(p.cliente_telefone, p.cliente_nome, { pedidoId: p.id, depois: () => fidelidadeDaGaveta(p) }); break;
+    case 'fid-hist': modalHistoricoFid(p.cliente_telefone, p.cliente_nome); break;
     case 'prejuizo': modalPrejuizo(p); break;
     case 'termica': imprimirTermica(p); break;
     case 'etiqueta': ocupado(b, () => imprimirEtiquetaDoPedido(p)); break;
@@ -7931,5 +7937,144 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#avisosMenu')) { e.stopPropagation(); fecharAvisos(true); } }, true);
 addEventListener('resize', posicionarAvisos);
+
+/* =========================================================
+   CARTÃO FIDELIDADE (sql/fidelidade.sql)
+   #fidelidade: as regras (a Administração muda) e os clientes, de quem tem prêmio para quem está começando.
+   Na gaveta do pedido: o cartão do cliente, com o botão de resgatar o prêmio.
+========================================================= */
+let fidLista = [], fidBusca = '';
+/** As estrelas como o selo do logo (o mesmo desenho do cartão do cliente em acompanhar.html). */
+const SELO_FID = (() => {
+  const n = 14, raio = 15.8, s = Math.sin(Math.PI / n), rb = raio * s / (1 + s), rc = raio - rb;
+  return `<circle cx="16" cy="16" r="14.3"/>${Array.from({ length: n }, (_, i) => { const a = i / n * 2 * Math.PI - Math.PI / 2; return `<circle cx="${(16 + rc * Math.cos(a)).toFixed(2)}" cy="${(16 + rc * Math.sin(a)).toFixed(2)}" r="${rb.toFixed(2)}"/>`; }).join('')}`;
+})();
+const selosFid = (estrelas, meta) => `<span class="fid-selos" role="img" aria-label="${Math.min(estrelas, meta)} de ${meta} estrelas">${Array.from({ length: meta }, (_, i) =>
+  `<svg viewBox="0 0 32 32" class="${i < estrelas ? 'cheio' : ''}" aria-hidden="true"><g>${SELO_FID}</g><path d="M16 23.2c-3.9-2.6-7-5.3-7-8.6 0-2.3 1.7-4 3.8-4 1.4 0 2.5.7 3.2 1.9.7-1.2 1.8-1.9 3.2-1.9 2.1 0 3.8 1.7 3.8 4 0 3.3-3.1 6-7 8.6z"/></svg>`).join('')}</span>`;
+const minusc = t => (t ? t.charAt(0).toLowerCase() + t.slice(1) : t);
+/** "3 de 5 estrelas · faltam R$ 40,00 para a próxima" (ou o prêmio, quando já dá para resgatar). */
+const resumoFid = c => (c.premios >= 1
+  ? `Tem ${c.premios === 1 ? 'um prêmio' : `${c.premios} prêmios`} para resgatar${c.premio ? `: ${minusc(c.premio)}` : ''}.`
+  : `${c.estrelas} de ${c.meta} ${c.meta === 1 ? 'estrela' : 'estrelas'} · faltam ${R(c.falta)} para a próxima.`);
+
+/** O resgate: confirma com quem está no balcão, guarda uma observação e tira as estrelas do cartão. */
+function modalResgate(telefone, nome, { pedidoId = null, depois } = {}) {
+  const premio = cacheLoja?.fidelidade_premio;
+  const m = abrirModal({
+    titulo: 'Resgatar o prêmio',
+    corpo: `<p style="margin:0 0 14px;line-height:1.5">${esc(nome || 'O cliente')} ganha <b>${esc(minusc(premio) || 'o prêmio do cartão')}</b>. As ${esc(cacheLoja?.fidelidade_estrelas || 5)} estrelas saem do cartão e a contagem recomeça.</p>
+      ${inTxt('frObs', 'Observação (opcional)', '', { attrs: 'maxlength="300" placeholder="Ex.: levou junto com o pedido de sábado"' })}`,
+    rodape: `<button type="button" class="btn ghost" data-fechar>Cancelar</button><button type="button" class="btn primary" data-sim>${ic('presente')}Resgatar o prêmio</button>`
+  });
+  m.$('[data-sim]').addEventListener('click', ev => ocupado(ev.currentTarget, async () => {
+    const c = await api.admin.fidelidade.resgatar(telefone, { pedidoId, observacao: valDe(m, 'frObs') || null });
+    m.fechar();
+    toast(`Prêmio resgatado. O cartão de ${String(nome || 'cliente').split(' ')[0]} recomeçou.`);
+    depois?.(c);
+  }));
+}
+/** Os prêmios que o cliente já resgatou (a Administração pode desfazer um resgate feito por engano). */
+async function modalHistoricoFid(telefone, nome) {
+  const c = await api.admin.fidelidade.cartao(telefone).catch(erroToast); if (!c) return;
+  const m = abrirModal({
+    titulo: nome || 'Cartão fidelidade',
+    corpo: `<div class="fid-hist-topo">${selosFid(c.estrelas, c.meta)}<p>${esc(resumoFid(c))}</p><p class="dica">${esc(R(c.gasto))} em ${c.pedidos} ${c.pedidos === 1 ? 'pedido' : 'pedidos'} retirados${c.desde ? ` desde ${esc(formatarData(c.desde))}` : ''}.</p></div>
+      <h3 class="fid-hist-t">Prêmios resgatados</h3>
+      ${c.historico.length ? `<ul class="fid-hist">${c.historico.map(h => `<li><span><b>${esc(h.premio || 'Prêmio')}</b><small>${esc(dataHora(h.criado_em))}${h.por ? ` · ${esc(h.por)}` : ''}${h.observacao ? ` · ${esc(h.observacao)}` : ''}</small></span>
+        ${isAdmin() ? `<button type="button" class="btn sm ghost" data-fid-desfazer="${esc(h.id)}">Desfazer</button>` : ''}</li>`).join('')}</ul>` : '<p class="dica">Nenhum prêmio resgatado ainda.</p>'}`
+  });
+  m.el.addEventListener('click', async ev => {
+    const b = ev.target.closest('[data-fid-desfazer]'); if (!b) return;
+    if (!await confirmar('Desfazer o resgate?', 'As estrelas voltam para o cartão do cliente. Use quando o resgate foi registrado por engano.', { botao: 'Desfazer o resgate', perigo: true })) return;
+    await ocupado(b, async () => { await api.admin.fidelidade.desfazer(b.dataset.fidDesfazer); m.fechar(); toast('Resgate desfeito. As estrelas voltaram para o cartão.'); recarregarFid(); });
+  });
+}
+const recarregarFid = () => { if (telaAtual === 'fidelidade') telaFidelidade($('#conteudo')); else if (pedidoAtual) fidelidadeDaGaveta(pedidoAtual); };
+
+/** O cartão do cliente na gaveta do pedido (só com o cartão ligado e o telefone do cliente). */
+async function fidelidadeDaGaveta(p) {
+  const box = $('#gavFid'); if (!box) return;
+  if (!cacheLoja?.fidelidade_ativa || !p.cliente_telefone) { box.innerHTML = ''; return; }
+  const c = await api.admin.fidelidade.cartao(p.cliente_telefone).catch(() => null);
+  if (!c?.ativa || pedidoAtual?.id !== p.id || !document.contains(box)) return;
+  box.innerHTML = `<section class="card fid-gav"><div class="card-h"><h2>Cartão fidelidade</h2><button type="button" class="btn sm ghost" data-gav="fid-hist">Histórico</button></div>
+      ${selosFid(c.estrelas, c.meta)}
+      <p class="fid-gav-txt">${esc(resumoFid(c))}</p>
+      <p class="dica">${statusDe(p.status).finalizado ? 'Este pedido já entrou no cartão.' : `Este pedido soma ${esc(R(p.total))} quando for ${ehEntrega(p) ? 'entregue' : 'retirado'}.`}</p>
+      ${c.premios >= 1 ? `<button type="button" class="btn primary sm" data-gav="fid-resgatar">${ic('presente')}Resgatar o prêmio</button>` : ''}
+    </section>`;
+}
+
+async function telaFidelidade(el) {
+  el.innerHTML = cabecalho('Fidelidade', '', 'Uma estrela a cada valor gasto em pedidos retirados ou entregues. Com todas as estrelas, o cliente ganha o prêmio.')
+    + `<div id="fidCorpo"><div class="skel" style="height:150px;margin-bottom:14px"></div><div class="skel" style="height:260px"></div></div>`;
+  let cfg, lista;
+  try { [cfg, lista] = await Promise.all([configLoja(true), api.admin.fidelidade.clientes()]); }
+  catch (e) { if (telaAtual === 'fidelidade') $('#fidCorpo').innerHTML = `<div class="vazio"><h2>Não foi possível carregar</h2><p>${esc(e.message)}</p></div>`; return; }
+  if (telaAtual !== 'fidelidade') return;
+  if (lista === null || !('fidelidade_ativa' in (cfg || {}))) {
+    $('#fidCorpo').innerHTML = `<p class="aviso-box">Para o cartão fidelidade funcionar, rode o arquivo <code>sql/fidelidade.sql</code> no Supabase (SQL Editor) e abra esta tela de novo.</p>`;
+    return;
+  }
+  fidLista = lista;
+  desenharFidelidade(cfg);
+}
+function desenharFidelidade(cfg) {
+  const corpo = $('#fidCorpo'); if (!corpo) return;
+  const ligada = cfg.fidelidade_ativa === true, meta = Number(cfg.fidelidade_estrelas) || 5;
+  const regras = isAdmin() ? `<form class="card fid-regras" id="fidForm" novalidate>
+      <div class="fid-liga"><input type="checkbox" class="switch" id="fAtiva" ${ligada ? 'checked' : ''} aria-describedby="fAtivaTxt">
+        <div><label for="fAtiva"><strong>Cartão fidelidade ${ligada ? 'ligado' : 'desligado'}</strong></label>
+          <p id="fAtivaTxt">${ligada ? 'Os clientes veem o cartão na página de acompanhar o pedido.' : 'Ligue para começar a contar. Só entram os pedidos retirados a partir da data de início.'}</p></div></div>
+      <div class="grid3">${inDin('fValor', 'Uma estrela a cada', cfg.fidelidade_valor ?? 100)}${inNum('fEstrelas', 'Estrelas para o prêmio', meta, { attrs: 'min="1" max="20" step="1"' })}${campo('fDesde', 'Conta pedidos a partir de', inData('fDesde', cfg.fidelidade_desde || '', { vazio: 'Desde o início', limpar: true }))}</div>
+      ${inTxt('fPremio', 'O prêmio', cfg.fidelidade_premio || '', { attrs: 'maxlength="120" placeholder="Ex.: Um bolo de 1 kg de qualquer sabor"', dica: 'Aparece no cartão do cliente: “Com 5 estrelas, você ganha …”.' })}
+      <div class="fid-salvar"><button type="submit" class="btn primary">Salvar as regras</button></div>
+    </form>` : `<div class="card fid-regras"><p style="margin:0"><b>${ligada ? 'Cartão ligado' : 'Cartão desligado'}.</b> ${ligada ? `Uma estrela a cada ${esc(R(cfg.fidelidade_valor))}; com ${meta}, ${esc(minusc(cfg.fidelidade_premio) || 'o prêmio')}.` : 'A Administração liga e ajusta as regras.'}</p></div>`;
+  const comPremio = fidLista.filter(c => c.premios >= 1).length, entregues = fidLista.reduce((s, c) => s + (c.resgatados || 0), 0);
+  const tile = (cor, icone, rot, valor, sub) => `<div class="kpi" style="${corVars(cor)}"><span class="kpi-ic">${ic(icone)}</span>
+      <span class="kpi-t"><span>${rot}</span><strong>${valor}</strong>${sub ? `<span class="delta neutro">${sub}</span>` : ''}</span></div>`;
+  const kpis = ligada && fidLista.length ? `<div class="card kpi-strip">
+      ${tile('#1F6E63', 'user', 'Clientes no cartão', fidLista.length, 'com pedido retirado')}
+      ${tile('#B37951', 'presente', 'Prêmios para resgatar', comPremio, comPremio ? 'veja abaixo' : 'ninguém ainda')}
+      ${tile('#58210F', 'ok', 'Prêmios entregues', entregues, '')}
+    </div>` : '';
+  const termo = semAcento(fidBusca.trim()), dig = fidBusca.replace(/\D/g, '');
+  const vis = fidLista.filter(c => !termo || semAcento(c.nome || '').includes(termo) || (dig.length >= 3 && String(c.telefone).includes(dig)));
+  const lista = !ligada ? '' : !fidLista.length ? '<div class="vazio"><h2>Ninguém no cartão ainda</h2><p>Os clientes aparecem aqui quando um pedido deles for retirado ou entregue.</p></div>'
+    : `<section class="card fid-lista"><div class="card-h"><h2>Clientes</h2>
+        <label class="sr" for="fidBusca">Procurar cliente</label><input class="in fid-busca" id="fidBusca" type="search" placeholder="Nome ou telefone" value="${esc(fidBusca)}" autocomplete="off"></div>
+      ${vis.length ? `<ul class="fid-clientes">${vis.map(c => `<li class="${c.premios >= 1 ? 'premio' : ''}">
+          <span class="fid-quem"><b>${esc(c.nome || 'Cliente')}</b><small>${esc(formatarTel(c.telefone) || c.telefone)} · ${esc(R(c.gasto))} em ${c.pedidos} ${c.pedidos === 1 ? 'pedido' : 'pedidos'}</small></span>
+          <span class="fid-cartao">${selosFid(c.estrelas, meta)}<small>${esc(c.premios >= 1 ? (c.premios === 1 ? 'Prêmio para resgatar' : `${c.premios} prêmios para resgatar`) : `faltam ${R(c.falta)} para a próxima`)}</small></span>
+          <span class="fid-acoes">${c.premios >= 1 ? `<button type="button" class="btn primary sm" data-fid-resgatar="${esc(c.telefone)}">${ic('presente')}Resgatar</button>` : ''}
+            <button type="button" class="btn ghost sm" data-fid-hist="${esc(c.telefone)}">Histórico<span class="sr"> de ${esc(c.nome || 'cliente')}</span></button></span></li>`).join('')}</ul>`
+        : '<p class="vazio" style="padding:18px">Nenhum cliente com esse nome ou telefone.</p>'}
+    </section>`;
+  corpo.innerHTML = regras + kpis + lista;
+  const nomeDe = tel => fidLista.find(c => c.telefone === tel)?.nome;
+  corpo.querySelector('#fidBusca')?.addEventListener('input', ev => {
+    fidBusca = ev.target.value; const pos = ev.target.selectionStart;
+    desenharFidelidade(cfg); const b = $('#fidBusca'); b.focus(); b.setSelectionRange(pos, pos);
+  });
+  corpo.addEventListener('click', ev => {
+    const r = ev.target.closest('[data-fid-resgatar]'), h = ev.target.closest('[data-fid-hist]');
+    if (r) modalResgate(r.dataset.fidResgatar, nomeDe(r.dataset.fidResgatar), { depois: recarregarFid });
+    if (h) modalHistoricoFid(h.dataset.fidHist, nomeDe(h.dataset.fidHist));
+  });
+  corpo.querySelector('#fidForm')?.addEventListener('submit', ev => {
+    ev.preventDefault();
+    const f = { $: s => corpo.querySelector(s) }, valor = lerValor(valDe(f, 'fValor')), estrelas = numDe(f, 'fEstrelas');
+    if (!(valor > 0)) { toast('Escreva quanto vale cada estrela (ex.: 100,00).', { tipo: 'erro' }); f.$('#fValor').focus(); return; }
+    if (!Number.isInteger(estrelas) || estrelas < 1 || estrelas > 20) { toast('O prêmio sai com 1 a 20 estrelas.', { tipo: 'erro' }); f.$('#fEstrelas').focus(); return; }
+    const ativa = chkDe(f, 'fAtiva');
+    // ligou agora sem data de início: começa a contar hoje (os pedidos antigos não viram estrelas de uma vez)
+    const desde = valDe(f, 'fDesde') || (ativa && !cfg.fidelidade_ativa ? hojeISO() : null);
+    ocupado(ev.submitter, async () => {
+      await api.admin.configuracoes.salvar({ fidelidade_ativa: ativa, fidelidade_valor: valor, fidelidade_estrelas: estrelas, fidelidade_premio: valDe(f, 'fPremio') || null, fidelidade_desde: desde });
+      toast(ativa ? 'Regras salvas. O cartão fidelidade está ligado.' : 'Regras salvas. O cartão fidelidade está desligado.');
+      telaFidelidade($('#conteudo'));
+    });
+  });
+}
 
 iniciar();
