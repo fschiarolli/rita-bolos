@@ -5192,6 +5192,7 @@ async function modalEditarPedido(p) {
         ${campo('edS' + k, '2º recheio', `<select class="sel" id="edS${k}" data-np="seg"><option value="">Sem 2º recheio</option>${sel(bolos.map(b => [b.slug, `${b.rotulo || b.nome} — ${R(b.preco)}/kg`]), segSlug(it?.segundo_recheio))}</select>`)}
         ${!it && finalizacoes.length ? campoFinalizacoes('edFin' + k, finalizacoes) : ''}
       </div>
+      ${campoPesoMin('edK' + k, prod?.peso_minimo_kg && it?.peso_kg ? Number(it.peso_kg) : '')}
       <div class="obs-l">${campo('edO' + k, 'Observação do item', `<input class="in" id="edO${k}" data-np="obs" maxlength="1000" value="${esc(ref.texto)}" placeholder="Sabores, escrita no bolo, tema…">`)}
         ${ref.imagem ? `<div class="ed-ref"><img src="${esc(ref.imagem)}" alt=""><span>Imagem de referência anexada</span><button type="button" class="btn sm ghost" data-np="tirar-ref">Remover imagem</button></div>` : ''}</div>
       <div class="ed-preco">${campo('edV' + k, 'Valor de cada', `<div class="money"><input class="in" id="edV${k}" data-np="preco" inputmode="decimal" value="${it ? esc(valorTxt(it.preco_unitario)) : ''}"></div>`)}
@@ -5222,13 +5223,14 @@ async function modalEditarPedido(p) {
   const sugerido = box => {
     const prod = prods[campoDe(box, 'prod').value]; if (!prod) return null;
     const qtd = Math.max(1, parseInt(campoDe(box, 'qtd').value, 10) || 1);
-    return precoUnitario(prod, { qtd, peso: campoDe(box, 'peso').value, seg: prods[campoDe(box, 'seg').value] });
+    return precoUnitario(prod, { qtd, peso: campoDe(box, 'peso').value, seg: prods[campoDe(box, 'seg').value], kg: campoDe(box, 'kg').value });
   };
-  const atualizar = () => {
+  const atualizar = (e) => {
     let sub = 0;
     m.$$('.np-item').forEach(box => {
       const prod = prods[campoDe(box, 'prod').value];
       box.querySelector('.bolo').hidden = !(prod && prod.tipo === 'bolo');
+      ajustarPesoMin(box, prod, e?.target?.dataset?.np === 'prod' && box.contains(e.target));
       const q = Math.max(1, parseInt(campoDe(box, 'qtd').value, 10) || 1), v = lerValor(campoDe(box, 'preco').value) || 0;
       const fins = finalizacoesMarcadas(box, prods), valorFins = fins.reduce((total, f) => total + Number(f.preco), 0);
       const linhaTot = q * (v + valorFins);
@@ -5242,7 +5244,8 @@ async function modalEditarPedido(p) {
   // muda o produto, o peso ou o 2º recheio: valor pelo cardápio; quantidade só muda o valor quando o produto tem faixa de preço e o valor não foi digitado
   m.el.addEventListener('change', e => {
     const box = e.target.closest('.np-item'), np = e.target.dataset.np;
-    if (box && ['prod', 'peso', 'seg'].includes(np)) { const s = sugerido(box); if (s != null) { campoDe(box, 'preco').value = valorTxt(s); delete campoDe(box, 'preco').dataset.manual; } }
+    if (box && np === 'prod') ajustarPesoMin(box, prods[campoDe(box, 'prod').value], true);   // antes do valor sugerido, que usa o peso
+    if (box && ['prod', 'peso', 'seg', 'kg'].includes(np)) { const s = sugerido(box); if (s != null) { campoDe(box, 'preco').value = valorTxt(s); delete campoDe(box, 'preco').dataset.manual; } }
     atualizar();
   });
   m.el.addEventListener('input', e => {
@@ -5289,6 +5292,10 @@ async function modalEditarPedido(p) {
             massa: c.bolo.massas.find(x => x.slug === campoDe(box, 'massa').value)?.nome || null,
             formato: (c.bolo.formatos || []).find(x => x.slug === campoDe(box, 'formato')?.value)?.nome || null,
             segundo_recheio_id: seg?.id || null, segundo_recheio: seg ? (seg.rotulo || seg.nome) : null });
+        } else if (prod.peso_minimo_kg && (campoDe(box, 'kg').value || !id)) {   // item antigo, de antes do pedido mínimo em kg, pode ficar sem peso
+          const peso = Number(campoDe(box, 'kg').value);
+          if (!(peso > 0 && peso <= 50)) throw new Error(`Informe o peso de "${prod.nome}".`);
+          Object.assign(d, { peso_kg: peso, preco_kg: Math.round(d.preco_unitario / peso * 100) / 100 });
         } else {
           const f = (prod.faixas_preco || []).filter(x => quantidade >= x.quantidade_minima && (x.quantidade_maxima == null || quantidade <= x.quantidade_maxima)).sort((a, b) => b.quantidade_minima - a.quantidade_minima)[0];
           if (f && Number(f.preco) === d.preco_unitario) d.faixa_preco = f.nome;
@@ -5347,6 +5354,14 @@ function finalizacoesMarcadas(box, prods) {
   return [...box.querySelectorAll('input[data-np="fin"]:checked')].map(el => prods[el.value]).filter(f => f && ehFinalizacao(f));
 }
 /** Produtos do cardápio para montar itens de pedido (Novo pedido e Editar pedido). */
+/** Peso dos produtos vendidos por peso com pedido mínimo (sql/peso-minimo.sql, ex.: bolo salgado a partir de 2,5 kg). A equipe pode lançar abaixo do mínimo. */
+const campoPesoMin = (id, valor = '') => `<div class="kgmin" hidden>${campo(id, 'Peso (kg)', `<input class="in" id="${id}" data-np="kg" type="number" min="0.5" max="50" step="0.5" inputmode="decimal" value="${esc(valor)}">`)}</div>`;
+/** Mostra o campo de peso conforme o produto; escolheu o produto: o peso começa no mínimo dele. */
+function ajustarPesoMin(box, prod, trocouProduto) {
+  const kgBox = box.querySelector('.kgmin'), min = Number(prod?.peso_minimo_kg) || 0;
+  kgBox.hidden = !min;
+  if (min && trocouProduto) kgBox.querySelector('input').value = min;
+}
 function catalogoPedido(c) {
   const prods = {};
   const grupos = c.categorias.map(cat => ({ nome: cat.nome + (cat.aceita_pedido_online === false && cat.layout !== 'pagina' ? ' (só backoffice)' : ''),
@@ -5359,9 +5374,10 @@ function catalogoPedido(c) {
   const opcoesProd = `<option value="">Escolha um produto</option>` + grupos.map(g => `<optgroup label="${esc(g.nome)}">${g.itens.map(p =>
     `<option value="${esc(p.slug)}">${esc(p.nome)} — ${esc(R(p.preco))}${p.unidade_preco === 'kg' ? '/kg' : ''}</option>`).join('')}</optgroup>`).join('');
   /** Preço de uma unidade pelo cardápio: bolo = R$/kg (o maior entre os dois recheios) × peso; demais = faixa de quantidade ou preço base. */
-  const precoUnitario = (p, { qtd = 1, peso, seg } = {}) => {
+  const precoUnitario = (p, { qtd = 1, peso, seg, kg } = {}) => {
     if (!p) return 0;
     if (p.tipo === 'bolo') return Math.round(Math.max(Number(p.preco), seg ? Number(seg.preco) : 0) * Number(peso || 0) * 100) / 100;
+    if (p.peso_minimo_kg) return Math.round(Number(p.preco) * Number(kg || p.peso_minimo_kg) * 100) / 100;
     const f = (p.faixas_preco || []).filter(x => qtd >= x.quantidade_minima && (x.quantidade_maxima == null || qtd <= x.quantidade_maxima)).sort((a, b) => b.quantidade_minima - a.quantidade_minima)[0];
     return Number(f ? f.preco : p.preco);
   };
@@ -5492,6 +5508,7 @@ async function modalNovoPedido() {
         ${campo('npS' + k, '2º recheio', `<select class="sel" id="npS${k}" data-np="seg"><option value="">Sem 2º recheio</option>${bolos.map(b => `<option value="${esc(b.slug)}">${esc(b.rotulo)} — ${esc(R(b.preco))}/kg</option>`).join('')}</select>`)}
         ${finalizacoes.length ? campoFinalizacoes('npFin' + k, finalizacoes) : ''}
       </div>
+      ${campoPesoMin('npK' + k)}
       <div class="obs-l">${campo('npO' + k, 'Observação do item', `<input class="in" id="npO${k}" data-np="obs" maxlength="1000" placeholder="Sabores, escrita no bolo, tema…">`)}</div>
       <div class="sub" data-np="sub"></div>
     </div>`;
@@ -5533,14 +5550,16 @@ async function modalNovoPedido() {
       const valorFins = finalizacoesMarcadas(box, prods).reduce((total, f) => total + Number(f.preco), 0);
       return (Math.round(kg * Number(box.querySelector('[data-np="peso"]').value) * 100) / 100 + valorFins) * q;
     }
+    if (p.peso_minimo_kg) return Math.round(p.preco * (Number(box.querySelector('[data-np="kg"]').value) || 0) * 100) / 100 * q;
     const f = (p.faixas_preco || []).filter(x => q >= x.quantidade_minima && (x.quantidade_maxima == null || q <= x.quantidade_maxima)).sort((a, b) => b.quantidade_minima - a.quantidade_minima)[0];
     return (f ? f.preco : p.preco) * q;
   };
-  const atualizar = () => {
+  const atualizar = (e) => {
     let t = 0;
     m.$$('.np-item').forEach(box => {
       const p = prods[box.querySelector('[data-np="prod"]').value];
       box.querySelector('.bolo').hidden = !(p && p.tipo === 'bolo');
+      ajustarPesoMin(box, p, e?.target?.dataset?.np === 'prod' && box.contains(e.target));
       const obs = box.querySelector('[data-np="obs"]');
       obs.placeholder = p?.exemplo_observacao || 'Sabores, escrita no bolo, tema…';
       const v = precoItem(box); t += v;
@@ -5549,7 +5568,7 @@ async function modalNovoPedido() {
     m.$('#npTotal').textContent = R(t);
   };
   m.el.addEventListener('change', atualizar);
-  m.el.addEventListener('input', e => { if (e.target.dataset.np === 'qtd') atualizar(); });
+  m.el.addEventListener('input', e => { if (['qtd', 'kg'].includes(e.target.dataset.np)) atualizar(); });
   // Pedido já concluído: pede a forma de pagamento e a data vira "quando foi retirado" (não pode ser no futuro)
   const rotuloData = () => { m.$('label[for="npData-btn"]').textContent = chkDe(m, 'npConcl') ? 'Data em que foi retirado' : chkDe(m, 'npEnt') ? 'Data da entrega' : 'Data da retirada'; };
   // com entrega: a data é a da entrega; um pedido lançado já concluído entra como retirado (sem entrega)
@@ -5580,6 +5599,10 @@ async function modalNovoPedido() {
       const slug = box.querySelector('[data-np="prod"]').value; if (!slug) return [];
       const p = prods[slug];
       const it = { produto_slug: slug, quantidade: parseInt(box.querySelector('[data-np="qtd"]').value, 10) || 1, observacao: box.querySelector('[data-np="obs"]').value.trim() || null, nome: p.nome };
+      if (p.peso_minimo_kg) {
+        it.peso_kg = Number(box.querySelector('[data-np="kg"]').value);
+        if (!(it.peso_kg > 0)) throw new Error(`Informe o peso de "${p.nome}".`);
+      }
       if (p.tipo !== 'bolo') return [it];
       it.peso_kg = Number(box.querySelector('[data-np="peso"]').value); it.massa = box.querySelector('[data-np="massa"]').value;
       const f = box.querySelector('[data-np="formato"]'); if (f) it.formato = f.value;
@@ -5750,6 +5773,8 @@ document.addEventListener('click', e => {
 });
 async function recarregarCadastro() { await carregarCadastro(); catSel = CAD.categorias.find(c => c.id === catSel?.id) || CAD.categorias[0] || null; desenharCardapio(); }
 
+/** Pedido mínimo em kg (sql/peso-minimo.sql) vale para produtos cobrados por kg que não são bolo (o bolo tem os pesos de Ajustes). */
+const usaPesoMin = (tipo, unidade) => unidade === 'kg' && tipo !== 'bolo';
 function modalProduto(p, grupoId = null) {
   const novo = !p;
   const irmaos = CAD.produtos.filter(x => x.categoria_id === catSel?.id && (x.grupo_id || null) === (grupoId || null));
@@ -5772,6 +5797,9 @@ function modalProduto(p, grupoId = null) {
         ${inTxt('pRot', 'Nome curto', p.rotulo || '', { attrs: 'maxlength="80"', dica: 'Aparece dentro do grupo. Ex.: Ninho + Morango' })}</div>
       <div class="grid2">${inSel('pCat', 'Categoria', CAD.categorias.map(c => [c.id, c.nome]), p.categoria_id)}${inSel('pGrupo', 'Grupo', gruposDa(p.categoria_id), p.grupo_id || '')}</div>
       <div class="grid3">${inSel('pTipo', 'Tipo', TIPOS_PROD, p.tipo)}${inDin('pPreco', 'Preço', p.preco ?? '')}${inSel('pUn', 'Cobrado por', UNIDADES, p.unidade_preco)}</div>
+      <div id="pPesoMinBox" ${usaPesoMin(p.tipo, p.unidade_preco) ? '' : 'hidden'}>${inTxt('pPesoMin', 'Pedido mínimo (kg) <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>',
+        p.peso_minimo_kg ? String(Number(p.peso_minimo_kg)).replace('.', ',') : '', { attrs: 'inputmode="decimal" maxlength="5" placeholder="Ex.: 2,5"',
+        dica: 'Preenchido: no site o cliente escolhe o peso, a partir do mínimo e de 0,5 em 0,5 kg, em vez da quantidade de quilos.' })}</div>
       ${inTa('pDesc', 'Descrição <span style="font-weight:400;color:var(--ink-3)">(opcional)</span>', p.descricao || '', { attrs: 'maxlength="600" style="min-height:64px"' })}
       <p class="secao-t">Observação do cliente</p>
       <div style="display:flex;gap:18px;flex-wrap:wrap">${inChk('pPede', 'Pedir observação', p.pede_observacao)}${inChk('pObrig', 'Obrigatória', p.observacao_obrigatoria)}</div>
@@ -5798,6 +5826,9 @@ function modalProduto(p, grupoId = null) {
   m.$('#pNome').addEventListener('input', () => { if (!slugManual) m.$('#pSlug').value = slugify(m.$('#pNome').value); });
   m.$('#pCat').addEventListener('change', () => { m.$('#pGrupo').innerHTML = gruposDa(m.$('#pCat').value).map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join(''); });
   m.$('#pTipo').addEventListener('change', () => { if (m.$('#pTipo').value === 'bolo') m.$('#pUn').value = 'kg'; if (m.$('#pTipo').value === 'personalizavel') m.$('#pPede').checked = true; });
+  const mostrarPesoMin = () => { m.$('#pPesoMinBox').hidden = !usaPesoMin(valDe(m, 'pTipo'), valDe(m, 'pUn')); };
+  m.$('#pTipo').addEventListener('change', mostrarPesoMin);
+  m.$('#pUn').addEventListener('change', mostrarPesoMin);
   m.$('#pObrig').addEventListener('change', () => { if (m.$('#pObrig').checked) m.$('#pPede').checked = true; });
   m.$('[data-fx-add]').addEventListener('click', () => m.$('#pFaixas').insertAdjacentHTML('beforeend', linhaFaixa()));
   m.$('#pFaixas').addEventListener('click', e => { if (e.target.closest('[data-fx-tirar]')) e.target.closest('.fx').remove(); });
@@ -5822,6 +5853,10 @@ function modalProduto(p, grupoId = null) {
       destaque: chkDe(m, 'pDest'), destaque_ordem: numDe(m, 'pDestO'), antecedencia_minima_dias: numDe(m, 'pAnt') || 0, ordem: numDe(m, 'pOrdem') || 0,
       slug, ativo: chkDe(m, 'pAtivo')
     };
+    // pedido mínimo em kg: só manda a coluna quando ela já existe no banco (sql/peso-minimo.sql) ou quando foi preenchida
+    const pesoMin = usaPesoMin(dados.tipo, dados.unidade_preco) ? lerValor(valDe(m, 'pPesoMin')) : null;
+    if (pesoMin !== null && !(pesoMin > 0 && pesoMin <= 50)) { m.$('#pPesoMin').setAttribute('aria-invalid', 'true'); m.$('#pPesoMin').focus(); throw new Error('Informe o pedido mínimo em kg, por exemplo 2,5, ou deixe em branco.'); }
+    if (pesoMin !== null || 'peso_minimo_kg' in p) dados.peso_minimo_kg = pesoMin;
     if (dados.unidade_preco === 'cento') dados.quantidade_por_unidade = 100;
     else if (dados.unidade_preco === 'meio_cento') dados.quantidade_por_unidade = 50;
     else if (p.unidade_preco !== dados.unidade_preco) dados.quantidade_por_unidade = null;

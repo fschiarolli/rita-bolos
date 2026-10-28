@@ -133,6 +133,9 @@ export function criarSupabaseDemo(opcoes = {}) {
     b.pedido_entregas = b.pedido_entregas || [];
     b.excessos_peso = b.excessos_peso || [];   // peso final do bolo (igual a sql/peso-final.sql)
     if (!b.stories) semearStories(b);   // imagens para os stories (igual a sql/stories.sql)
+    // pedido mínimo em kg (igual a sql/peso-minimo.sql): bolo salgado a partir de 2,5 kg
+    const bs = b.produtos?.find(p => p.slug === 'salgado-bolo-salgado');
+    if (bs && !('peso_minimo_kg' in bs)) Object.assign(bs, { peso_minimo_kg: 2.5, nome: 'Bolo salgado', descricao: 'Preço por quilo' });
     if (!b.avaliacoes) semearAvaliacoes(b);   // avaliações dos pedidos (igual a sql/avaliacoes.sql): a aba do site começa desligada
     if (cf && !('avaliacoes_site' in cf)) cf.avaliacoes_site = false;
     // cartão fidelidade (igual a sql/fidelidade.sql): começa desligado
@@ -707,6 +710,7 @@ export function criarSupabaseDemo(opcoes = {}) {
       unidade_preco: p.unidade_preco, quantidade_por_unidade: p.quantidade_por_unidade, pede_observacao: p.pede_observacao,
       observacao_obrigatoria: p.observacao_obrigatoria, rotulo_observacao: p.rotulo_observacao, exemplo_observacao: p.exemplo_observacao,
       selo: p.selo, selo_estilo: p.selo_estilo, imagem_path: p.imagem_path, ilustracao: p.ilustracao, antecedencia_minima_dias: p.antecedencia_minima_dias,
+      peso_minimo_kg: p.peso_minimo_kg ?? null,
       faixas_preco: db.produto_faixas_preco.filter(f => f.produto_id === p.id).sort((a, b) => a.quantidade_minima - b.quantidade_minima)
         .map(f => ({ nome: f.nome, quantidade_minima: f.quantidade_minima, quantidade_maxima: f.quantidade_maxima, preco: f.preco })) };
   }
@@ -796,6 +800,11 @@ export function criarSupabaseDemo(opcoes = {}) {
           kg = Math.max(kg, r.preco); linha.segundo_recheio_id = r.id; linha.segundo_recheio = r.rotulo || r.nome;
         }
         Object.assign(linha, { peso_kg: peso, preco_kg: kg, massa: m.nome, formato, preco_unitario: r2(kg * peso) });
+      } else if (p.peso_minimo_kg != null && p.unidade_preco === 'kg') {   // igual a sql/peso-minimo.sql
+        const peso = Number(it.peso_kg);
+        if (!(peso > 0 && peso <= 50)) throw `Escolha o peso de "${p.nome}".`;
+        if (peso < Number(p.peso_minimo_kg) && !ehEquipe) throw `O pedido mínimo de "${p.nome}" é de ${String(Number(p.peso_minimo_kg)).replace('.', ',')} kg.`;
+        Object.assign(linha, { peso_kg: peso, preco_kg: p.preco, preco_unitario: r2(p.preco * peso) });
       } else {
         const faixas = base.produto_faixas_preco.filter(f => f.produto_id === p.id && qtd >= f.quantidade_minima && (f.quantidade_maxima == null || qtd <= f.quantidade_maxima))
           .sort((a, b) => b.quantidade_minima - a.quantidade_minima);

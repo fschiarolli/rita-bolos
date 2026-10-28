@@ -447,6 +447,8 @@ a { color: var(--teal); }
 .stepper .step-val { min-width: 26px; text-align: center; font-weight: 900; font-size: 15px; color: var(--ink); }
 .stepper.lg button { width: 44px; height: 44px; }
 .stepper.lg .step-val { min-width: 32px; font-size: 17px; }
+.stepper .peso-val { min-width: 4.2em; }
+.stepper button:disabled { opacity: .4; cursor: not-allowed; }
 
 /* ---------- Kits ---------- */
 .kit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 18px; margin-top: 16px; }
@@ -1448,10 +1450,12 @@ function quantidadeMinima(p) {
 function register(item) { if (ITEMS[item.id]) console.warn('Produto repetido no cardápio:', item.id); ITEMS[item.id] = item; return item; }
 function itemDe(p, cat, g) {
   const isKit = cat.layout === 'grade' || p.unidade_preco === 'kit';
-  const kind = isKit ? 'config' : p.tipo === 'bolo' ? 'cake' : p.tipo === 'personalizavel' ? 'config' : 'simple';
+  // pedido mínimo em kg (sql/peso-minimo.sql, ex.: bolo salgado a partir de 2,5 kg): abre a folha para escolher o peso
+  const pesoMin = !isKit && p.tipo !== 'bolo' && p.unidade_preco === 'kg' && Number(p.peso_minimo_kg) > 0 ? Number(p.peso_minimo_kg) : 0;
+  const kind = isKit ? 'config' : p.tipo === 'bolo' ? 'cake' : p.tipo === 'personalizavel' || pesoMin ? 'config' : 'simple';
   const it = {
     id: p.slug, dbId: p.id, cat: cat.slug, catLabel: cat.nome, group: g.title || '', label: p.rotulo || p.nome, name: p.nome,
-    price: Number(p.preco), kind, unidade: p.unidade_preco, perKg: p.unidade_preco === 'kg' && kind !== 'cake',
+    price: Number(p.preco), kind, unidade: p.unidade_preco, perKg: p.unidade_preco === 'kg' && kind !== 'cake', pesoMin,
     sub: p.descricao || '', desc: p.descricao || '', flavors: g.flavors || null,
     sizeInfo: (p.unidade_preco === 'cento' || p.unidade_preco === 'meio_cento') ? (g.info || (p.quantidade_por_unidade ? p.quantidade_por_unidade + ' unidades' : '')) : '',
     notesLabel: p.rotulo_observacao || 'Observações', notesPh: p.exemplo_observacao || '',
@@ -1546,6 +1550,7 @@ function precoLinha(l) {
     const base = sec ? Math.max(it.price, sec.price) : it.price;
     return Math.round(base * (l.peso || WEIGHT_OPTIONS[0]) * 100) / 100 + precoFinalizacoes(l.fin);
   }
+  if (it.pesoMin) return Math.round(it.price * Math.max(it.pesoMin, l.peso || 0) * 100) / 100;
   if (it.faixas && it.faixas.length) {
     const f = [...it.faixas].sort((a, b) => b.quantidade_minima - a.quantidade_minima)
       .find(f => l.qty >= f.quantidade_minima && (f.quantidade_maxima == null || l.qty <= f.quantidade_maxima));
@@ -1577,7 +1582,8 @@ function syncCart() {
       if (!FORMATOS.some(f => f.v === l.formato)) l.formato = FORMATOS[0]?.v || null;
       if (l.segundo && !ITEMS[l.segundo]) l.segundo = null;
       l.fin = finsDe(l.fin).map(f => f.slug);
-    }
+    } else if (it.pesoMin) l.peso = Math.max(it.pesoMin, Number(l.peso) || 0);
+    else delete l.peso;
     return l;
   });
   saveCart();
@@ -1623,7 +1629,7 @@ function updateBadge(bump) {
    LINHAS DO CARDÁPIO
 ========================================================= */
 function priceHTML(it) {
-  if (it.kind === 'cake' || it.perKg) return `${fmt(it.price)} <small>o kg</small>`;
+  if (it.kind === 'cake' || it.perKg) return `${fmt(it.price)} <small>o kg${it.pesoMin ? ` · mín. ${kg(it.pesoMin)}` : ''}</small>`;
   if (it.min > 1) return `${fmt(it.price)} <small>a unidade · mín. ${it.min}</small>`;
   return fmt(it.price);
 }
@@ -1962,6 +1968,7 @@ function renderCart() {
         ${it.isKit ? `<div class="kit-escolhas">${esc(escolhasKit(l))}</div>
           ${kitIncompleto(l) ? '<p class="line-warn req">Complete as escolhas obrigatórias do kit antes de continuar.</p>' : ''}
           <button type="button" class="link-btn kit-editar" data-kit-edit="${i}">${kitIncompleto(l) ? 'Completar escolhas do kit' : 'Editar escolhas do kit'}</button>` : ''}
+        ${it.pesoMin ? `<button type="button" class="link-btn kit-editar" data-kit-edit="${i}">Mudar o peso</button>` : ''}
         <label class="sr-only" for="ln-${i}">Observação para ${esc(it.name)}</label>
         <textarea class="line-notes" id="ln-${i}" rows="1" data-notes="${i}" maxlength="1000" placeholder="${esc(it.needsNotes ? (it.notesPh || 'Informe os sabores') : 'Observação (opcional)')}">${esc(l.notes || '')}</textarea>
         ${missing ? `<div class="line-warn${it.notesRequired ? ' req' : ''}" id="lw-${i}">${icon('info')}${esc(it.notesLabel || 'Informe os sabores')}${it.notesRequired ? ' (obrigatório)' : ''}</div>` : ''}
@@ -2181,7 +2188,8 @@ function validarEscolhasKit() {
   return !primeiro;
 }
 function openConfig(it, opener, linha = null) {
-  sheetState = { type: 'config', item: it, qty: linha?.qty || 1, ref: linha?.ref || null, kit: { ...linha?.kit }, linha };
+  sheetState = { type: 'config', item: it, qty: linha?.qty || 1, ref: linha?.ref || null, kit: { ...linha?.kit }, linha,
+    peso: it.pesoMin ? Math.max(it.pesoMin, linha?.peso || 0) : null };
   const topper = precisaReferencia(it);
   const hero = it.isKit && it.img ? `<div class="sheet-hero" style="margin:0 0 14px"><img src="${esc(it.img)}" alt="${esc(it.name)}"></div>` : '';
   const thumb = it.isKit && it.img ? '' : thumbHTML(it);
@@ -2192,6 +2200,10 @@ function openConfig(it, opener, linha = null) {
   openSheet(`${sheetHead(it.name, meta, thumb)}
     <div class="sheet-body">${hero}${desc}
       ${it.isKit ? camposKitHTML(it, sheetState.kit) : ''}
+      ${it.pesoMin ? `<div class="field"><span class="lbl" id="pesoLbl">Peso</span>
+        <span class="stepper lg" role="group" aria-labelledby="pesoLbl"><button type="button" data-peso="-0.5" aria-label="Diminuir meio quilo">${icon('minus')}</button>
+          <span class="step-val peso-val" id="pv" aria-live="polite"></span><button type="button" data-peso="0.5" aria-label="Aumentar meio quilo">${icon('plus')}</button></span>
+        <p class="hint">Pedido mínimo de ${kg(it.pesoMin)}.</p></div>` : ''}
       <div class="field"><label class="lbl" for="cfgNotes">${esc(it.isKit ? 'Outras observações' : it.notesLabel || 'Observações')} ${opt}</label>
         <textarea class="textarea" id="cfgNotes" maxlength="1000" placeholder="${esc(it.isKit ? topper ? 'Ex.: nome e idade para o topo, tema da festa' : 'Ex.: tema da festa ou outras preferências' : it.notesPh || '')}">${esc(linha?.notes || '')}</textarea>
         ${it.needsNotes ? `<p class="hint">${it.notesRequired ? 'Precisa ser preenchido antes de enviar o pedido. ' : ''}Se preferir, você pode completar depois, na sacola.</p>` : ''}</div>
@@ -2201,8 +2213,19 @@ function openConfig(it, opener, linha = null) {
         <input type="file" id="cfgRef" accept="image/*" class="sr-only" tabindex="-1">
         <p class="err" id="eRef" role="alert">Envie a imagem de referência do topo.</p></div>` : ''}
     </div>
-    <div class="sheet-foot">${qtyStepper('qv')}<button type="button" class="btn btn-primary btn-split" data-act="cfg-add"><span>${linha ? 'Salvar escolhas' : 'Adicionar'}</span><span id="cfgTotal">${fmt(it.price * sheetState.qty)}</span></button></div>`, opener);
+    <div class="sheet-foot">${qtyStepper('qv')}<button type="button" class="btn btn-primary btn-split" data-act="cfg-add"><span>${linha ? 'Salvar escolhas' : 'Adicionar'}</span><span id="cfgTotal">${fmt(precoCfg(sheetState))}</span></button></div>`, opener);
   $('#qv').textContent = sheetState.qty;
+  if (it.pesoMin) atualizarPesoCfg();
+}
+/* Produto vendido por peso com pedido mínimo (ex.: bolo salgado a partir de 2,5 kg): o peso sobe e desce de 0,5 em 0,5 kg */
+const PESO_MAX = 30;
+const precoCfg = s => (s.peso ? Math.round(s.item.price * s.peso * 100) / 100 : s.item.price) * s.qty;
+function atualizarPesoCfg() {
+  const s = sheetState;
+  $('#pv').textContent = kg(s.peso);
+  $('[data-peso="-0.5"]').disabled = s.peso <= s.item.pesoMin;
+  $('[data-peso="0.5"]').disabled = s.peso >= PESO_MAX;
+  $('#cfgTotal').textContent = fmt(precoCfg(s));
 }
 
 /* ---- Quantidade com mínimo (ex.: docinhos a partir de 20): escolha rápida ---- */
@@ -2531,6 +2554,7 @@ async function sendOrder() {
     ...(CFG.whatsapp_api_ativa ? { whatsapp_autorizado: !!$('#cWaAuto')?.checked } : {}),
     itens: cart.flatMap(l => {
       const it = ITEMS[l.id], o = { produto_slug: l.id, quantidade: l.qty, observacao: comReferencia(observacaoLinha(l), referenciaLinha(l)), nome: it?.name };
+      if (it?.pesoMin) o.peso_kg = Math.max(it.pesoMin, l.peso || 0);
       if (it?.kind !== 'cake') return [o];
       o.peso_kg = l.peso; o.massa = l.massa; if (l.formato) o.formato = l.formato; if (l.segundo) o.segundo_recheio_slug = l.segundo;
       // Cada finalização vai como item abaixo do bolo: o preço é conferido no servidor.
@@ -2683,10 +2707,15 @@ function showView(v) {
    EVENTOS
 ========================================================= */
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-add],[data-dec],[data-open],[data-cat],[data-sub],[data-act],[data-linc],[data-ldec],[data-q],[data-qtd],[data-qset],[data-kit-edit]');
+  const t = e.target.closest('[data-add],[data-dec],[data-open],[data-cat],[data-sub],[data-act],[data-linc],[data-ldec],[data-q],[data-qtd],[data-qset],[data-kit-edit],[data-peso]');
   if (!t) return;
   const d = t.dataset;
-  if (d.kitEdit !== undefined) { const l = cart[Number(d.kitEdit)]; if (l && ITEMS[l.id]?.isKit) openConfig(ITEMS[l.id], t, l); return; }
+  if (d.kitEdit !== undefined) { const l = cart[Number(d.kitEdit)]; if (l && (ITEMS[l.id]?.isKit || ITEMS[l.id]?.pesoMin)) openConfig(ITEMS[l.id], t, l); return; }
+  if (d.peso) {
+    const s = sheetState; if (s?.type !== 'config' || !s.peso) return;
+    s.peso = Math.min(PESO_MAX, Math.max(s.item.pesoMin, Math.round((s.peso + Number(d.peso)) * 100) / 100));
+    atualizarPesoCfg(); return;
+  }
   if (d.qtd) { e.stopPropagation(); openQtd(ITEMS[d.qtd], t); return; }
   if (d.qset) {
     const s = sheetState; if (s?.type !== 'qtd') return;
@@ -2703,7 +2732,7 @@ document.addEventListener('click', e => {
   if (d.q) {
     const s = sheetState; s.qty = Math.max(1, Math.min(99, (s.qty || 1) + Number(d.q)));
     $('#qv').textContent = s.qty;
-    if (s.type === 'cake') refreshCake(); else $('#cfgTotal').textContent = fmt(s.item.price * s.qty);
+    if (s.type === 'cake') refreshCake(); else $('#cfgTotal').textContent = fmt(precoCfg(s));
     return;
   }
   if (d.linc || d.ldec) {
@@ -2736,7 +2765,7 @@ document.addEventListener('click', e => {
         break;
       }
       const line = { key: s.linha?.key || s.item.id + '-' + Date.now(), id: s.item.id, qty: s.qty, notes: $('#cfgNotes').value.trim(),
-        ref: precisaReferencia(s.item) ? s.ref : null, ...(s.item.isKit ? { kit: s.kit } : {}) };
+        ref: precisaReferencia(s.item) ? s.ref : null, ...(s.item.isKit ? { kit: s.kit } : {}), ...(s.peso ? { peso: s.peso } : {}) };
       if (s.linha && cart.includes(s.linha)) { Object.assign(s.linha, line); cartChanged(); }
       else addLine(line);
       requestCloseSheet(); toast(`${s.linha ? 'Atualizado' : 'Adicionado'}: ${s.item.name}`, 'Ver sacola', () => { location.hash = '#sacola'; });
